@@ -42,12 +42,5 @@ namespace NugzzMenu.Services
             Debug.LogWarning("[Nugzz:Debug] " + context + ": " + ex);
         }
 
-        public void VerboseSuccess(string message)
-        {
-            if (!VerboseEnabled)
-                return;
-
-            Debug.Log("[Nugzz:Debug:Success] " + (message ?? ""));
-        }
     }
 }

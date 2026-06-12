@@ -1,23 +1,10 @@
 using System;
 using Il2CppScheduleOne;
 using Il2CppScheduleOne.DevUtilities;
-using Il2CppScheduleOne.Economy;
-using Il2CppScheduleOne.Effects;
-using Il2CppScheduleOne.Growing;
-using Il2CppScheduleOne.GameTime;
-using Il2CppScheduleOne.ItemFramework;
-using Il2CppScheduleOne.Law;
-using Il2CppScheduleOne.Levelling;
-using Il2CppScheduleOne.Money;
 using Il2CppScheduleOne.Networking;
-using Il2CppScheduleOne.NPCs;
-using Il2CppScheduleOne.NPCs.Relation;
 using Il2CppScheduleOne.Persistence;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.PlayerScripts.Health;
-using Il2CppScheduleOne.Product;
-using Il2CppScheduleOne.Property;
-using Il2CppScheduleOne.Vehicles;
 using MelonLoader;
 using S1API.Lifecycle;
 using UnityEngine;
@@ -30,58 +17,57 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private static Core _inst;
-        
-        private const int TAB_CHEATS = 0;
-        private const int TAB_MONEY = 1;
-        private const int TAB_TIME = 2;
-        private const int TAB_VEHICLES = 3;
-        private const int TAB_ITEMS = 4;
-        private const int TAB_LOBBY = 5;
-        private const int TAB_SETTINGS = 6;
+        private const string Version = "0.8.0";
+        private const int WindowId = 98765;
 
-        private static readonly string[] Tabs = new[] { "Cheats", "Money", "Time", "Vehicles", "Items", "Lobby", "Settings" };
-        private static readonly string[] ML = new[] { "$500", "$1K", "$5K", "$10K", "$50K", "$100K", "$500K", "$1M" };
-        private static readonly float[] MA = new[] { 500f, 1000f, 5000f, 10000f, 50000f, 100000f, 500000f, 1000000f };
-        private static readonly int[] XA = new[] { 100, 500, 1000, 5000, 10000, 50000 };
-        private static readonly string[] XLb = new[] { "100", "500", "1K", "5K", "10K", "50K" };
+        private enum MenuTab
+        {
+            Cheats,
+            Money,
+            Time,
+            Vehicles,
+            Items,
+            Lobby,
+            Settings
+        }
+
+        private static readonly string[] TabLabels = { "Cheats", "Money", "Time", "Vehicles", "Items", "Lobby", "Settings" };
+        private static readonly string[] MoneyAmountLabels = { "$500", "$1K", "$5K", "$10K", "$50K", "$100K", "$500K", "$1M" };
+        private static readonly float[] MoneyAmounts = { 500f, 1000f, 5000f, 10000f, 50000f, 100000f, 500000f, 1000000f };
+        private static readonly int[] ExperienceAmounts = { 100, 500, 1000, 5000, 10000, 50000 };
+        private static readonly string[] ExperienceAmountLabels = { "100", "500", "1K", "5K", "10K", "50K" };
 
         private int _moneyIndex = 3;
-        private int _xpIndex = 2;
-        private int _itemQuantity = 1;
-        private int _tabIndex;
+        private int _experienceIndex = 2;
+        private MenuTab _selectedTab;
         private bool _itemCacheInitialized;
         private readonly CheatsState _cheatsState = new CheatsState();
         private readonly ItemsState _itemsState = new ItemsState();
         private readonly LobbyState _lobbyState = new LobbyState();
         private readonly SettingsState _settingsState = new SettingsState();
 
-        private KeyCode _bind = KeyCode.F8;
-        private MelonPreferences_Category _prefCat;
-        private MelonPreferences_Entry<string> _prefKey;
-        private MelonPreferences_Entry<bool> _prefVerboseDebug;
+        private KeyCode _menuKey = KeyCode.F8;
+        private MelonPreferences_Category _preferences;
+        private MelonPreferences_Entry<string> _menuKeyPreference;
+        private MelonPreferences_Entry<bool> _verboseDebugPreference;
 
         private Rect _windowRect = new Rect(40f, 40f, 820f, 690f);
         private float _measuredContentHeight = 620f;
-        private int _qualityIndex = 2;
-        private bool _o;
+        private bool _isMenuOpen;
 
         public override void OnInitializeMelon()
         {
-            _inst = this;
+            _preferences = MelonPreferences.CreateCategory("Nugzz", "Nugzz Settings");
+            _menuKeyPreference = _preferences.CreateEntry<string>("MenuKeybind", "F8", "Menu Toggle Key", "Key to open/close the Nugzz menu", false, false, null, null);
+            _verboseDebugPreference = _preferences.CreateEntry<bool>("VerboseDebugLogging", false, "Verbose Debug Logging", "Write extra Nugzz diagnostic logs", false, false, null, null);
+            DebugLogService.Instance.SetVerbose(_verboseDebugPreference.Value);
 
-            _prefCat = MelonPreferences.CreateCategory("Nugzz", "Nugzz Settings");
-            _prefKey = _prefCat.CreateEntry<string>("MenuKeybind", "F8", "Menu Toggle Key", "Key to open/close the Nugzz menu", false, false, null, null);
-            _prefVerboseDebug = _prefCat.CreateEntry<bool>("VerboseDebugLogging", false, "Verbose Debug Logging", "Write extra Nugzz diagnostic logs", false, false, null, null);
-            DebugLogService.Instance.SetVerbose(_prefVerboseDebug.Value);
+            if (!Enum.TryParse(_menuKeyPreference.Value, true, out _menuKey))
+                _menuKey = KeyCode.F8;
 
-            try { _bind = (KeyCode)Enum.Parse(typeof(KeyCode), _prefKey.Value, true); }
-            catch { _bind = KeyCode.F8; }
-
-            LoggerInstance.Msg($"  Nugzz v0.7.2 by XUnfairX | {_prefKey.Value} to open");
+            LoggerInstance.Msg($"Nugzz v{Version} by XUnfairX | {_menuKeyPreference.Value} to open");
 
             GUISystemService.Instance.Initialize();
-            TMPHybridService.Instance.Initialize();
             GameLifecycle.OnLoadComplete += HandleLoadComplete;
             GameLifecycle.OnPreSceneChange += HandlePreSceneChange;
             ApiPlayer.LocalPlayerSpawned += HandleApiPlayerSpawned;
@@ -148,31 +134,37 @@ namespace NugzzMenu
 
         public override void OnUpdate()
         {
-            if (Input.GetKeyDown(KeyCode.BackQuote)) { ToggleDevConsole(); }
-            if (Input.GetKeyDown(_bind)) { ToggleMenu(); }
-            if (Input.GetKeyDown(KeyCode.G) && !_o) { ToggleCamera(!CameraService.Instance.ThirdPersonEnabled); }
+            if (Input.GetKeyDown(KeyCode.BackQuote))
+                ToggleDevConsole();
+            if (Input.GetKeyDown(_menuKey))
+                ToggleMenu();
+            if (Input.GetKeyDown(KeyCode.G) && !_isMenuOpen)
+                ToggleCamera(!CameraService.Instance.ThirdPersonEnabled);
 
             NotificationService.Instance.Update();
             PlayerCheatService.Instance.Update();
-            CameraService.Instance.MaintainThirdPersonState(_o);
+            CameraService.Instance.MaintainThirdPersonState(_isMenuOpen);
             ItemService.Instance.ProcessPendingSpawns();
             VehicleService.Instance.Update();
             VehicleCollisionService.Instance.Update();
 
-            // Fallback cache initialization if Registry wasn't ready during scene init
+            // The registry can become available a few frames after scene initialization.
             if (!_itemCacheInitialized && ItemService.Instance.ItemCount == 0)
             {
                 ItemService.Instance.InitializeCache();
                 _itemCacheInitialized = ItemService.Instance.IsCached;
             }
 
-            if (FlyingService.Instance.Enabled) FlyingService.Instance.ApplyFlyMovement();
+            if (FlyingService.Instance.Enabled)
+                FlyingService.Instance.ApplyFlyMovement();
         }
 
         public override void OnLateUpdate()
         {
-            if (CameraService.Instance.ThirdPersonEnabled) CameraService.Instance.ApplyThirdPersonCamera(_o);
-            if (FlyingService.Instance.Enabled) FlyingService.Instance.ApplyPostMovementLock();
+            if (CameraService.Instance.ThirdPersonEnabled)
+                CameraService.Instance.ApplyThirdPersonCamera(_isMenuOpen);
+            if (FlyingService.Instance.Enabled)
+                FlyingService.Instance.ApplyPostMovementLock();
         }
 
         public override void OnFixedUpdate()
@@ -183,37 +175,33 @@ namespace NugzzMenu
         public override void OnGUI()
         {
             var gui = GUISystemService.Instance;
-            var notif = NotificationService.Instance;
-            var tmp = TMPHybridService.Instance;
+            var notifications = NotificationService.Instance;
+            var text = TMPHybridService.Instance;
 
             gui.ApplyFontToSkin();
 
-            tmp.BeginFrame();
-
-            if (notif.HasNotification)
+            if (notifications.HasNotification)
             {
-                float w = 420f;
-                GUI.Box(new Rect((Screen.width - w) / 2f, 10f, w, 30f), "", gui.BoxStyle);
-                tmp.Label(
-                    (Screen.width - w) / 2f, 10f, w, 30f,
-                    string.IsNullOrEmpty(notif.NotificationMessage) ? "" : notif.NotificationMessage,
+                const float notificationWidth = 420f;
+                float notificationX = (Screen.width - notificationWidth) / 2f;
+                GUI.Box(new Rect(notificationX, 10f, notificationWidth, 30f), "", gui.BoxStyle);
+                text.Label(
+                    notificationX, 10f, notificationWidth, 30f,
+                    notifications.NotificationMessage ?? string.Empty,
                     gui.GetColorForCategory(LabelCategory.Notif),
                     gui.GetFontSizeForCategory(LabelCategory.Notif),
                     gui.GetAlignmentForCategory(LabelCategory.Notif),
                     gui.GetStyleForCategory(LabelCategory.Notif));
             }
 
-            if (!_o)
-            {
-                tmp.EndFrame();
+            if (!_isMenuOpen)
                 return;
-            }
 
-            if (notif.HasStatus)
+            if (notifications.HasStatus)
             {
-                tmp.Label(
+                text.Label(
                     4f, 24f, _windowRect.width - 8f, 16f,
-                    string.IsNullOrEmpty(notif.StatusMessage) ? "" : notif.StatusMessage,
+                    notifications.StatusMessage ?? string.Empty,
                     gui.GetColorForCategory(LabelCategory.Status),
                     gui.GetFontSizeForCategory(LabelCategory.Status),
                     gui.GetAlignmentForCategory(LabelCategory.Status),
@@ -222,12 +210,8 @@ namespace NugzzMenu
 
             ApplyDynamicWindowSize();
             ClampWindowToScreen();
-            _windowRect = GUI.Window(98765, _windowRect, (GUI.WindowFunction)DrawWindowCallback, "", gui.WindowStyle);
-
-            tmp.EndFrame();
+            _windowRect = GUI.Window(WindowId, _windowRect, (GUI.WindowFunction)DrawWindow, string.Empty, gui.WindowStyle);
         }
-
-        private static void DrawWindowCallback(int id) { _inst?.DrawWindow(id); }
 
         private void ClampWindowToScreen()
         {
@@ -244,16 +228,30 @@ namespace NugzzMenu
         private void ApplyDynamicWindowSize()
         {
             float targetWidth;
-            switch (_tabIndex)
+            switch (_selectedTab)
             {
-                case TAB_MONEY: targetWidth = 620f; break;
-                case TAB_TIME: targetWidth = 680f; break;
-                case TAB_CHEATS: targetWidth = 700f; break;
-                case TAB_LOBBY: targetWidth = 720f; break;
-                case TAB_VEHICLES: targetWidth = 760f; break;
-                case TAB_SETTINGS: targetWidth = 760f; break;
-                case TAB_ITEMS: targetWidth = 820f; break;
-                default: targetWidth = 700f; break;
+                case MenuTab.Money:
+                    targetWidth = 620f;
+                    break;
+                case MenuTab.Time:
+                    targetWidth = 680f;
+                    break;
+                case MenuTab.Cheats:
+                    targetWidth = 700f;
+                    break;
+                case MenuTab.Lobby:
+                    targetWidth = 720f;
+                    break;
+                case MenuTab.Vehicles:
+                case MenuTab.Settings:
+                    targetWidth = 760f;
+                    break;
+                case MenuTab.Items:
+                    targetWidth = 820f;
+                    break;
+                default:
+                    targetWidth = 700f;
+                    break;
             }
 
             _windowRect.width = targetWidth;
@@ -274,7 +272,7 @@ namespace NugzzMenu
                 gui.GetFontSizeForCategory(LabelCategory.Title),
                 gui.GetAlignmentForCategory(LabelCategory.Title),
                 gui.GetStyleForCategory(LabelCategory.Title));
-            tmp.Label(contentW - 160f, 7f, 160f, 16f, $"v0.7.2 by XUnfairX  |  {_prefKey.Value}",
+            tmp.Label(contentW - 160f, 7f, 160f, 16f, $"v{Version} by XUnfairX  |  {_menuKeyPreference.Value}",
                 gui.GetColorForCategory(LabelCategory.Subtitle),
                 gui.GetFontSizeForCategory(LabelCategory.Subtitle),
                 gui.GetAlignmentForCategory(LabelCategory.Subtitle),
@@ -291,15 +289,29 @@ namespace NugzzMenu
                 GUI.BeginGroup(new Rect(drawX, y, drawW, Mathf.Max(0f, _windowRect.height - y - 8f)));
                 try
                 {
-                    switch (_tabIndex)
+                    switch (_selectedTab)
                     {
-                        case TAB_CHEATS: DrawCheatsTab(ref localY, drawW); break;
-                        case TAB_MONEY: DrawMoneyTab(ref localY, drawW); break;
-                        case TAB_TIME: DrawTimeTab(ref localY, drawW); break;
-                        case TAB_VEHICLES: DrawVehiclesTab(ref localY, drawW); break;
-                        case TAB_ITEMS: DrawItemsTab(ref localY, drawW); break;
-                        case TAB_LOBBY: DrawLobbyTab(ref localY, drawW); break;
-                        case TAB_SETTINGS: DrawSettingsTab(ref localY, drawW); break;
+                        case MenuTab.Cheats:
+                            DrawCheatsTab(ref localY, drawW);
+                            break;
+                        case MenuTab.Money:
+                            DrawMoneyTab(ref localY, drawW);
+                            break;
+                        case MenuTab.Time:
+                            DrawTimeTab(ref localY, drawW);
+                            break;
+                        case MenuTab.Vehicles:
+                            DrawVehiclesTab(ref localY, drawW);
+                            break;
+                        case MenuTab.Items:
+                            DrawItemsTab(ref localY, drawW);
+                            break;
+                        case MenuTab.Lobby:
+                            DrawLobbyTab(ref localY, drawW);
+                            break;
+                        case MenuTab.Settings:
+                            DrawSettingsTab(ref localY, drawW);
+                            break;
                     }
                 }
                 finally
@@ -323,24 +335,27 @@ namespace NugzzMenu
 
         private void DrawTabs(ref float y, float w)
         {
-            float tabW = w / Tabs.Length;
-            for (int i = 0; i < Tabs.Length; i++)
+            float tabWidth = w / TabLabels.Length;
+            for (int i = 0; i < TabLabels.Length; i++)
             {
-                if (GUIFit.Button(new Rect(i * tabW, y, tabW - 2f, 22f), Tabs[i], i == _tabIndex ? GUISystemService.Instance.TabActiveStyle : GUISystemService.Instance.TabStyle))
-                    _tabIndex = i;
+                if (GUIFit.Button(new Rect(i * tabWidth, y, tabWidth - 2f, 22f), TabLabels[i],
+                        i == (int)_selectedTab ? GUISystemService.Instance.TabActiveStyle : GUISystemService.Instance.TabStyle))
+                {
+                    _selectedTab = (MenuTab)i;
+                }
             }
             y += 26f;
         }
 
         private void ToggleMenu()
         {
-            _o = !_o;
+            _isMenuOpen = !_isMenuOpen;
             try
             {
-                Cursor.visible = _o;
-                Cursor.lockState = _o ? CursorLockMode.None : CursorLockMode.Locked;
+                Cursor.visible = _isMenuOpen;
+                Cursor.lockState = _isMenuOpen ? CursorLockMode.None : CursorLockMode.Locked;
                 var camera = PlayerCamera.Instance;
-                camera?.SetCanLook(!_o && !CameraService.Instance.ThirdPersonEnabled);
+                camera?.SetCanLook(!_isMenuOpen && !CameraService.Instance.ThirdPersonEnabled);
             }
             catch { }
         }
@@ -362,10 +377,9 @@ namespace NugzzMenu
             state.CameraHeight = CameraService.Instance.Height;
             state.CameraShoulder = CameraService.Instance.ShoulderOffset;
 
-            CheatsTabRenderer.Draw(ref y, w, GUISystemService.Instance.HeaderStyle,
-                 GUISystemService.Instance.LabelStyle, GUISystemService.Instance.OnStyle,
-                 GUISystemService.Instance.OffStyle, GUISystemService.Instance.ButtonStyle,
-                 GUISystemService.Instance.BoxStyle, state,
+            CheatsTabRenderer.Draw(ref y, w, GUISystemService.Instance.OnStyle,
+                GUISystemService.Instance.OffStyle, GUISystemService.Instance.ButtonStyle,
+                GUISystemService.Instance.BoxStyle, state,
                  TeleportAction, Heal, ClearWanted, SetSpeedMultiplier, ToggleFly, SetFlySpeed, ToggleCamera,
                  CameraService.Instance.SetDistance, CameraService.Instance.SetHeight, CameraService.Instance.SetShoulderOffset,
                  SavePosition, LoadPosition, TutorialTownTeleport);
@@ -381,23 +395,21 @@ namespace NugzzMenu
 
         private void DrawMoneyTab(ref float y, float w)
         {
-            MoneyTabRenderer.Draw(ref y, w, GUISystemService.Instance.HeaderStyle,
-                GUISystemService.Instance.LabelStyle, GUISystemService.Instance.ButtonStyle,
-                GUISystemService.Instance.BoxStyle, ML, XLb, _moneyIndex, _xpIndex,
-                i => _moneyIndex = i, i => _xpIndex = i,
+            MoneyTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
+                GUISystemService.Instance.BoxStyle, MoneyAmountLabels, ExperienceAmountLabels, _moneyIndex, _experienceIndex,
+                i => _moneyIndex = i, i => _experienceIndex = i,
                 AddCash, AddOnlineBalance, AddXP);
         }
 
-        private void AddCash() { try { EconomyService.Instance.AdjustCash(MA[_moneyIndex], true); Status($"+${MA[_moneyIndex]:N0} cash"); } catch { } }
+        private void AddCash() { try { EconomyService.Instance.AdjustCash(MoneyAmounts[_moneyIndex], true); Status($"+${MoneyAmounts[_moneyIndex]:N0} cash"); } catch { } }
 
-        private void AddOnlineBalance() { try { EconomyService.Instance.AdjustOnlineBalance(MA[_moneyIndex]); Status($"+${MA[_moneyIndex]:N0} online"); } catch { } }
+        private void AddOnlineBalance() { try { EconomyService.Instance.AdjustOnlineBalance(MoneyAmounts[_moneyIndex]); Status($"+${MoneyAmounts[_moneyIndex]:N0} online"); } catch { } }
 
-        private void AddXP() { try { GameManagerService.Instance.AddXP(XA[_xpIndex]); Status($"+{XA[_xpIndex]} XP"); } catch { } }
+        private void AddXP() { try { GameManagerService.Instance.AddXP(ExperienceAmounts[_experienceIndex]); Status($"+{ExperienceAmounts[_experienceIndex]} XP"); } catch { } }
 
         private void DrawTimeTab(ref float y, float w)
         {
-            TimeTabRenderer.Draw(ref y, w, GUISystemService.Instance.HeaderStyle,
-                GUISystemService.Instance.LabelStyle, GUISystemService.Instance.ButtonStyle,
+            TimeTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle,
                 TimeManagerService.Instance.SetTimeSpeed,
                 i => TimeManagerService.Instance.SetTimeOfDay(i),
@@ -407,29 +419,24 @@ namespace NugzzMenu
 
         private void DrawVehiclesTab(ref float y, float w)
         {
-            VehicleTabRenderer.Draw(ref y, w, GUISystemService.Instance.HeaderStyle,
-                GUISystemService.Instance.LabelStyle, GUISystemService.Instance.ButtonStyle,
+            VehicleTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle, VehicleService.Instance);
         }
 
         private void DrawItemsTab(ref float y, float w)
         {
-            _qualityIndex = ItemService.Instance.GetQualityIndex();
-            _itemsState.QualityIndex = _qualityIndex;
-            _itemsState.SpawnQuantity = _itemQuantity;
-            ItemsTabRenderer.Draw(ref y, w, GUISystemService.Instance.HeaderStyle,
-                GUISystemService.Instance.LabelStyle, GUISystemService.Instance.ButtonStyle,
+            _itemsState.QualityIndex = ItemService.Instance.GetQualityIndex();
+            ItemsTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle, ItemService.Instance, _itemsState,
-                i => _itemQuantity = i,
-                i => { _qualityIndex = i; ItemService.Instance.SetQualityIndex(i); },
+                quantity => _itemsState.SpawnQuantity = quantity,
+                ItemService.Instance.SetQualityIndex,
                 i => ItemService.Instance.SetFilter(i));
         }
 
         private void DrawLobbyTab(ref float y, float w)
         {
-            LobbyTabRenderer.Draw(ref y, w, GUISystemService.Instance.HeaderStyle,
-                GUISystemService.Instance.LabelStyle, GUISystemService.Instance.OnStyle,
-                GUISystemService.Instance.OffStyle, GUISystemService.Instance.ButtonStyle,
+            LobbyTabRenderer.Draw(ref y, w, GUISystemService.Instance.OnStyle,
+                GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle, _lobbyState,
                 LobbyService.Instance.GetPlayerList(),
                 LobbyService.Instance.TeleportPlayer,
@@ -439,7 +446,7 @@ namespace NugzzMenu
                 () => LobbyService.Instance.TeleportPlayerUp(25f),
                 () => LobbyService.Instance.SetRagdoll(true),
                 () => LobbyService.Instance.SetRagdoll(false),
-                () => { LobbyService.Instance.ClearEffects(); EffectsService.Instance.ClearAllEffects(); });
+                EffectsService.Instance.ClearAllEffects);
         }
 
         private void TeleportAction(float distance, int dir)
@@ -486,7 +493,7 @@ namespace NugzzMenu
             _cheatsState.SpeedMultiplier = PlayerCheatService.Instance.SpeedMultiplier;
         }
 
-        private void ToggleCamera(bool enabled) { CameraService.Instance.ToggleThirdPerson(enabled, _o); }
+        private void ToggleCamera(bool enabled) { CameraService.Instance.ToggleThirdPerson(enabled, _isMenuOpen); }
 
         private void SavePosition() { TeleportService.Instance.SavePosition(); }
         private void LoadPosition() { TeleportService.Instance.LoadPosition(); }
@@ -494,15 +501,15 @@ namespace NugzzMenu
 
         private void DrawSettingsTab(ref float y, float w)
         {
-             _settingsState.MenuKeybind = _prefKey.Value;
-             _settingsState.UseGameStackLogic = ItemService.Instance.UseGameStackLogic;
-             _settingsState.VerboseDebugLogging = DebugLogService.Instance.VerboseEnabled;
-             _settingsState.PlaceAnywhere = BuildingService.Instance.PlaceAnywhere;
-             SettingsTabRenderer.Draw(ref y, w, GUISystemService.Instance.HeaderStyle,
-                 GUISystemService.Instance.LabelStyle, GUISystemService.Instance.ButtonStyle,
-                 GUISystemService.Instance.BoxStyle, _settingsState, LobbyService.Instance.IsHost(),
-                 Lobby.Instance, k => SetKeybind(k), JoinLanAddress, ForceExitToMainMenu, OpenSteamInviteUI,
-                 v => ItemService.Instance.UseGameStackLogic = v, SetVerboseDebugLogging, v => BuildingService.Instance.SetPlaceAnywhere(v));
+            _settingsState.MenuKeybind = _menuKeyPreference.Value;
+            _settingsState.UseGameStackLogic = ItemService.Instance.UseGameStackLogic;
+            _settingsState.VerboseDebugLogging = DebugLogService.Instance.VerboseEnabled;
+            _settingsState.PlaceAnywhere = BuildingService.Instance.PlaceAnywhere;
+            SettingsTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
+                GUISystemService.Instance.BoxStyle, _settingsState, LobbyService.Instance.IsHost(),
+                Lobby.Instance, SetKeybind, JoinLanAddress, ForceExitToMainMenu, OpenSteamInviteUI,
+                value => ItemService.Instance.UseGameStackLogic = value, SetVerboseDebugLogging,
+                BuildingService.Instance.SetPlaceAnywhere);
         }
 
         private void OpenSteamInviteUI()
@@ -522,21 +529,25 @@ namespace NugzzMenu
 
         private void SetKeybind(string key)
         {
-            _prefKey.Value = key;
-            _bind = (KeyCode)Enum.Parse(typeof(KeyCode), key, true);
-            _prefCat.SaveToFile(false);
+            _menuKeyPreference.Value = key;
+            _menuKey = (KeyCode)Enum.Parse(typeof(KeyCode), key, true);
+            _preferences.SaveToFile(false);
             Status($"Keybind: {key}");
         }
 
         private void JoinLanAddress(string address)
         {
-            if (Lobby.Instance != null && !string.IsNullOrEmpty(address)) { Lobby.Instance.JoinAsClient(address.Trim()); Status($"Joining: {address}"); }
+            if (Lobby.Instance == null || string.IsNullOrWhiteSpace(address))
+                return;
+
+            Lobby.Instance.JoinAsClient(address.Trim());
+            Status($"Joining: {address.Trim()}");
         }
 
         private void SetVerboseDebugLogging(bool enabled)
         {
-            _prefVerboseDebug.Value = enabled;
-            _prefCat.SaveToFile(false);
+            _verboseDebugPreference.Value = enabled;
+            _preferences.SaveToFile(false);
             DebugLogService.Instance.SetVerbose(enabled);
             Status(enabled ? "Debug logs ON" : "Debug logs OFF");
         }

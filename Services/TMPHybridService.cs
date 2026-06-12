@@ -15,10 +15,6 @@ namespace NugzzMenu.Services
 
         private TMPHybridService() { }
 
-        public void Initialize() { }
-
-        public void BeginFrame() { }
-
         public void Label(
             float x,
             float y,
@@ -48,8 +44,6 @@ namespace NugzzMenu.Services
 
             GUI.Label(new Rect(x, y, w, h), string.IsNullOrEmpty(textString) ? "" : textString, guiStyle);
         }
-
-        public void EndFrame() { }
 
         public void Reset()
         {

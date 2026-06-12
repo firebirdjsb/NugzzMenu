@@ -55,19 +55,6 @@ namespace NugzzMenu.Services
             ("Misc", new[] { "" }, new string[0]),
         };
 
-        public static string[] QLb = new[] { "Trash", "Poor", "Std", "Prem", "Heaven" };
-
-        public ItemDefinition GetItemDefinition(string itemId, bool unused = false)
-        {
-            try
-            {
-                var registry = ManagerCacheService.Instance.Registry;
-                if (registry == null) return null;
-                return registry._GetItem(itemId, false);
-            }
-            catch { return null; }
-        }
-
         private ItemService() { }
 
         public static int CategoryCount => Cat?.Length ?? 14;
@@ -698,46 +685,6 @@ namespace NugzzMenu.Services
             }
         }
 
-        private void ApplyQualityToMatchingInventory(PlayerInventory playerInventory, string itemId, EQuality quality)
-        {
-            try
-            {
-                var slots = playerInventory?.GetAllInventorySlots();
-                if (slots == null)
-                    return;
-
-                string wanted = NormalizeItemKey(itemId);
-                for (int i = 0; i < slots.Count; i++)
-                {
-                    try
-                    {
-                        var instance = slots[i]?.ItemInstance;
-                        if (instance == null)
-                            continue;
-
-                        string slotId = null;
-                        try { slotId = instance.Definition?.name; } catch { }
-                        if (NormalizeItemKey(slotId) != wanted)
-                            continue;
-
-                        QualityItemInstance qi = TryGetQualityInstance(instance);
-                        if (qi != null)
-                        {
-                            try { qi.SetQuality(quality); } catch { }
-                            try { qi.Quality = quality; } catch { }
-                            try { slots[i].SetStoredItem(instance, false); } catch { }
-                            try { slots[i].ReplicateStoredInstance(); } catch { }
-                        }
-                    }
-                    catch { }
-                }
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogWarning("[Nugzz] Post-insert quality enforcement failed: " + ex.Message);
-            }
-        }
-
         private SlotSnapshot[] CaptureSlotSnapshot(PlayerInventory playerInventory)
         {
             try
@@ -1130,7 +1077,6 @@ namespace NugzzMenu.Services
         }
 
         public int GetFilteredCount() => _filteredCount;
-        public int GetItemCount() => _itemCount;
 
         public string GetItemIdAt(int idx)
         {

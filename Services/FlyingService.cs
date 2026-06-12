@@ -65,17 +65,6 @@ namespace NugzzMenu.Services
             Speed = speed;
         }
 
-        public void SetPreset(string preset)
-        {
-            switch (preset.ToLower())
-            {
-                case "slow": _speed = 8f; break;
-                case "med": _speed = 20f; break;
-                case "fast": _speed = 50f; break;
-                case "ultra": _speed = 100f; break;
-            }
-        }
-
         public void ApplyFlyMovement()
         {
             try

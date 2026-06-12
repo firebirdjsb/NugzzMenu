@@ -1,12 +1,8 @@
 using System;
-using System.Linq;
 using System.Reflection;
 using Il2CppScheduleOne.Audio;
 using Il2CppScheduleOne.Money;
-using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.UI.ATM;
-using MelonLoader;
-using UnityEngine;
 
 namespace NugzzMenu.Services
 {
@@ -53,11 +49,6 @@ namespace NugzzMenu.Services
             }
         }
 
-        public void AddLargeCash(float amount = 999999f)
-        {
-            AdjustCash(amount);
-        }
-
         private void PlayAtmDepositSound(MoneyManager moneyManager)
         {
             try
@@ -89,43 +80,5 @@ namespace NugzzMenu.Services
             try { moneyManager?.PlayCashSound(); } catch { }
         }
 
-        public float GetCashBalance()
-        {
-            try
-            {
-                var moneyManager = ManagerCacheService.Instance.MoneyManager;
-                return moneyManager?.cashBalance ?? 0f;
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogError($"[Nugzz] EconomyService GetCashBalance error: {ex.Message}");
-                return 0f;
-            }
-        }
-
-        public void PayBribe(int turfHeat)
-        {
-            try
-            {
-                var player = ManagerCacheService.Instance.LocalPlayer;
-                if (player == null) return;
-
-                float bribeAmount = 5000f + turfHeat * 2000f;
-                AdjustCash(-bribeAmount, true, true);
-
-                var crimeData = player.CrimeData;
-                if (crimeData != null)
-                {
-                    crimeData.Deescalate();
-                    crimeData.SetArrestProgress(0f);
-                }
-
-                NotificationService.Instance.Notify($"Bribed -${bribeAmount:N0}");
-            }
-            catch (Exception ex)
-            {
-                NotificationService.Instance.Status(ex.Message);
-            }
-        }
     }
 }

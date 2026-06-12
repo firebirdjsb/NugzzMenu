@@ -3,6 +3,8 @@
 NugzzMenu is a MelonLoader IL2CPP mod menu for Schedule I. It integrates with
 S1API and provides player, inventory, vehicle, world, and camera utilities.
 
+Current release: [v0.8.0](https://github.com/firebirdjsb/NugzzMenu/releases/tag/v0.8.0)
+
 ## Requirements
 
 - Schedule I
@@ -23,4 +25,3 @@ The mod DLL is written to `bin/Release/net6.0/NugzzMenu.dll`.
 ## Install
 
 Place `NugzzMenu.dll` in the game's `Mods` directory.
-

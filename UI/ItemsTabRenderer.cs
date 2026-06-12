@@ -15,24 +15,22 @@ namespace NugzzMenu.UI
 
     public static class ItemsTabRenderer
     {
-        // Local copy to avoid IL2CPP static field access issues
-        private static readonly string[] QualityLabels = new[] { "Trash", "Poor", "Std", "Prem", "Heaven" };
-        private static readonly int[] SpawnQuantities = new[] { 1, 5, 10, 25, 50, 100 };
+        private static readonly string[] QualityLabels = { "Trash", "Poor", "Std", "Prem", "Heaven" };
+        private static readonly int[] SpawnQuantities = { 1, 5, 10, 25, 50, 100 };
         private static GUIStyle _styleSource;
         private static GUIStyle _smallButton;
         private static GUIStyle _selectedButton;
         private static GUIStyle _categoryButton;
         private static GUIStyle _itemButton;
 
-        public static void Draw(ref float y, float w, GUIStyle headerStyle, GUIStyle labelStyle,
-            GUIStyle buttonStyle, GUIStyle boxStyle, ItemService service, ItemsState state,
+        public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
+            ItemService service, ItemsState state,
             Action<int> updateQuantity, Action<int> updateQuality, Action<int> updateFilter)
         {
             try
             {
                 EnsureStyles(buttonStyle);
 
-                // Spawn count selector
                 TMPHybridService.Instance.Label(4f, y, w, 18f, "SPAWN COUNT",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
@@ -40,13 +38,13 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
                 GUI.Box(new Rect(0f, y, w, 24f), "", boxStyle);
-                float num = y + 3f;
-                float num2 = (w - 28f) / 6f;
+                float rowY = y + 3f;
+                float quantityButtonWidth = (w - 28f) / SpawnQuantities.Length;
 
-                for (int i = 0; i < 6; i++)
+                for (int i = 0; i < SpawnQuantities.Length; i++)
                 {
                     string countLabel = state.SpawnQuantity == SpawnQuantities[i] ? "> " + SpawnQuantities[i] + " <" : SpawnQuantities[i].ToString();
-                    if (GUIFit.Button(new Rect(4f + (float)i * (num2 + 4f), num, num2, 18f),
+                    if (GUIFit.Button(new Rect(4f + i * (quantityButtonWidth + 4f), rowY, quantityButtonWidth, 18f),
                             countLabel,
                             state.SpawnQuantity == SpawnQuantities[i] ? _selectedButton : _smallButton))
                     {
@@ -56,7 +54,6 @@ namespace NugzzMenu.UI
                 }
                 y += 28f;
 
-                // Quality selector
                 TMPHybridService.Instance.Label(4f, y, w, 18f, "QUALITY LEVEL",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
@@ -64,24 +61,25 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
                 GUI.Box(new Rect(0f, y, w, 24f), "", boxStyle);
-                num = y + 3f;
-                float num3 = (w - 24f) / 5f;
+                rowY = y + 3f;
+                float qualityButtonWidth = (w - 24f) / QualityLabels.Length;
 
-                for (int j = 0; j < 5; j++)
+                for (int qualityIndex = 0; qualityIndex < QualityLabels.Length; qualityIndex++)
                 {
-                    string qLabel = j == state.QualityIndex ? "> " + QualityLabels[j] + " <" : QualityLabels[j];
-                    if (GUIFit.Button(new Rect(4f + (float)j * (num3 + 4f), num, num3, 18f),
-                            qLabel,
-                            j == state.QualityIndex ? _selectedButton : buttonStyle))
+                    string qualityLabel = qualityIndex == state.QualityIndex
+                        ? "> " + QualityLabels[qualityIndex] + " <"
+                        : QualityLabels[qualityIndex];
+                    if (GUIFit.Button(
+                            new Rect(4f + qualityIndex * (qualityButtonWidth + 4f), rowY, qualityButtonWidth, 18f),
+                            qualityLabel,
+                            qualityIndex == state.QualityIndex ? _selectedButton : buttonStyle))
                     {
-                        state.QualityIndex = j;
-                        try { service.SetQualityIndex(j); } catch { }
-                        updateQuality?.Invoke(j);
+                        state.QualityIndex = qualityIndex;
+                        updateQuality?.Invoke(qualityIndex);
                     }
                 }
                 y += 36f;
 
-                // Category filter - compact six-category layout
                 TMPHybridService.Instance.Label(4f, y, w, 18f, "CATEGORY",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
@@ -89,30 +87,31 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
 
-                int catCount = ItemService.CategoryCount;
-                int catsPerRow = 6;
-                int catRows = (catCount + catsPerRow - 1) / catsPerRow;
-                float catBoxH = (float)(catRows * 30 + 12);
+                int categoryCount = ItemService.CategoryCount;
+                const int categoriesPerRow = 6;
+                int categoryRows = (categoryCount + categoriesPerRow - 1) / categoriesPerRow;
+                float categoryBoxHeight = categoryRows * 30f + 12f;
 
-                GUI.Box(new Rect(0f, y, w, catBoxH), "", boxStyle);
-                num = y + 4f;
-                float catW = (w - (float)(catsPerRow + 1) * 4f) / catsPerRow;
+                GUI.Box(new Rect(0f, y, w, categoryBoxHeight), "", boxStyle);
+                rowY = y + 4f;
+                float categoryButtonWidth = (w - (categoriesPerRow + 1) * 4f) / categoriesPerRow;
 
-                for (int c = 0; c < catCount; c++)
+                for (int categoryIndex = 0; categoryIndex < categoryCount; categoryIndex++)
                 {
-                    float row = c / catsPerRow;
-                    float col = c % catsPerRow;
-                    string label = ItemService.GetCategoryLabel(c);
-                    if (GUIFit.Button(new Rect(4f + col * (catW + 4f), num + row * 30f, catW, 26f),
-                            label, _categoryButton))
+                    int row = categoryIndex / categoriesPerRow;
+                    int column = categoryIndex % categoriesPerRow;
+                    string label = ItemService.GetCategoryLabel(categoryIndex);
+                    if (GUIFit.Button(
+                            new Rect(4f + column * (categoryButtonWidth + 4f), rowY + row * 30f, categoryButtonWidth, 26f),
+                            label,
+                            _categoryButton))
                     {
-                        state.FilterIndex = c;
-                        updateFilter?.Invoke(c);
+                        state.FilterIndex = categoryIndex;
+                        updateFilter?.Invoke(categoryIndex);
                     }
                 }
-                y += catBoxH + 6f;
+                y += categoryBoxHeight + 6f;
 
-                // Search
                 TMPHybridService.Instance.Label(4f, y, w, 18f, "ITEM SPAWNER",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
@@ -121,21 +120,16 @@ namespace NugzzMenu.UI
                 y += 20f;
                 GUI.Box(new Rect(0f, y, w, 56f), "", boxStyle);
 
-                // Defensive handling for text field
-                string prevSearch = "";
-                string newSearch = "";
+                string previousSearch = string.Empty;
+                string newSearch = string.Empty;
                 try
                 {
-                    prevSearch = service.GetSearchText();
-                    if (prevSearch == null) prevSearch = "";
-                    newSearch = GUIFit.TextField(new Rect(68f, y + 4f, w - 260f, 22f), prevSearch, 50);
+                    previousSearch = service.GetSearchText() ?? string.Empty;
+                    newSearch = GUIFit.TextField(new Rect(68f, y + 4f, w - 260f, 22f), previousSearch, 50);
                 }
-                catch (Exception)
-                {
-                    // Ignore text field errors
-                }
+                catch (Exception) { }
 
-                if (newSearch != null && newSearch != prevSearch)
+                if (newSearch != null && newSearch != previousSearch)
                 {
                     service.SetSearchText(newSearch);
                     state.SearchText = newSearch;
@@ -153,7 +147,6 @@ namespace NugzzMenu.UI
                 }
                 y += 60f;
 
-                // Item grid with pagination - with aggressive error handling
                 int pageItemCount = 0;
                 int pageCount = 1;
 
@@ -175,7 +168,6 @@ namespace NugzzMenu.UI
                     UnityEngine.Debug.LogError("[Nugzz] GetPageCount failed: " + ex);
                 }
 
-                // If cache not initialized, try to initialize it
                 if (!service.IsCached)
                 {
                     try
@@ -189,7 +181,6 @@ namespace NugzzMenu.UI
                     catch (Exception ex)
                     {
                         UnityEngine.Debug.LogError("[Nugzz] Cache init failed in Draw: " + ex);
-                        // Show error in GUI instead of crashing - with defensive label
                         try
                         {
                             TMPHybridService.Instance.Label(4f, y, w, 18f, "Failed to load items - check console",
@@ -200,16 +191,15 @@ namespace NugzzMenu.UI
                             y += 20f;
                         }
                         catch (Exception) { }
-                        return; // Exit early - can't draw items without cache
+                        return;
                     }
                 }
 
-                // Get filtered count for display (cached value may be stale)
-                int filteredCount2 = 0;
-                try { filteredCount2 = service.GetFilteredCount(); }
+                int filteredCount = 0;
+                try { filteredCount = service.GetFilteredCount(); }
                 catch (Exception) { }
 
-                TMPHybridService.Instance.Label(4f, y, w, 18f, filteredCount2 + " items (page " + (service.GetPageIndex() + 1) + "/" + pageCount + ")",
+                TMPHybridService.Instance.Label(4f, y, w, 18f, filteredCount + " items (page " + (service.GetPageIndex() + 1) + "/" + pageCount + ")",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Catalog),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Catalog),
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Catalog),
@@ -250,9 +240,9 @@ namespace NugzzMenu.UI
                         string id = null;
                         string name = null;
                         try { id = service.GetCurrentPageItemIdAt(i + j); }
-                        catch (Exception ex) 
-                        { 
-                            UnityEngine.Debug.LogError("[Nugzz] GetCurrentPageItemIdAt(" + (i + j) + ") failed: " + ex.Message); 
+                        catch (Exception ex)
+                        {
+                            UnityEngine.Debug.LogError("[Nugzz] GetCurrentPageItemIdAt(" + (i + j) + ") failed: " + ex.Message);
                         }
 
                         if (id != null)
@@ -274,9 +264,7 @@ namespace NugzzMenu.UI
             }
             catch (Exception ex)
             {
-                // Log the full exception details to console
                 UnityEngine.Debug.LogError("[Nugzz] ItemsTab error: " + ex);
-                // Don't re-throw - just exit silently to prevent GUI crash
             }
         }
 

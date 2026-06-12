@@ -170,20 +170,6 @@ namespace NugzzMenu.Services
         }
 
         /// <summary>
-        /// Gets the cached vehicle codes
-        /// </summary>
-        public string[] GetVehicleCodes()
-        {
-            if (!_isCached)
-                InitializeCache();
-
-            // Return only the valid entries
-            var codes = new string[_vehicleCount];
-            Array.Copy(_vehicleCodes, codes, _vehicleCount);
-            return codes;
-        }
-
-        /// <summary>
         /// Gets the cached vehicle names
         /// </summary>
         public string[] GetVehicleNames()
@@ -326,7 +312,7 @@ namespace NugzzMenu.Services
                     return null;
                 }
 
-                // Derive spawn position from PLAYER forward only, NEVER camera look direction.
+                // Use player orientation so camera pitch cannot affect vehicle placement.
                 // Camera look can point into walls/ceiling and would spawn the vehicle on top of
                 // the player causing a physics explosion / crash.
                 var playerTransform = player.transform;
@@ -349,8 +335,8 @@ namespace NugzzMenu.Services
                     var lobbyService = LobbyService.Instance;
                     if (lobbyService.IsInLobby())
                     {
-                            // Only host spawns networked vehicles that persist for all players.
-                            spawnAsPlayerOwned = lobbyService.IsHost();
+                        // Only host spawns networked vehicles that persist for all players.
+                        spawnAsPlayerOwned = lobbyService.IsHost();
                     }
                 }
                 catch { /* fallback to local assumption */ }
@@ -434,7 +420,7 @@ namespace NugzzMenu.Services
                     {
                         UnityEngine.Debug.LogWarning($"[Nugzz] Failed to mark vehicle as drivable: {e.Message}");
                     }
-                    
+
                     UnityEngine.Debug.Log($"[Nugzz] Successfully spawned {cleanName}");
                     return cleanName;
                 }

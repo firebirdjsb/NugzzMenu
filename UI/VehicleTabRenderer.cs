@@ -9,8 +9,8 @@ namespace NugzzMenu.UI
         private static int _pendingRiskySpawnIndex = -1;
         private static float _pendingRiskySpawnTime = -100f;
 
-        public static void Draw(ref float y, float w, GUIStyle headerStyle, GUIStyle labelStyle,
-            GUIStyle buttonStyle, GUIStyle boxStyle, VehicleService service)
+        public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
+            VehicleService service)
         {
             int count = service.GetVehicleCount();
             int selected = service.GetSelectedIndex();
@@ -38,8 +38,7 @@ namespace NugzzMenu.UI
                     {
                         int vehicleIndex = i + j;
                         string buttonLabel = service.IsVehicleRiskyAt(vehicleIndex) ? "[!] " + names[vehicleIndex] : names[vehicleIndex];
-                        if (GUIFit.Button(new Rect(4f + j * (colW + 4f), rowY, colW, 18f), buttonLabel,
-                                i + j == selected ? buttonStyle : buttonStyle))
+                        if (GUIFit.Button(new Rect(4f + j * (colW + 4f), rowY, colW, 18f), buttonLabel, buttonStyle))
                         {
                             service.SetSelectedIndex(vehicleIndex);
                             selected = vehicleIndex;

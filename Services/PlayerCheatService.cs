@@ -175,11 +175,6 @@ namespace NugzzMenu.Services
             TeleportService.Instance.TeleportToTutorialTown();
         }
 
-        public void EndTutorialMode()
-        {
-            TeleportService.Instance.EndTutorialMode();
-        }
-
         private void RemoveSpeedBoost()
         {
             try

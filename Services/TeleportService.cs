@@ -1,13 +1,9 @@
 using System;
-using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.DevUtilities;
 using UnityEngine;
 
 namespace NugzzMenu.Services
 {
-    /// <summary>
-    /// Manages teleport position save/load functionality.
-    /// </summary>
     public sealed class TeleportService
     {
         private static readonly TeleportService _instance = new TeleportService();
@@ -58,16 +54,13 @@ namespace NugzzMenu.Services
             }
         }
 
-        /// <summary>
-        /// Teleports player to tutorial spawn point.
-        /// </summary>
         public void TeleportToTutorialTown()
         {
             try
             {
                 var player = ManagerCacheService.Instance.LocalPlayer;
                 var gameManager = GameManager.Instance;
-                
+
                 if (player == null || gameManager == null)
                 {
                     NotificationService.Instance.Notify("Cannot teleport: player or game manager not found");
@@ -81,7 +74,6 @@ namespace NugzzMenu.Services
                 }
                 else
                 {
-                    // Fallback: use NoHomeRespawnPoint
                     if (gameManager.NoHomeRespawnPoint != null)
                     {
                         player.transform.position = gameManager.NoHomeRespawnPoint.position;
@@ -99,28 +91,5 @@ namespace NugzzMenu.Services
             }
         }
 
-        /// <summary>
-        /// Ends tutorial mode and loads the main game.
-        /// </summary>
-        public void EndTutorialMode()
-        {
-            try
-            {
-                var gameManager = GameManager.Instance;
-                if (gameManager != null)
-                {
-                    // EndTutorial ends tutorial mode and loads main game
-                    gameManager.EndTutorial(true);
-                    NotificationService.Instance.Notify("Tutorial ended");
-                }
-            }
-            catch (Exception ex)
-            {
-                NotificationService.Instance.Error($"End tutorial failed: {ex.Message}");
-            }
-        }
-
-        public Vector3 GetSavedPosition() => _savedPosition;
-        public bool HasSavedPosition() => _hasSavedPosition;
     }
 }

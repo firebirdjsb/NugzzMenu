@@ -1,28 +1,19 @@
 using System;
 using Il2CppScheduleOne.PlayerScripts;
-using Il2CppSystem.Collections.Generic;
 using UnityEngine;
 using NugzzMenu.Services;
 
 namespace NugzzMenu.UI
 {
-    /// <summary>
-    /// State container for the Lobby tab.
-    /// </summary>
     public class LobbyState
     {
         public int SelectedPlayerIndex { get; set; } = 0;
-        public bool AdminConsent { get; set; }
-        public bool AdminOverride { get; set; }
     }
 
-    /// <summary>
-    /// Renders the Lobby tab (D5). Handles player list, admin actions, and remote effects.
-    /// </summary>
     public static class LobbyTabRenderer
     {
-        public static void Draw(ref float y, float w, GUIStyle headerStyle, GUIStyle labelStyle,
-            GUIStyle onStyle, GUIStyle offStyle, GUIStyle buttonStyle, GUIStyle boxStyle,
+        public static void Draw(ref float y, float w, GUIStyle onStyle, GUIStyle buttonStyle,
+            GUIStyle boxStyle,
             LobbyState state, Il2CppSystem.Collections.Generic.List<Player> players, Action<Player> tpToPlayer,
             string[] effectIds, string[] effectLabels, Action<string> applyLocalEffect,
             Action onTeleportUp, Action onRagdoll, Action onStand, Action onClearEffects)
@@ -34,8 +25,8 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            int num = (players?.Count > 0) ? players.Count : 0;
-            if (num == 0)
+            int playerCount = players?.Count ?? 0;
+            if (playerCount == 0)
             {
                 GUI.Box(new Rect(0f, y, w, 26f), "", boxStyle);
                 TMPHybridService.Instance.Label(6f, y + 4f, w - 12f, 18f, "No players found",
@@ -47,10 +38,10 @@ namespace NugzzMenu.UI
                 return;
             }
 
-            if (state.SelectedPlayerIndex >= num)
+            if (state.SelectedPlayerIndex >= playerCount)
                 state.SelectedPlayerIndex = 0;
 
-            int rows = Math.Min(num, 8);
+            int rows = Math.Min(playerCount, 8);
             GUI.Box(new Rect(0f, y, w, (float)(rows * 22 + 4)), "", boxStyle);
             float rowY = y + 3f;
 
@@ -80,20 +71,20 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
 
-            float num2 = (w - 18f) / 2f;
-            if (GUIFit.Button(new Rect(6f, y + 26f, num2, 18f), "Copy Code", buttonStyle))
+            float actionButtonWidth = (w - 18f) / 2f;
+            if (GUIFit.Button(new Rect(6f, y + 26f, actionButtonWidth, 18f), "Copy Code", buttonStyle))
             {
                 GUIUtility.systemCopyBuffer = selectedPlayer?.PlayerCode ?? "";
             }
-            if (GUIFit.Button(new Rect(12f + num2, y + 26f, num2, 18f), "TP Self To Player", buttonStyle))
+            if (GUIFit.Button(new Rect(12f + actionButtonWidth, y + 26f, actionButtonWidth, 18f), "TP Self To Player", buttonStyle))
             {
                 tpToPlayer?.Invoke(selectedPlayer);
             }
-            if (GUIFit.Button(new Rect(6f, y + 50f, num2, 18f), "Save Pos", buttonStyle))
+            if (GUIFit.Button(new Rect(6f, y + 50f, actionButtonWidth, 18f), "Save Pos", buttonStyle))
             {
                 TeleportService.Instance.SavePosition();
             }
-            if (GUIFit.Button(new Rect(12f + num2, y + 50f, num2, 18f), "Load Pos", buttonStyle))
+            if (GUIFit.Button(new Rect(12f + actionButtonWidth, y + 50f, actionButtonWidth, 18f), "Load Pos", buttonStyle))
             {
                 TeleportService.Instance.LoadPosition();
             }

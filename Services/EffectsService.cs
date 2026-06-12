@@ -5,9 +5,6 @@ using GameEffect = Il2CppScheduleOne.Effects.Effect;
 
 namespace NugzzMenu.Services
 {
-    /// <summary>
-    /// Service for applying local player product/drug effects.
-    /// </summary>
     public sealed class EffectsService
     {
         private static readonly EffectsService _instance = new EffectsService();
@@ -102,31 +99,6 @@ namespace NugzzMenu.Services
             catch (Exception ex)
             {
                 Debug.LogError("[Nugzz] Failed to clear effects: " + ex);
-            }
-        }
-
-        public void ClearEffect(string effectName)
-        {
-            try
-            {
-                var player = Player.Local;
-                if (player == null)
-                {
-                    Debug.LogError("[Nugzz] No local player found");
-                    return;
-                }
-
-                GameEffect effect = FindEffect(effectName);
-                if (effect == null)
-                    return;
-
-                effect.ClearFromPlayer(player);
-                NotificationService.Instance.Status("Cleared FX: " + GetLabel(effectName));
-                Debug.Log("[Nugzz] Cleared effect: " + effectName);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError("[Nugzz] Failed to clear effect " + effectName + ": " + ex);
             }
         }
 

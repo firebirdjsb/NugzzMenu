@@ -183,16 +183,6 @@ namespace NugzzMenu.Services
             }
         }
 
-        public bool ShouldBlockExternalCameraTransformChange()
-        {
-            return _enabled && _overrideActive;
-        }
-
-        public bool ShouldForceHideFirstPersonViewmodel()
-        {
-            return _enabled;
-        }
-
         public bool TryThirdPersonInteractionRaycast(float range, LayerMask layerMask, bool includeTriggers, float radius, out RaycastHit hit)
         {
             hit = default;
