@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.cursor/
+trialbuild/
+net6.0/
+Microsoft/
+System/
+*.binlog
+*.zip
+*.user
+*.suo
+*.pending
+

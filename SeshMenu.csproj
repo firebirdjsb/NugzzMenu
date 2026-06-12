@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ProjectGuid>{E009A434-AA92-4530-960E-15CDB5E65480}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>NugzzMenu</RootNamespace>
+    <AssemblyName>NugzzMenu</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <FileAlignment>512</FileAlignment>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <EnableDefaultItems>False</EnableDefaultItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Core.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\GameManagerService.cs" />
+    <Compile Include="Services\ItemService.cs" />
+    <Compile Include="Services\VehicleService.cs" />
+    <Compile Include="Services\VehicleCollisionService.cs" />
+    <Compile Include="Services\EconomyService.cs" />
+    <Compile Include="Services\TimeManagerService.cs" />
+    <Compile Include="Services\ProductService.cs" />
+    <Compile Include="Services\EffectsService.cs" />
+    <Compile Include="Services\LobbyService.cs" />
+    <Compile Include="Services\ManagerCacheService.cs" />
+    <Compile Include="Services\NotificationService.cs" />
+    <Compile Include="Services\DebugLogService.cs" />
+    <Compile Include="Services\MultiplayerGuardService.cs" />
+    <Compile Include="Services\PlayerCheatService.cs" />
+    <Compile Include="Services\TeleportService.cs" />
+    <Compile Include="Services\BuildingService.cs" />
+    <Compile Include="UI\CheatsTabRenderer.cs" />
+    <Compile Include="UI\MoneyTabRenderer.cs" />
+    <Compile Include="UI\TimeTabRenderer.cs" />
+    <Compile Include="UI\VehicleTabRenderer.cs" />
+    <Compile Include="UI\LobbyTabRenderer.cs" />
+    <Compile Include="UI\ItemsTabRenderer.cs" />
+    <Compile Include="UI\SettingsTabRenderer.cs" />
+    <Compile Include="Services\FlyingService.cs" />
+    <Compile Include="Services\GUIFit.cs" />
+    <Compile Include="Services\GUISystemService.cs" />
+    <Compile Include="Services\TMPHybridService.cs" />
+    <Compile Include="Services\CameraService.cs" />
+    <Compile Include="Services\WorldObjectService.cs" />
+    <Compile Include="Services\ThirdPersonInteractionPatch.cs" />
+    <Compile Include="Services\BuildingPatch.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\Fonts\partyvibes.otf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="Resources\Fonts\partyvibes.otf" LogicalName="NugzzMenu.Resources.Fonts.partyvibes.otf" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>net6.0\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="S1API.Il2Cpp.MelonLoader">
+      <HintPath>net6.0\S1API.Il2Cpp.MelonLoader.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>net6.0\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>net6.0\Il2CppInterop.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>net6.0\Il2Cppmscorlib.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppScheduleOne.Core">
+      <HintPath>net6.0\Il2CppScheduleOne.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="MelonLoader">
+      <HintPath>net6.0\MelonLoader.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>net6.0\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>net6.0\UnityEngine.IMGUIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>net6.0\UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppFishNet.Runtime">
+      <HintPath>net6.0\Il2CppFishNet.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>net6.0\UnityEngine.UIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>net6.0\UnityEngine.UIElementsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>net6.0\UnityEngine.TextRenderingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreTextEngineModule">
+      <HintPath>net6.0\UnityEngine.TextCoreTextEngineModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.InputSystem">
+      <HintPath>net6.0\Unity.InputSystem.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VFXModule">
+      <HintPath>net6.0\UnityEngine.VFXModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.XRModule">
+      <HintPath>net6.0\UnityEngine.XRModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VehiclesModule">
+      <HintPath>net6.0\UnityEngine.VehiclesModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>net6.0\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>net6.0\UnityEngine.UnityWebRequestModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreFontEngineModule">
+      <HintPath>net6.0\UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Mathematics">
+      <HintPath>net6.0\Unity.Mathematics.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>net6.0\UnityEngine.Physics2DModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Core.Runtime">
+      <HintPath>net6.0\Unity.RenderPipelines.Core.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>net6.0\Unity.TextMeshPro.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime">
+      <HintPath>net6.0\Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppSystem">
+      <HintPath>net6.0\Il2CppSystem.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>net6.0\UnityEngine.UI.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
