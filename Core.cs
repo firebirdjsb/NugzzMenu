@@ -17,7 +17,7 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.8.0";
+        private const string Version = "0.8.5";
         private const int WindowId = 98765;
 
         private enum MenuTab
@@ -147,6 +147,7 @@ namespace NugzzMenu
             ItemService.Instance.ProcessPendingSpawns();
             VehicleService.Instance.Update();
             VehicleCollisionService.Instance.Update();
+            BuildingService.Instance.UpdateOutsideItemPickup(_isMenuOpen);
 
             // The registry can become available a few frames after scene initialization.
             if (!_itemCacheInitialized && ItemService.Instance.ItemCount == 0)
