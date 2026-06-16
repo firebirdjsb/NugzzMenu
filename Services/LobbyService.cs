@@ -89,14 +89,81 @@ namespace NugzzMenu.Services
                 var player = Player.Local;
                 if (player == null) return;
 
-                var cc = player.GetComponent<CharacterController>();
-                if (cc != null)
-                    cc.enabled = !enabled;
-                Debug.Log($"[Nugzz] Set ragdoll: {enabled}");
+                if (enabled)
+                {
+                    TryCallNetworkedPassOut(player);
+                    ForceLocalRagdollState(player, true);
+                }
+                else
+                {
+                    TryCallNetworkedPassOutRecovery(player);
+                    ForceLocalRagdollState(player, false);
+                }
+
+                NotificationService.Instance.Status(enabled ? "Ragdolled" : "Standing");
+                Debug.Log($"[Nugzz] Set networked ragdoll: {enabled}");
             }
             catch (Exception ex)
             {
+                NotificationService.Instance.Error($"Ragdoll failed: {ex.Message}");
                 Debug.LogError($"[Nugzz] Failed to set ragdoll: {ex.Message}");
+            }
+        }
+
+        private static void TryCallNetworkedPassOut(Player player)
+        {
+            try { player.SendPassOut(); }
+            catch (Exception ex) { Debug.LogWarning("[Nugzz] SendPassOut failed: " + ex.Message); }
+
+            try { player.PassOut(); }
+            catch { }
+        }
+
+        private static void TryCallNetworkedPassOutRecovery(Player player)
+        {
+            try { player.SendPassOutRecovery(); }
+            catch (Exception ex) { Debug.LogWarning("[Nugzz] SendPassOutRecovery failed: " + ex.Message); }
+
+            try { player.PassOutRecovery(); }
+            catch { }
+        }
+
+        private static void ForceLocalRagdollState(Player player, bool enabled)
+        {
+            try { player.SetRagdolled(enabled); } catch { }
+
+            try
+            {
+                PlayerMovement movement = PlayerMovement.Instance;
+                if (movement != null)
+                {
+                    movement.IsRagdolled = enabled;
+                    if (!enabled)
+                    {
+                        movement.CanMove = true;
+                        movement.CanJump = true;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                CharacterController controller = player.CharacterController;
+                if (controller != null)
+                    controller.enabled = !enabled;
+            }
+            catch { }
+
+            if (!enabled)
+            {
+                try
+                {
+                    CharacterController controller = player.GetComponent<CharacterController>();
+                    if (controller != null)
+                        controller.enabled = true;
+                }
+                catch { }
             }
         }
     }

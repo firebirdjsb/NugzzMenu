@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Il2CppScheduleOne;
+using Il2CppScheduleOne.Property;
 using Il2CppScheduleOne.Vehicles;
 using Il2CppScheduleOne.PlayerScripts;
 using UnityEngine;
@@ -26,6 +27,9 @@ namespace NugzzMenu.Services
         // Selected vehicle index
         private int _selectedIndex = 0;
         private readonly List<VisualRepairRequest> _visualRepairs = new List<VisualRepairRequest>();
+        private bool _benzieManorAccessEnabled;
+
+        public bool BenzieManorAccessEnabled => _benzieManorAccessEnabled;
 
         private struct VisualRepairRequest
         {
@@ -101,6 +105,9 @@ namespace NugzzMenu.Services
 
         public void Update()
         {
+            if (_benzieManorAccessEnabled)
+                EnsureBenzieManorAccess(false);
+
             for (int i = _visualRepairs.Count - 1; i >= 0; i--)
             {
                 VisualRepairRequest request = _visualRepairs[i];
@@ -266,6 +273,90 @@ namespace NugzzMenu.Services
             return IsVehicleRiskyAt(_selectedIndex);
         }
 
+        public bool CanSpawnVehicles()
+        {
+            var lobbyService = LobbyService.Instance;
+            return !lobbyService.IsInLobby() || lobbyService.IsHost();
+        }
+
+        public string BlowUpRV()
+        {
+            if (!CanSpawnVehicles())
+            {
+                NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
+                return null;
+            }
+
+            try
+            {
+                RV storyRV = FindStoryRV();
+                if (storyRV != null)
+                {
+                    PrepareStoryRVForBlowUp(storyRV);
+                    storyRV.BlowUp();
+                    NotificationService.Instance.Notify("Story RV blown up.");
+                    return "Story RV blown up";
+                }
+
+                NotificationService.Instance.Warning("Story RV not found in the current scene");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError("[Nugzz] Failed to destroy RV: " + ex);
+                NotificationService.Instance.Warning("Failed to destroy RV");
+                return null;
+            }
+        }
+
+        public string FixOrRespawnRV()
+        {
+            if (!CanSpawnVehicles())
+            {
+                NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
+                return null;
+            }
+
+            try
+            {
+                RV storyRV = FindStoryRV();
+                if (storyRV != null)
+                {
+                    RepairStoryRV(storyRV);
+                    NotificationService.Instance.Notify("Story RV repaired.");
+                    return "Story RV repaired";
+                }
+
+                NotificationService.Instance.Warning("Story RV not found in the current scene");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError("[Nugzz] Failed to fix/respawn RV: " + ex);
+                NotificationService.Instance.Warning("Failed to fix/respawn RV");
+                return null;
+            }
+        }
+
+        public void SetBenzieManorAccess(bool enabled)
+        {
+            if (enabled && !CanSpawnVehicles())
+            {
+                NotificationService.Instance.Warning("Benzie Manor access is host-only in multiplayer");
+                return;
+            }
+
+            _benzieManorAccessEnabled = enabled;
+            if (!enabled)
+            {
+                NotificationService.Instance.Status("Benzie Manor access: Off");
+                return;
+            }
+
+            if (EnsureBenzieManorAccess(true))
+                NotificationService.Instance.Status("Benzie Manor access: On");
+        }
+
         public string GetSelectedVehicleRiskWarning()
         {
             if (!IsSelectedVehicleRisky())
@@ -280,6 +371,12 @@ namespace NugzzMenu.Services
         /// <returns>The name of the spawned vehicle on success, null on failure</returns>
         public string SpawnSelectedVehicle()
         {
+            if (!CanSpawnVehicles())
+            {
+                NotificationService.Instance.Warning("Vehicle spawning is host-only in multiplayer");
+                return null;
+            }
+
             if (_vehicleCount == 0)
             {
                 UnityEngine.Debug.LogError("[Nugzz] No vehicles cached");
@@ -435,6 +532,546 @@ namespace NugzzMenu.Services
                 UnityEngine.Debug.LogError("[Nugzz] Failed to spawn vehicle: " + ex.ToString());
                 return null;
             }
+        }
+
+        private bool TryGetForwardSpawn(out Vector3 spawnPosition, out Quaternion rotation)
+        {
+            spawnPosition = Vector3.zero;
+            rotation = Quaternion.identity;
+
+            var player = GetLocalPlayer();
+            if (player == null)
+            {
+                UnityEngine.Debug.LogError("[Nugzz] No local player found");
+                NotificationService.Instance.Warning("No local player found");
+                return false;
+            }
+
+            var playerTransform = player.transform;
+            Vector3 fwdXZ = new Vector3(playerTransform.forward.x, 0f, playerTransform.forward.z);
+            if (fwdXZ.sqrMagnitude < 0.001f)
+                fwdXZ = Vector3.forward;
+            else
+                fwdXZ.Normalize();
+
+            rotation = Quaternion.Euler(0f, playerTransform.eulerAngles.y, 0f);
+            spawnPosition = playerTransform.position + fwdXZ * 5f + Vector3.up * 2.5f;
+
+            if (Physics.Raycast(spawnPosition + Vector3.up * 25f, Vector3.down, out RaycastHit groundHit, 60f, ~0))
+                spawnPosition = groundHit.point + Vector3.up * 0.35f;
+            else
+                spawnPosition.y = playerTransform.position.y + 1f;
+
+            return true;
+        }
+
+        private LandVehicle FindActiveRV()
+        {
+            try
+            {
+                var vehicleManager = FindObjectOfType<VehicleManager>();
+                if (vehicleManager?.AllVehicles != null)
+                {
+                    for (int i = 0; i < vehicleManager.AllVehicles.Count; i++)
+                    {
+                        LandVehicle vehicle = vehicleManager.AllVehicles[i];
+                        if (IsRVVehicle(vehicle))
+                            return vehicle;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                var vehicles = FindObjectsOfType<LandVehicle>(true);
+                if (vehicles != null)
+                {
+                    for (int i = 0; i < vehicles.Length; i++)
+                    {
+                        LandVehicle vehicle = vehicles[i];
+                        if (IsRVVehicle(vehicle) && vehicle.gameObject != null && vehicle.gameObject.scene.IsValid())
+                            return vehicle;
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private RV FindStoryRV()
+        {
+            RV fallback = null;
+
+            try
+            {
+                var rvs = FindObjectsOfType<RV>(true);
+                RV best = FindBestStoryRV(rvs, ref fallback);
+                if (best != null)
+                    return best;
+            }
+            catch { }
+
+            try
+            {
+                var properties = Property.Properties;
+                if (properties != null)
+                {
+                    for (int i = 0; i < properties.Count; i++)
+                    {
+                        RV rv = properties[i]?.TryCast<RV>();
+                        if (rv == null)
+                            continue;
+
+                        if (fallback == null)
+                            fallback = rv;
+
+                        if (IsUsableStoryRV(rv))
+                            return rv;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                var rvs = Resources.FindObjectsOfTypeAll<RV>();
+                RV best = FindBestStoryRV(rvs, ref fallback);
+                if (best != null)
+                    return best;
+            }
+            catch { }
+
+            return fallback;
+        }
+
+        private static RV FindBestStoryRV(RV[] rvs, ref RV fallback)
+        {
+            if (rvs == null)
+                return null;
+
+            RV activeDestroyed = null;
+            RV inactiveUsable = null;
+            for (int i = 0; i < rvs.Length; i++)
+            {
+                RV rv = rvs[i];
+                if (rv == null)
+                    continue;
+
+                if (fallback == null)
+                    fallback = rv;
+
+                bool activeInScene = false;
+                try
+                {
+                    activeInScene = rv.gameObject != null &&
+                        rv.gameObject.scene.IsValid() &&
+                        rv.gameObject.activeInHierarchy;
+                }
+                catch { }
+
+                if (activeInScene && IsUsableStoryRV(rv))
+                    return rv;
+
+                if (activeInScene && activeDestroyed == null)
+                    activeDestroyed = rv;
+                else if (inactiveUsable == null && IsUsableStoryRV(rv))
+                    inactiveUsable = rv;
+            }
+
+            return inactiveUsable ?? activeDestroyed;
+        }
+
+        private static bool IsUsableStoryRV(RV rv)
+        {
+            if (rv == null)
+                return false;
+
+            try
+            {
+                if (rv.IsDestroyed)
+                    return false;
+            }
+            catch { }
+
+            try
+            {
+                return rv.gameObject != null && rv.gameObject.scene.IsValid();
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private void RepairStoryRV(RV rv)
+        {
+            if (rv == null)
+                return;
+
+            try { rv.gameObject.SetActive(true); } catch { }
+            try { rv.SetContentCulled(false); } catch { }
+            try { if (!rv.IsOwned) rv.SetOwned(); } catch { }
+
+            TrySetPrivateBool(rv, "IsDestroyed", false);
+            TrySetPrivateBool(rv, "<IsDestroyed>k__BackingField", false);
+            TrySetPrivateBool(rv, "_exploded", false);
+
+            try { rv.ModelContainer?.gameObject.SetActive(true); } catch { }
+            try { rv.FXContainer?.gameObject.SetActive(false); } catch { }
+            DisableDestroyedRVVisuals(rv);
+        }
+
+        private void PrepareStoryRVForBlowUp(RV rv)
+        {
+            if (rv == null)
+                return;
+
+            try { rv.gameObject.SetActive(true); } catch { }
+            try { rv.SetContentCulled(false); } catch { }
+            try { rv.ModelContainer?.gameObject.SetActive(true); } catch { }
+
+            TrySetPrivateBool(rv, "IsDestroyed", false);
+            TrySetPrivateBool(rv, "<IsDestroyed>k__BackingField", false);
+            TrySetPrivateBool(rv, "_exploded", false);
+
+            try
+            {
+                if (rv.FXContainer != null)
+                    SetHierarchyActive(rv.FXContainer, true);
+            }
+            catch { }
+        }
+
+        private void DisableDestroyedRVVisuals(RV rv)
+        {
+            if (rv == null)
+                return;
+
+            try
+            {
+                Transform[] children = rv.GetComponentsInChildren<Transform>(true);
+                if (children == null)
+                    return;
+
+                for (int i = 0; i < children.Length; i++)
+                {
+                    Transform child = children[i];
+                    if (child == null || child == rv.transform)
+                        continue;
+                    if (rv.ModelContainer != null &&
+                        (child == rv.ModelContainer || child.IsChildOf(rv.ModelContainer)))
+                    {
+                        continue;
+                    }
+                    if (rv.FXContainer != null &&
+                        (child == rv.FXContainer || child.IsChildOf(rv.FXContainer)))
+                    {
+                        continue;
+                    }
+
+                    string name = child.name ?? string.Empty;
+                    if (!LooksLikeDestroyedRVVisual(name))
+                        continue;
+
+                    try { child.gameObject.SetActive(false); } catch { }
+                }
+            }
+            catch { }
+        }
+
+        private static void SetHierarchyActive(Transform root, bool active)
+        {
+            if (root == null)
+                return;
+
+            try
+            {
+                Transform[] children = root.GetComponentsInChildren<Transform>(true);
+                if (children == null)
+                {
+                    root.gameObject.SetActive(active);
+                    return;
+                }
+
+                for (int i = 0; i < children.Length; i++)
+                {
+                    Transform child = children[i];
+                    if (child != null)
+                        child.gameObject.SetActive(active);
+                }
+            }
+            catch
+            {
+                try { root.gameObject.SetActive(active); } catch { }
+            }
+        }
+
+        private static bool LooksLikeDestroyedRVVisual(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            string lower = name.ToLowerInvariant();
+            return lower.Contains("destroy") ||
+                lower.Contains("explod") ||
+                lower.Contains("wreck") ||
+                lower.Contains("debris") ||
+                lower.Contains("rubble") ||
+                lower.Contains("broken") ||
+                lower.Contains("burn") ||
+                lower.Contains("fire") ||
+                lower.Contains("smoke") ||
+                lower.Contains("fx");
+        }
+
+        private static void TrySetPrivateBool(object target, string fieldName, bool value)
+        {
+            if (target == null || string.IsNullOrEmpty(fieldName))
+                return;
+
+            try
+            {
+                var property = target.GetType().GetProperty(
+                    fieldName,
+                    System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Public);
+                var setter = property?.GetSetMethod(true);
+                if (setter != null)
+                {
+                    setter.Invoke(target, new object[] { value });
+                    return;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var field = FindField(target.GetType(), fieldName);
+                if (field != null)
+                {
+                    field.SetValue(target, value);
+                    return;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var field = FindField(typeof(RV), fieldName);
+                if (field != null)
+                    field.SetValue(target, value);
+            }
+            catch { }
+        }
+
+        private static System.Reflection.FieldInfo FindField(Type type, string fieldName)
+        {
+            while (type != null)
+            {
+                var field = type.GetField(
+                    fieldName,
+                    System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Public);
+                if (field != null)
+                    return field;
+
+                type = type.BaseType;
+            }
+
+            return null;
+        }
+
+        private LandVehicle FindRVPrefab()
+        {
+            try
+            {
+                var vehicleManager = FindObjectOfType<VehicleManager>();
+                if (vehicleManager?.VehiclePrefabs != null)
+                {
+                    for (int i = 0; i < vehicleManager.VehiclePrefabs.Count; i++)
+                    {
+                        LandVehicle vehicle = vehicleManager.VehiclePrefabs[i];
+                        if (IsRVVehicle(vehicle))
+                            return vehicle;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                var vehicles = Resources.FindObjectsOfTypeAll<LandVehicle>();
+                if (vehicles != null)
+                {
+                    for (int i = 0; i < vehicles.Length; i++)
+                    {
+                        LandVehicle vehicle = vehicles[i];
+                        if (IsRVVehicle(vehicle))
+                            return vehicle;
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private bool IsRVVehicle(LandVehicle vehicle)
+        {
+            if (vehicle == null)
+                return false;
+
+            try
+            {
+                if (IsRVVehicleText(vehicle.VehicleCode))
+                    return true;
+            }
+            catch { }
+
+            try
+            {
+                if (IsRVVehicleText(vehicle.name))
+                    return true;
+            }
+            catch { }
+
+            return false;
+        }
+
+        private bool IsRVVehicleText(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+
+            string lower = value.ToLowerInvariant();
+            return lower == "rv" ||
+                lower.Contains(" rv") ||
+                lower.Contains("rv_") ||
+                lower.Contains("_rv") ||
+                lower.Contains("camper") ||
+                lower.Contains("motorhome") ||
+                lower.Contains("recreational") ||
+                lower.Contains("winnebago");
+        }
+
+        private bool EnsureBenzieManorAccess(bool showErrors)
+        {
+            if (!CanSpawnVehicles())
+            {
+                if (showErrors)
+                    NotificationService.Instance.Warning("Benzie Manor access is host-only in multiplayer");
+                _benzieManorAccessEnabled = false;
+                return false;
+            }
+
+            try
+            {
+                Manor manor = FindBenzieManor();
+                if (manor == null)
+                {
+                    if (showErrors)
+                        NotificationService.Instance.Warning("Benzie Manor not found in this scene");
+                    return false;
+                }
+
+                try { manor.gameObject.SetActive(true); } catch { }
+                try { manor.SetContentCulled(false); } catch { }
+
+                try
+                {
+                    if (!manor.IsOwned)
+                        manor.SetOwned();
+                }
+                catch { }
+
+                try
+                {
+                    if (manor.ManorState != Manor.EManorState.Rebuilt)
+                        manor.Rebuild();
+                }
+                catch { }
+
+                try
+                {
+                    if (!manor.TunnelDug)
+                        manor.DigTunnel();
+                }
+                catch { }
+
+                TryRepairManorVisuals(manor);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError("[Nugzz] Failed to unlock Benzie Manor: " + ex);
+                if (showErrors)
+                    NotificationService.Instance.Warning("Failed to unlock Benzie Manor");
+                return false;
+            }
+        }
+
+        private Manor FindBenzieManor()
+        {
+            try
+            {
+                Manor manor = FindObjectOfType<Manor>(true);
+                if (manor != null)
+                    return manor;
+            }
+            catch { }
+
+            try
+            {
+                var properties = Property.Properties;
+                if (properties != null)
+                {
+                    for (int i = 0; i < properties.Count; i++)
+                    {
+                        Manor manor = properties[i]?.TryCast<Manor>();
+                        if (manor != null)
+                            return manor;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                var manors = Resources.FindObjectsOfTypeAll<Manor>();
+                if (manors != null && manors.Length > 0)
+                    return manors[0];
+            }
+            catch { }
+
+            return null;
+        }
+
+        private void TryRepairManorVisuals(Manor manor)
+        {
+            if (manor == null)
+                return;
+
+            try { manor.OriginalContainer?.SetActive(false); } catch { }
+            try { manor.DestroyedContainer?.SetActive(false); } catch { }
+            try { manor.RebuiltContainer?.SetActive(true); } catch { }
+            try { manor.DestructionFXContainer?.SetActive(false); } catch { }
+            try { manor.TunnelBlocker?.SetActive(false); } catch { }
+            try { manor.TunnelCollapse?.SetActive(false); } catch { }
+            try { manor.ConstructionContainer?.SetActive(false); } catch { }
+
+            try
+            {
+                if (manor.DisableOnRebuild == null)
+                    return;
+
+                for (int i = 0; i < manor.DisableOnRebuild.Length; i++)
+                    manor.DisableOnRebuild[i]?.SetActive(false);
+            }
+            catch { }
         }
 
         /// <summary>

@@ -1,6 +1,9 @@
+using System;
 using HarmonyLib;
 using Il2CppScheduleOne.Building;
 using Il2CppScheduleOne.EntityFramework;
+using Il2CppScheduleOne.Growing;
+using Il2CppScheduleOne.Interaction;
 using Il2CppScheduleOne.Tiles;
 using UnityEngine;
 
@@ -26,6 +29,17 @@ namespace NugzzMenu.Services
         private static void Postfix(BuildUpdate_Grid __instance)
         {
             BuildingService.Instance.ApplyPreciseGridPosition(__instance);
+        }
+
+        private static Exception Finalizer(BuildUpdate_Grid __instance, Exception __exception)
+        {
+            if (__exception != null &&
+                BuildingService.Instance.HandleGridLateUpdateException(__instance, __exception))
+            {
+                return null;
+            }
+
+            return __exception;
         }
     }
 
@@ -57,6 +71,19 @@ namespace NugzzMenu.Services
         {
             BuildingService.Instance.CommitPreviewGrid(__result);
         }
+
+        private static Exception Finalizer(
+            BuildUpdate_Grid __instance, ref GridItem __result, Exception __exception)
+        {
+            if (__exception != null &&
+                BuildingService.Instance.HandleGridPlaceException(__instance, __exception))
+            {
+                __result = null;
+                return null;
+            }
+
+            return __exception;
+        }
     }
 
     [HarmonyPatch(typeof(BuildableItem), nameof(BuildableItem.SetCulled))]
@@ -69,13 +96,52 @@ namespace NugzzMenu.Services
         }
     }
 
+    [HarmonyPatch(typeof(GridItem), "ProcessGridData")]
+    internal static class PlaceAnywhereGridDataPatch
+    {
+        private static void Prefix(GridItem __instance)
+        {
+            BuildingService.Instance.EnsureSyntheticGridForNetworkItem(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(GridItem), "SetGridData")]
+    internal static class PlaceAnywhereSetGridDataPatch
+    {
+        private static void Prefix(Il2CppSystem.Guid gridGUID)
+        {
+            BuildingService.Instance.EnsureSyntheticGridForNetworkGuid(gridGUID);
+        }
+    }
+
     [HarmonyPatch(typeof(BuildableItem), nameof(BuildableItem.CanBePickedUp))]
     internal static class PlaceAnywhereItemPickupPatch
     {
+        private static bool Prefix(BuildableItem __instance, ref string reason, ref bool __result)
+        {
+            if (!BuildingService.Instance.CanReturnOutsideItem(__instance))
+                return true;
+
+            if (!BuildingService.Instance.TryEnsureItemInstance(__instance))
+            {
+                reason = "Item data is missing";
+                __result = false;
+                return false;
+            }
+
+            return true;
+        }
+
         private static void Postfix(BuildableItem __instance, ref string reason, ref bool __result)
         {
             if (__result || !BuildingService.Instance.CanReturnOutsideItem(__instance))
                 return;
+
+            if (!BuildingService.Instance.TryEnsureItemInstance(__instance))
+            {
+                reason = "Item data is missing";
+                return;
+            }
 
             if (!BuildingService.Instance.HasInventorySpaceFor(__instance))
             {
@@ -85,6 +151,18 @@ namespace NugzzMenu.Services
 
             reason = string.Empty;
             __result = true;
+        }
+    }
+
+    [HarmonyPatch(typeof(InteractionManager), "GetHoveredBuildableItem")]
+    internal static class PlaceAnywhereHoveredBuildableSafetyPatch
+    {
+        private static bool Prefix(
+            InteractionManager __instance, ref BuildableItem __result)
+        {
+            BuildingService.Instance.TryGetHoveredBuildableItem(
+                __instance, out __result);
+            return false;
         }
     }
 
@@ -136,10 +214,21 @@ namespace NugzzMenu.Services
     [HarmonyPatch(typeof(BuildUpdate_Surface), "IsSurfaceValidForItem")]
     internal static class PlaceAnywhereSurfaceValidationPatch
     {
-        private static bool Prefix(ref bool __result)
+        private static bool Prefix(
+            BuildUpdate_Surface __instance,
+            Surface surface,
+            Collider hitCollider,
+            ref bool __result)
         {
-            if (!BuildingService.Instance.PlaceAnywhere)
+            if (!BuildingService.Instance.CanOverridePlacementValidation)
                 return true;
+
+            if (!BuildingService.Instance.CanOverrideSurfacePlacement(
+                    __instance, surface, hitCollider))
+            {
+                __result = false;
+                return false;
+            }
 
             __result = true;
             return false;
@@ -149,9 +238,25 @@ namespace NugzzMenu.Services
     [HarmonyPatch(typeof(BuildUpdate_Surface), "LateUpdate")]
     internal static class PlaceAnywhereSurfaceLateUpdatePatch
     {
+        private static bool Prefix(BuildUpdate_Surface __instance)
+        {
+            return BuildingService.Instance.ShouldRunSurfaceLateUpdate(__instance);
+        }
+
         private static void Postfix(BuildUpdate_Surface __instance)
         {
             BuildingService.Instance.ForceSurfaceValid(__instance);
+        }
+
+        private static Exception Finalizer(BuildUpdate_Surface __instance, Exception __exception)
+        {
+            if (__exception != null &&
+                BuildingService.Instance.HandleSurfaceLateUpdateException(__instance, __exception))
+            {
+                return null;
+            }
+
+            return __exception;
         }
     }
 
@@ -161,6 +266,34 @@ namespace NugzzMenu.Services
         private static void Postfix(BuildUpdate_ProceduralGrid __instance)
         {
             BuildingService.Instance.ForceProceduralValid(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(GrowContainerMoistureDisplay), "LateUpdate")]
+    internal static class GrowContainerMoistureDisplaySafetyPatch
+    {
+        private static Exception Finalizer(
+            GrowContainerMoistureDisplay __instance, Exception __exception)
+        {
+            if (__exception == null)
+                return null;
+
+            BuildingService.Instance.HandleBrokenGrowComponent(__instance, __exception);
+            return null;
+        }
+    }
+
+    [HarmonyPatch(typeof(GrowContainerInteraction), "LateUpdate")]
+    internal static class GrowContainerInteractionSafetyPatch
+    {
+        private static Exception Finalizer(
+            GrowContainerInteraction __instance, Exception __exception)
+        {
+            if (__exception == null)
+                return null;
+
+            BuildingService.Instance.HandleBrokenGrowComponent(__instance, __exception);
+            return null;
         }
     }
 }

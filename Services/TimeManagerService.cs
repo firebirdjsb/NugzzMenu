@@ -30,6 +30,7 @@ namespace NugzzMenu.Services
             var lobbyService = LobbyService.Instance;
             if (lobbyService.IsInLobby() && !lobbyService.IsHost())
             {
+                NotificationService.Instance.Warning("Time speed is host-only");
                 Debug.LogWarning("[Nugzz] Time control is host-only in multiplayer");
                 return;
             }
@@ -45,6 +46,7 @@ namespace NugzzMenu.Services
 
                 float clampedSpeed = Mathf.Clamp(speedMultiplier, MinTimeSpeed, MaxTimeSpeed);
                 timeManager.SetTimeSpeedMultiplier(clampedSpeed);
+                NotificationService.Instance.Status($"Time speed: {clampedSpeed:0.##}x");
                 Debug.Log($"[Nugzz] Set time speed to {clampedSpeed}x");
             }
             catch (Exception ex)
@@ -52,11 +54,12 @@ namespace NugzzMenu.Services
                 Debug.LogError($"[Nugzz] Failed to set time speed: {ex.Message}");
             }
         }
-        public void SetTimeOfDay(int hour)
+        public void SetTimeOfDay(int minuteOfDay)
         {
             var lobbyService = LobbyService.Instance;
             if (lobbyService.IsInLobby() && !lobbyService.IsHost())
             {
+                NotificationService.Instance.Warning("Time of day is host-only");
                 Debug.LogWarning("[Nugzz] Time control is host-only in multiplayer");
                 return;
             }
@@ -70,10 +73,12 @@ namespace NugzzMenu.Services
                     return;
                 }
 
-                int clampedHour = Mathf.Clamp(hour, 0, 23);
-                int minuteValue = clampedHour * 60;
+                int minuteValue = Mathf.Clamp(minuteOfDay, 0, 1439);
                 timeManager.SetTimeAndSync(minuteValue);
-                Debug.Log($"[Nugzz] Set time to {clampedHour:D2}:00");
+                int hour = minuteValue / 60;
+                int minute = minuteValue % 60;
+                NotificationService.Instance.Status($"Time set: {hour:D2}:{minute:D2}");
+                Debug.Log($"[Nugzz] Set time to {hour:D2}:{minute:D2}");
             }
             catch (Exception ex)
             {

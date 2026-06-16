@@ -5,6 +5,7 @@ using Il2CppScheduleOne.Networking;
 using Il2CppScheduleOne.Persistence;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.PlayerScripts.Health;
+using Il2CppScheduleOne.UI;
 using MelonLoader;
 using S1API.Lifecycle;
 using UnityEngine;
@@ -17,7 +18,7 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.8.5";
+        private const string Version = "0.9.0";
         private const int WindowId = 98765;
 
         private enum MenuTab
@@ -50,6 +51,7 @@ namespace NugzzMenu
         private MelonPreferences_Category _preferences;
         private MelonPreferences_Entry<string> _menuKeyPreference;
         private MelonPreferences_Entry<bool> _verboseDebugPreference;
+        private HarmonyLib.Harmony _harmony;
 
         private Rect _windowRect = new Rect(40f, 40f, 820f, 690f);
         private float _measuredContentHeight = 620f;
@@ -74,8 +76,9 @@ namespace NugzzMenu
             ApiPlayer.PlayerSpawned += HandleApiPlayerSpawned;
             try
             {
-                var harmony = new HarmonyLib.Harmony("com.xunfairx.nugzzmenu.thirdperson");
-                harmony.PatchAll(typeof(Core).Assembly);
+                _harmony = new HarmonyLib.Harmony("com.xunfairx.nugzzmenu.thirdperson");
+                _harmony.PatchAll(typeof(Core).Assembly);
+                CompatibilityService.Instance.ApplyRuntimeCompatibilityFixes(_harmony);
                 LoggerInstance.Msg("[Nugzz] Harmony patches applied successfully");
             }
             catch (System.Exception ex)
@@ -88,6 +91,7 @@ namespace NugzzMenu
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
         {
             ManagerCacheService.Instance.Invalidate();
+
             if (sceneName == "Main")
             {
                 InitializeGameplayServices();
@@ -143,11 +147,13 @@ namespace NugzzMenu
 
             NotificationService.Instance.Update();
             PlayerCheatService.Instance.Update();
+            EffectsService.Instance.Update();
             CameraService.Instance.MaintainThirdPersonState(_isMenuOpen);
             ItemService.Instance.ProcessPendingSpawns();
             VehicleService.Instance.Update();
             VehicleCollisionService.Instance.Update();
             BuildingService.Instance.UpdateOutsideItemPickup(_isMenuOpen);
+            CompatibilityService.Instance.Update(_harmony);
 
             // The registry can become available a few frames after scene initialization.
             if (!_itemCacheInitialized && ItemService.Instance.ItemCount == 0)
@@ -351,14 +357,56 @@ namespace NugzzMenu
         private void ToggleMenu()
         {
             _isMenuOpen = !_isMenuOpen;
+            ApplyMenuInputState();
+        }
+
+        private void ApplyMenuInputState()
+        {
             try
             {
-                Cursor.visible = _isMenuOpen;
-                Cursor.lockState = _isMenuOpen ? CursorLockMode.None : CursorLockMode.Locked;
+                bool keepNativeCursor = !_isMenuOpen && ShouldKeepNativeCursor();
+                Cursor.visible = _isMenuOpen || keepNativeCursor;
+                Cursor.lockState = (_isMenuOpen || keepNativeCursor)
+                    ? CursorLockMode.None
+                    : CursorLockMode.Locked;
+
                 var camera = PlayerCamera.Instance;
-                camera?.SetCanLook(!_isMenuOpen && !CameraService.Instance.ThirdPersonEnabled);
+                camera?.SetCanLook(
+                    !_isMenuOpen &&
+                    !keepNativeCursor &&
+                    !CameraService.Instance.ThirdPersonEnabled);
             }
             catch { }
+        }
+
+        private static bool ShouldKeepNativeCursor()
+        {
+            try
+            {
+                if (IsPauseMenuOpen())
+                    return true;
+
+                Scene scene = SceneManager.GetActiveScene();
+                return scene.IsValid() &&
+                    string.Equals(scene.name, "Menu", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsPauseMenuOpen()
+        {
+            try
+            {
+                var pauseMenu = PauseMenu.Instance;
+                return pauseMenu != null && pauseMenu.IsPaused;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void DrawCheatsTab(ref float y, float w)
@@ -366,9 +414,9 @@ namespace NugzzMenu
             var state = _cheatsState;
             state.GodMode = PlayerCheatService.Instance.GodMode;
             state.InfiniteStamina = PlayerCheatService.Instance.InfiniteStamina;
-            state.InfiniteEnergy = PlayerCheatService.Instance.InfiniteEnergy;
             state.SpeedBoost = PlayerCheatService.Instance.SpeedBoost;
             state.SpeedMultiplier = PlayerCheatService.Instance.SpeedMultiplier;
+            state.PlayerScale = PlayerCheatService.Instance.PlayerScale;
             state.InfiniteAmmo = PlayerCheatService.Instance.InfiniteAmmo;
             state.NeverWanted = PlayerCheatService.Instance.NeverWanted;
             state.FlyEnabled = FlyingService.Instance.Enabled;
@@ -381,15 +429,16 @@ namespace NugzzMenu
             CheatsTabRenderer.Draw(ref y, w, GUISystemService.Instance.OnStyle,
                 GUISystemService.Instance.OffStyle, GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle, state,
-                 TeleportAction, Heal, ClearWanted, SetSpeedMultiplier, ToggleFly, SetFlySpeed, ToggleCamera,
+                 TeleportAction, Heal, ClearWanted, SetSpeedMultiplier, SetPlayerScale,
+                 ToggleFly, SetFlySpeed, ToggleCamera,
                  CameraService.Instance.SetDistance, CameraService.Instance.SetHeight, CameraService.Instance.SetShoulderOffset,
-                 SavePosition, LoadPosition, TutorialTownTeleport);
+                 SavePosition, LoadPosition);
 
             PlayerCheatService.Instance.GodMode = state.GodMode;
             PlayerCheatService.Instance.InfiniteStamina = state.InfiniteStamina;
-            PlayerCheatService.Instance.InfiniteEnergy = state.InfiniteEnergy;
             PlayerCheatService.Instance.SpeedBoost = state.SpeedBoost;
             PlayerCheatService.Instance.SpeedMultiplier = state.SpeedMultiplier;
+            PlayerCheatService.Instance.PlayerScale = state.PlayerScale;
             PlayerCheatService.Instance.InfiniteAmmo = state.InfiniteAmmo;
             PlayerCheatService.Instance.NeverWanted = state.NeverWanted;
         }
@@ -494,11 +543,16 @@ namespace NugzzMenu
             _cheatsState.SpeedMultiplier = PlayerCheatService.Instance.SpeedMultiplier;
         }
 
+        private void SetPlayerScale(float scale)
+        {
+            PlayerCheatService.Instance.PlayerScale = scale;
+            _cheatsState.PlayerScale = PlayerCheatService.Instance.PlayerScale;
+        }
+
         private void ToggleCamera(bool enabled) { CameraService.Instance.ToggleThirdPerson(enabled, _isMenuOpen); }
 
         private void SavePosition() { TeleportService.Instance.SavePosition(); }
         private void LoadPosition() { TeleportService.Instance.LoadPosition(); }
-        private void TutorialTownTeleport() { PlayerCheatService.Instance.TeleportToTutorialTown(); }
 
         private void DrawSettingsTab(ref float y, float w)
         {

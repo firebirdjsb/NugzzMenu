@@ -137,7 +137,16 @@ namespace NugzzMenu.Services
             get
             {
                 if (_playerInventory == null)
-                    _playerInventory = SafeFind<PlayerInventory>();
+                {
+                    try
+                    {
+                        _playerInventory = PlayerInventory.Instance;
+                    }
+                    catch { }
+
+                    if (_playerInventory == null)
+                        _playerInventory = SafeFind<PlayerInventory>();
+                }
                 return _playerInventory;
             }
         }

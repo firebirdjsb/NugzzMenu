@@ -1,6 +1,7 @@
 using System;
 using Il2CppScheduleOne.Combat;
 using Il2CppScheduleOne.DevUtilities;
+using Il2CppScheduleOne.Equipping;
 using Il2CppScheduleOne.NPCs;
 using Il2CppScheduleOne.PlayerScripts;
 using UnityEngine;
@@ -17,6 +18,8 @@ namespace NugzzMenu.Services
 
         private bool _enabled;
         private bool? _thirdPersonBodyVisible;
+        private bool _skateboardVisibilityForced;
+        private bool _vehicleVisibilityForced;
         private bool _anglesReady;
         private bool _overrideActive;
         private bool _menuOpen;
@@ -33,6 +36,7 @@ namespace NugzzMenu.Services
         public float Distance => _distance;
         public float Height => _height;
         public float ShoulderOffset => _shoulderOffset;
+        public bool ShouldUseCustomCombatHit => _enabled && _overrideActive;
 
         public void SetDistance(float value) => _distance = Mathf.Clamp(value, 1.5f, 6f);
         public void SetHeight(float value) => _height = Mathf.Clamp(value, 0.8f, 2.4f);
@@ -62,6 +66,13 @@ namespace NugzzMenu.Services
         {
             _menuOpen = menuOpen;
             if (!_enabled)
+            {
+                MaintainFirstPersonSkateboardVisibility();
+                _vehicleVisibilityForced = false;
+                return;
+            }
+
+            if (MaintainThirdPersonVehicleVisibility())
                 return;
 
             ForceThirdPersonVisuals(true);
@@ -94,6 +105,7 @@ namespace NugzzMenu.Services
                 {
                     if (_overrideActive)
                         StopCustomOverride(_menuOpen);
+                    MaintainThirdPersonVehicleVisibility();
                     return;
                 }
 
@@ -142,7 +154,8 @@ namespace NugzzMenu.Services
                         RaycastHit candidate = hits[i];
                         if (candidate.collider == null || candidate.distance < 0.6f)
                             continue;
-                        if (IsLocalPlayerCollider(candidate.collider, player))
+                        if (IsLocalPlayerCollider(candidate.collider, player) ||
+                            IsLocalViewmodelOrEquippedCollider(candidate.collider))
                             continue;
                         if (candidate.distance < nearest)
                             nearest = candidate.distance;
@@ -247,18 +260,27 @@ namespace NugzzMenu.Services
                     ? player.transform.position + Vector3.up * Mathf.Clamp(_height * 0.82f, 1.05f, 1.45f)
                     : camera.transform.position;
                 Vector3 direction = camera.transform.forward.normalized;
+                int layerMask = -5;
+                try
+                {
+                    if (CombatManager.Instance != null)
+                        layerMask = CombatManager.Instance.MeleeLayerMask;
+                }
+                catch { }
+
+                float range = thirdPerson ? 1.65f : PunchController.PUNCH_RANGE;
                 RaycastHit[] hits = Physics.SphereCastAll(
                     origin,
                     0.32f,
                     direction,
-                    thirdPerson ? 1.65f : PunchController.PUNCH_RANGE,
-                    -5,
+                    range,
+                    layerMask,
                     QueryTriggerInteraction.Ignore);
 
                 NPC nearestNpc = null;
                 PhysicsDamageable nearestPhysicsDamageable = null;
                 Player nearestPlayer = null;
-                RaycastHit nearestHit = default;
+                Vector3 hitPoint = origin + direction * range;
                 float nearestDistance = float.MaxValue;
                 for (int i = 0; i < hits.Length; i++)
                 {
@@ -267,11 +289,10 @@ namespace NugzzMenu.Services
                         continue;
 
                     NPC npc = candidate.collider.GetComponentInParent<NPC>();
+                    Player hitPlayer = candidate.collider.GetComponentInParent<Player>();
                     PhysicsDamageable physicsDamageable =
-                        npc == null ? candidate.collider.GetComponentInParent<PhysicsDamageable>() : null;
-                    Player hitPlayer =
-                        npc == null && physicsDamageable == null
-                            ? candidate.collider.GetComponentInParent<Player>()
+                        npc == null && hitPlayer == null
+                            ? candidate.collider.GetComponentInParent<PhysicsDamageable>()
                             : null;
                     if (npc == null && physicsDamageable == null && hitPlayer == null)
                         continue;
@@ -281,9 +302,12 @@ namespace NugzzMenu.Services
                     nearestNpc = npc;
                     nearestPhysicsDamageable = physicsDamageable;
                     nearestPlayer = hitPlayer;
-                    nearestHit = candidate;
+                    hitPoint = candidate.point;
                     nearestDistance = candidate.distance;
                 }
+
+                if (nearestPlayer == null && nearestNpc == null && nearestPhysicsDamageable == null)
+                    TryGetAimedPlayer(player, origin, direction, range, 0.32f, out nearestPlayer, out hitPoint);
 
                 if (nearestNpc == null && nearestPhysicsDamageable == null && nearestPlayer == null)
                     return true;
@@ -292,7 +316,7 @@ namespace NugzzMenu.Services
                 float damage = Mathf.Lerp(punchController.MinPunchDamage, punchController.MaxPunchDamage, normalizedPower);
                 float force = Mathf.Lerp(punchController.MinPunchForce, punchController.MaxPunchForce, normalizedPower);
                 var impact = new Impact(
-                    nearestHit.point,
+                    hitPoint,
                     direction,
                     force,
                     damage,
@@ -311,6 +335,181 @@ namespace NugzzMenu.Services
             }
 
             return true;
+        }
+
+        public bool ExecuteMeleeSafely(
+            Equippable_MeleeWeapon weapon, float power)
+        {
+            if (weapon == null)
+                return false;
+
+            try
+            {
+                var player = ManagerCacheService.Instance.LocalPlayer;
+                PlayerCamera playerCamera = PlayerCamera.Instance;
+                Camera camera = playerCamera?.Camera != null
+                    ? playerCamera.Camera
+                    : Camera.main;
+                if (player == null || camera == null)
+                    return false;
+
+                bool thirdPerson = _enabled && _overrideActive;
+                Vector3 origin = thirdPerson
+                    ? player.transform.position +
+                        Vector3.up * Mathf.Clamp(_height * 0.82f, 1.05f, 1.45f)
+                    : camera.transform.position;
+                Vector3 direction = camera.transform.forward.normalized;
+                float range = Mathf.Max(0.5f, weapon.Range);
+                float radius = Mathf.Max(0.05f, weapon.HitRadius);
+                int layerMask = -5;
+                try
+                {
+                    if (CombatManager.Instance != null)
+                        layerMask = CombatManager.Instance.MeleeLayerMask;
+                }
+                catch { }
+
+                RaycastHit[] hits = Physics.SphereCastAll(
+                    origin,
+                    radius,
+                    direction,
+                    thirdPerson ? range + 0.4f : range,
+                    layerMask,
+                    QueryTriggerInteraction.Ignore);
+
+                NPC nearestNpc = null;
+                PhysicsDamageable nearestPhysicsDamageable = null;
+                Player nearestPlayer = null;
+                Vector3 hitPoint = origin + direction * (thirdPerson ? range + 0.4f : range);
+                float nearestDistance = float.MaxValue;
+
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    RaycastHit candidate = hits[i];
+                    if (candidate.collider == null ||
+                        IsLocalPlayerCollider(candidate.collider, player))
+                    {
+                        continue;
+                    }
+
+                    NPC npc = candidate.collider.GetComponentInParent<NPC>();
+                    Player hitPlayer = candidate.collider.GetComponentInParent<Player>();
+                    PhysicsDamageable physicsDamageable =
+                        npc == null && hitPlayer == null
+                            ? candidate.collider.GetComponentInParent<PhysicsDamageable>()
+                            : null;
+                    if (npc == null && physicsDamageable == null && hitPlayer == null)
+                        continue;
+                    if (candidate.distance >= nearestDistance)
+                        continue;
+
+                    nearestNpc = npc;
+                    nearestPhysicsDamageable = physicsDamageable;
+                    nearestPlayer = hitPlayer;
+                    hitPoint = candidate.point;
+                    nearestDistance = candidate.distance;
+                }
+
+                if (nearestPlayer == null &&
+                    nearestNpc == null &&
+                    nearestPhysicsDamageable == null)
+                {
+                    TryGetAimedPlayer(
+                        player,
+                        origin,
+                        direction,
+                        thirdPerson ? range + 0.4f : range,
+                        radius,
+                        out nearestPlayer,
+                        out hitPoint);
+                }
+
+                if (nearestNpc == null &&
+                    nearestPhysicsDamageable == null &&
+                    nearestPlayer == null)
+                {
+                    return true;
+                }
+
+                float normalizedPower = Mathf.Clamp01(power);
+                float damage = Mathf.Lerp(
+                    weapon.MinDamage, weapon.MaxDamage, normalizedPower);
+                float force = Mathf.Lerp(
+                    weapon.MinForce, weapon.MaxForce, normalizedPower);
+                var impact = new Impact(
+                    hitPoint,
+                    direction,
+                    force,
+                    damage,
+                    weapon.ImpactType,
+                    player.NetworkObject);
+
+                if (nearestNpc != null)
+                    nearestNpc.SendImpact(impact);
+                else if (nearestPhysicsDamageable != null)
+                    nearestPhysicsDamageable.SendImpact(impact);
+                else
+                    nearestPlayer.SendImpact(impact);
+
+                try { weapon.ImpactSound?.PlayOneShot(); } catch { }
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseException(
+                    "Safe melee hit test failed", ex);
+            }
+
+            return true;
+        }
+
+        private static bool TryGetAimedPlayer(
+            Player localPlayer,
+            Vector3 origin,
+            Vector3 direction,
+            float range,
+            float radius,
+            out Player targetPlayer,
+            out Vector3 hitPoint)
+        {
+            targetPlayer = null;
+            hitPoint = origin + direction * range;
+
+            try
+            {
+                var players = Player.PlayerList;
+                if (players == null)
+                    return false;
+
+                float bestDistance = float.MaxValue;
+                float allowedMissDistance = Mathf.Max(0.75f, radius + 0.55f);
+                for (int i = 0; i < players.Count; i++)
+                {
+                    Player candidate = players[i];
+                    if (candidate == null || candidate == localPlayer)
+                        continue;
+
+                    Vector3 targetCenter = candidate.transform.position + Vector3.up * 1.05f;
+                    Vector3 toTarget = targetCenter - origin;
+                    float alongRay = Vector3.Dot(toTarget, direction);
+                    if (alongRay < 0.05f || alongRay > range + 0.65f)
+                        continue;
+
+                    Vector3 closestPoint = origin + direction * alongRay;
+                    float missDistance = Vector3.Distance(targetCenter, closestPoint);
+                    if (missDistance > allowedMissDistance || alongRay >= bestDistance)
+                        continue;
+
+                    targetPlayer = candidate;
+                    hitPoint = closestPoint;
+                    bestDistance = alongRay;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("PvP aim fallback failed: " + ex.Message);
+            }
+
+            return targetPlayer != null;
         }
 
         private static bool IsNativeExternalCamera(PlayerCamera playerCamera)
@@ -360,18 +559,213 @@ namespace NugzzMenu.Services
 
             try
             {
-                var inventory = PlayerInventory.Instance;
-                if (inventory != null)
-                    inventory.SetViewmodelVisible(!visible);
+                if (visible)
+                    SetViewmodelRenderersVisible(false);
+                else
+                    RestoreViewmodelVisuals();
             }
             catch { }
 
             try
             {
-                if (Singleton<ViewmodelAvatar>.Instance != null)
-                    Singleton<ViewmodelAvatar>.Instance.SetVisibility(!visible);
+                var viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
+                if (viewmodelAvatar != null)
+                {
+                    if (visible)
+                        SetRenderersVisible(viewmodelAvatar.gameObject, false);
+                }
             }
             catch { }
+        }
+
+        private void RestoreFirstPersonVisuals()
+        {
+            try
+            {
+                var player = ManagerCacheService.Instance.LocalPlayer;
+                if (player != null)
+                {
+                    player.SetThirdPersonMeshesVisibility(false);
+                    player.SetVisibleToLocalPlayer(true);
+                    if (player.Avatar != null)
+                        player.Avatar.SetVisible(true);
+                    _thirdPersonBodyVisible = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("First-person mesh restore failed: " + ex.Message);
+            }
+
+            RestoreViewmodelVisuals();
+        }
+
+        private void HideLocalPawnForVehicle()
+        {
+            try
+            {
+                var player = ManagerCacheService.Instance.LocalPlayer;
+                if (player != null)
+                {
+                    player.SetThirdPersonMeshesVisibility(false);
+                    player.SetVisibleToLocalPlayer(false);
+                    if (player.Avatar != null)
+                        player.Avatar.SetVisible(false);
+                    _thirdPersonBodyVisible = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("Vehicle pawn hide failed: " + ex.Message);
+            }
+
+            RestoreViewmodelVisuals();
+        }
+
+        private static void RestoreViewmodelVisuals()
+        {
+            try
+            {
+                var inventory = PlayerInventory.Instance;
+                if (inventory != null)
+                    inventory.SetViewmodelVisible(true);
+            }
+            catch { }
+
+            try
+            {
+                var viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
+                if (viewmodelAvatar != null)
+                {
+                    viewmodelAvatar.SetVisibility(true);
+                    SetRenderersVisible(viewmodelAvatar.gameObject, true);
+                    if (viewmodelAvatar.RightHandContainer != null)
+                        SetRenderersVisible(viewmodelAvatar.RightHandContainer.gameObject, true);
+                    if (viewmodelAvatar.Avatar != null)
+                        SetRenderersVisible(viewmodelAvatar.Avatar.gameObject, true);
+                }
+            }
+            catch { }
+        }
+
+        private static void SetViewmodelRenderersVisible(bool visible)
+        {
+            try
+            {
+                var viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
+                if (viewmodelAvatar != null)
+                {
+                    SetRenderersVisible(viewmodelAvatar.gameObject, visible);
+                    if (viewmodelAvatar.RightHandContainer != null)
+                        SetRenderersVisible(viewmodelAvatar.RightHandContainer.gameObject, visible);
+                    if (viewmodelAvatar.Avatar != null)
+                        SetRenderersVisible(viewmodelAvatar.Avatar.gameObject, visible);
+                }
+            }
+            catch { }
+
+        }
+
+        private static void SetRenderersVisible(GameObject root, bool visible)
+        {
+            if (root == null)
+                return;
+
+            try
+            {
+                Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+                if (renderers == null)
+                    return;
+
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    Renderer renderer = renderers[i];
+                    if (renderer != null)
+                        renderer.enabled = visible;
+                }
+            }
+            catch { }
+        }
+
+        private bool MaintainThirdPersonVehicleVisibility()
+        {
+            if (!_enabled)
+                return false;
+
+            try
+            {
+                var player = ManagerCacheService.Instance.LocalPlayer;
+                if (player == null)
+                    return false;
+
+                bool shouldHide = player.IsInVehicle;
+                if (shouldHide)
+                {
+                    if (!_vehicleVisibilityForced || _thirdPersonBodyVisible != false)
+                    {
+                        HideLocalPawnForVehicle();
+                        _vehicleVisibilityForced = true;
+                    }
+
+                    return true;
+                }
+
+                if (_vehicleVisibilityForced)
+                {
+                    ForceThirdPersonVisuals(true);
+                    _vehicleVisibilityForced = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("Vehicle visibility repair failed: " + ex.Message);
+            }
+
+            return false;
+        }
+
+        private void MaintainFirstPersonSkateboardVisibility()
+        {
+            try
+            {
+                var player = ManagerCacheService.Instance.LocalPlayer;
+                if (player == null)
+                    return;
+
+                if (!IsLocalPlayerSkating(player))
+                {
+                    if (_skateboardVisibilityForced)
+                    {
+                        _skateboardVisibilityForced = false;
+                        ForceThirdPersonVisuals(false);
+                    }
+
+                    return;
+                }
+
+                player.SetThirdPersonMeshesVisibility(true);
+                player.SetVisibleToLocalPlayer(true);
+                if (player.Avatar != null)
+                    player.Avatar.SetVisible(true);
+                _skateboardVisibilityForced = true;
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("Skateboard visibility repair failed: " + ex.Message);
+            }
+        }
+
+        private static bool IsLocalPlayerSkating(Player player)
+        {
+            try
+            {
+                return player != null &&
+                    (player.IsSkating || player.ActiveSkateboard != null);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool IsLocalPlayerCollider(Collider collider, Player player)
@@ -386,6 +780,62 @@ namespace NugzzMenu.Services
             {
                 return false;
             }
+        }
+
+        private static bool IsLocalViewmodelOrEquippedCollider(Collider collider)
+        {
+            if (collider == null)
+                return false;
+
+            try
+            {
+                var viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
+                if (viewmodelAvatar != null)
+                {
+                    if (IsChildOf(collider.transform, viewmodelAvatar.transform))
+                        return true;
+                    if (viewmodelAvatar.RightHandContainer != null &&
+                        IsChildOf(collider.transform, viewmodelAvatar.RightHandContainer))
+                        return true;
+                    if (viewmodelAvatar.Avatar != null &&
+                        IsChildOf(collider.transform, viewmodelAvatar.Avatar.transform))
+                        return true;
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (collider.GetComponentInParent<Equippable_Viewmodel>() != null)
+                    return true;
+                if (collider.GetComponentInParent<Equippable_AvatarViewmodel>() != null)
+                    return true;
+                if (collider.GetComponentInParent<Equippable_MeleeWeapon>() != null)
+                    return true;
+            }
+            catch { }
+
+            return false;
+        }
+
+        private static bool IsChildOf(Transform child, Transform parent)
+        {
+            if (child == null || parent == null)
+                return false;
+
+            try
+            {
+                Transform current = child;
+                while (current != null)
+                {
+                    if (current == parent)
+                        return true;
+                    current = current.parent;
+                }
+            }
+            catch { }
+
+            return false;
         }
 
         private static float NormalizePitch(float pitch)

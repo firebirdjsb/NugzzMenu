@@ -2,6 +2,9 @@ using System;
 using HarmonyLib;
 using Il2CppScheduleOne.AvatarFramework;
 using Il2CppScheduleOne.Combat;
+using Il2CppScheduleOne.Equipping;
+using Il2CppScheduleOne.NPCs.Behaviour;
+using Il2CppScheduleOne.NPCs.Schedules;
 using Il2CppScheduleOne.PlayerScripts;
 using UnityEngine;
 
@@ -78,14 +81,55 @@ namespace NugzzMenu.Services
     {
         private static bool Prefix(PunchController __instance, float power)
         {
+            if (!CameraService.Instance.ShouldUseCustomCombatHit)
+                return true;
+
+            return !CameraService.Instance.ExecutePunchSafely(__instance, power);
+        }
+
+        private static Exception Finalizer(PunchController __instance, float power, Exception __exception)
+        {
+            if (__exception == null)
+                return null;
+
             try
             {
-                return !CameraService.Instance.ExecutePunchSafely(__instance, power);
+                CameraService.Instance.ExecutePunchSafely(__instance, power);
+                Debug.LogWarning("[Nugzz] Suppressed vanilla punch hit exception: " + __exception.Message);
+                return null;
             }
-            catch (Exception ex)
+            catch
             {
-                Debug.LogWarning("[Nugzz] Safe punch patch error: " + ex.Message);
+                return __exception;
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(Equippable_MeleeWeapon), "ExecuteHit")]
+    internal static class SafeMeleeWeaponHitPatch
+    {
+        private static bool Prefix(Equippable_MeleeWeapon __instance, float power)
+        {
+            if (!CameraService.Instance.ShouldUseCustomCombatHit)
                 return true;
+
+            return !CameraService.Instance.ExecuteMeleeSafely(__instance, power);
+        }
+
+        private static Exception Finalizer(Equippable_MeleeWeapon __instance, float power, Exception __exception)
+        {
+            if (__exception == null)
+                return null;
+
+            try
+            {
+                CameraService.Instance.ExecuteMeleeSafely(__instance, power);
+                Debug.LogWarning("[Nugzz] Suppressed vanilla melee hit exception: " + __exception.Message);
+                return null;
+            }
+            catch
+            {
+                return __exception;
             }
         }
     }
@@ -110,6 +154,63 @@ namespace NugzzMenu.Services
             }
 
             return __exception;
+        }
+    }
+
+    [HarmonyPatch(typeof(NPCEvent_StayInBuilding), nameof(NPCEvent_StayInBuilding.PlayEnterAnimation))]
+    internal static class NPCStayInBuildingEnterAnimationSafetyPatch
+    {
+        private static Exception Finalizer(Exception __exception)
+        {
+            if (__exception == null)
+                return null;
+
+            DebugLogService.Instance.VerboseWarning(
+                "Suppressed NPC stay-in-building enter animation error: " + __exception.Message);
+            return null;
+        }
+    }
+
+    [HarmonyPatch(typeof(NPCEvent_StayInBuilding), "RpcLogic___PlayEnterAnimation_2166136261")]
+    internal static class NPCStayInBuildingEnterAnimationRpcSafetyPatch
+    {
+        private static Exception Finalizer(Exception __exception)
+        {
+            if (__exception == null)
+                return null;
+
+            DebugLogService.Instance.VerboseWarning(
+                "Suppressed NPC stay-in-building enter animation RPC error: " + __exception.Message);
+            return null;
+        }
+    }
+
+    [HarmonyPatch(typeof(NPCEvent_StayInBuilding), "_PlayEnterAnimation_b__19_1")]
+    internal static class NPCStayInBuildingEnterAnimationWaitSafetyPatch
+    {
+        private static Exception Finalizer(Exception __exception, ref bool __result)
+        {
+            if (__exception == null)
+                return null;
+
+            __result = false;
+            DebugLogService.Instance.VerboseWarning(
+                "Suppressed NPC stay-in-building wait predicate error: " + __exception.Message);
+            return null;
+        }
+    }
+
+    [HarmonyPatch(typeof(CoweringBehaviour), nameof(CoweringBehaviour.SetCowering))]
+    internal static class NPCCoweringBehaviourSafetyPatch
+    {
+        private static Exception Finalizer(Exception __exception)
+        {
+            if (__exception == null)
+                return null;
+
+            DebugLogService.Instance.VerboseWarning(
+                "Suppressed NPC cowering animation error: " + __exception.Message);
+            return null;
         }
     }
 

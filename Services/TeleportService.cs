@@ -1,5 +1,4 @@
 using System;
-using Il2CppScheduleOne.DevUtilities;
 using UnityEngine;
 
 namespace NugzzMenu.Services
@@ -51,43 +50,6 @@ namespace NugzzMenu.Services
             catch (Exception ex)
             {
                 NotificationService.Instance.Error($"Load position failed: {ex.Message}");
-            }
-        }
-
-        public void TeleportToTutorialTown()
-        {
-            try
-            {
-                var player = ManagerCacheService.Instance.LocalPlayer;
-                var gameManager = GameManager.Instance;
-
-                if (player == null || gameManager == null)
-                {
-                    NotificationService.Instance.Notify("Cannot teleport: player or game manager not found");
-                    return;
-                }
-
-                if (gameManager.SpawnPoint != null)
-                {
-                    player.transform.position = gameManager.SpawnPoint.position;
-                    NotificationService.Instance.Notify("Teleported to tutorial spawn");
-                }
-                else
-                {
-                    if (gameManager.NoHomeRespawnPoint != null)
-                    {
-                        player.transform.position = gameManager.NoHomeRespawnPoint.position;
-                        NotificationService.Instance.Notify("Teleported to no-home respawn point");
-                    }
-                    else
-                    {
-                        NotificationService.Instance.Notify("No spawn point available");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                NotificationService.Instance.Error($"Tutorial teleport failed: {ex.Message}");
             }
         }
 

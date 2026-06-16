@@ -10,10 +10,10 @@ namespace NugzzMenu.UI
     {
         public bool GodMode { get; set; }
         public bool InfiniteStamina { get; set; }
-        public bool InfiniteEnergy { get; set; }
         public bool NeverWanted { get; set; }
         public bool SpeedBoost { get; set; }
         public float SpeedMultiplier { get; set; } = 2f;
+        public float PlayerScale { get; set; } = 1f;
         public bool InfiniteAmmo { get; set; }
         public bool FlyEnabled { get; set; }
         public float FlySpeed { get; set; } = 20f;
@@ -28,9 +28,10 @@ namespace NugzzMenu.UI
         public static void Draw(ref float y, float w, GUIStyle onStyle, GUIStyle offStyle,
             GUIStyle buttonStyle, GUIStyle boxStyle,
             CheatsState state, Action<float, int> teleportAction, Action onHeal, Action onClearWanted,
-            Action<float> setSpeedMultiplier, Action<bool> toggleFly, Action<float> setFlySpeed, Action<bool> toggleCamera,
+            Action<float> setSpeedMultiplier, Action<float> setPlayerScale,
+            Action<bool> toggleFly, Action<float> setFlySpeed, Action<bool> toggleCamera,
             Action<float> setCameraDistance, Action<float> setCameraHeight, Action<float> setCameraShoulder,
-            Action onSavePos, Action onLoadPos, Action onTutorialTown)
+            Action onSavePos, Action onLoadPos)
         {
             TMPHybridService.Instance.Label(4f, y, w, 18f, "CHEATS",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
@@ -48,9 +49,6 @@ namespace NugzzMenu.UI
             DrawToggle(rowY, w, onStyle, offStyle, "Infinite Stamina", state.InfiniteStamina, value => state.InfiniteStamina = value);
             rowY += 22f;
 
-            DrawToggle(rowY, w, onStyle, offStyle, "Infinite Energy", state.InfiniteEnergy, value => state.InfiniteEnergy = value);
-            rowY += 22f;
-
             DrawToggle(rowY, w, onStyle, offStyle, "Never Wanted", state.NeverWanted, value => state.NeverWanted = value);
             rowY += 22f;
 
@@ -58,6 +56,9 @@ namespace NugzzMenu.UI
             rowY += 22f;
 
             DrawMultiplier(rowY, w, "Speed Multiplier", state.SpeedMultiplier, setSpeedMultiplier, buttonStyle);
+            rowY += 22f;
+
+            DrawMultiplier(rowY, w, "Player Size (buggy)", state.PlayerScale, setPlayerScale, buttonStyle);
             rowY += 22f;
 
             DrawToggle(rowY, w, onStyle, offStyle, "Infinite Ammo", state.InfiniteAmmo, value => state.InfiniteAmmo = value);
@@ -136,7 +137,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUI.Box(new Rect(0f, y, w, 70f), "", boxStyle);
+            GUI.Box(new Rect(0f, y, w, 46f), "", boxStyle);
             rowY = y + 3f;
             float teleportButtonWidth = (w - 16f) / 4f;
             if (GUIFit.Button(new Rect(4f, rowY, teleportButtonWidth, 20f), "Fwd 10", buttonStyle))
@@ -165,12 +166,7 @@ namespace NugzzMenu.UI
             {
                 onLoadPos?.Invoke();
             }
-            rowY += 24f;
-            if (GUIFit.Button(new Rect(4f, rowY, w - 8f, 20f), "Tutorial Town", buttonStyle))
-            {
-                onTutorialTown?.Invoke();
-            }
-            y += 78f;
+            y += 54f;
         }
 
         private static void DrawCameraOption(float y, float w, string label, float value, float step,

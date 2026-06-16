@@ -27,8 +27,10 @@ namespace NugzzMenu.UI
             {
                 int rows = (count + 2) / 3;
                 bool selectedRisky = service.IsVehicleRiskyAt(selected);
+                bool canSpawn = service.CanSpawnVehicles();
                 float warningH = selectedRisky ? 28f : 0f;
-                GUI.Box(new Rect(0f, y, w, (float)(rows * 24 + 60) + warningH), "", boxStyle);
+                float hostNoticeH = canSpawn ? 0f : 24f;
+                GUI.Box(new Rect(0f, y, w, (float)(rows * 24 + 60) + warningH + hostNoticeH), "", boxStyle);
                 float rowY = y + 3f;
 
                 for (int i = 0; i < count; i += 3)
@@ -56,8 +58,15 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
 
-                if (GUIFit.Button(new Rect(w * 0.62f, rowY, w * 0.36f - 4f, 22f), "Spawn Selected", buttonStyle))
+                string spawnLabel = canSpawn ? "Spawn Selected" : "Host Only";
+                if (GUIFit.Button(new Rect(w * 0.62f, rowY, w * 0.36f - 4f, 22f), spawnLabel, buttonStyle))
                 {
+                    if (!canSpawn)
+                    {
+                        NotificationService.Instance.Warning("Vehicle spawning is host-only in multiplayer");
+                        return;
+                    }
+
                     if (service.IsVehicleRiskyAt(selected) && !IsRiskySpawnConfirmed(selected))
                     {
                         _pendingRiskySpawnIndex = selected;
@@ -74,6 +83,17 @@ namespace NugzzMenu.UI
                     }
                 }
 
+                if (!canSpawn)
+                {
+                    rowY += 26f;
+                    TMPHybridService.Instance.Label(6f, rowY, w - 12f, 18f,
+                        "Vehicle spawning is protected: only the host can spawn synced vehicles.",
+                        GUISystemService.Instance.GetColorForCategory(LabelCategory.Error),
+                        GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                        GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                        GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+                }
+
                 if (selectedRisky)
                 {
                     rowY += 26f;
@@ -85,8 +105,68 @@ namespace NugzzMenu.UI
                         GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
                 }
 
-                y += (float)(rows * 24 + 64) + warningH;
+                y += (float)(rows * 24 + 64) + warningH + hostNoticeH;
             }
+
+            y += 8f;
+            TMPHybridService.Instance.Label(4f, y, w, 18f, "WORLD CONTROLS",
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
+            y += 20f;
+
+            bool canUseWorldControls = service.CanSpawnVehicles();
+            GUI.Box(new Rect(0f, y, w, 90f), "", boxStyle);
+            float controlY = y + 6f;
+
+            string rvBlowLabel = canUseWorldControls ? "Blow Up RV" : "Host Only";
+            if (GUIFit.Button(new Rect(6f, controlY, w * 0.48f - 8f, 22f), rvBlowLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
+                else
+                    service.BlowUpRV();
+            }
+
+            string rvFixLabel = canUseWorldControls ? "Fix / Respawn RV" : "Host Only";
+            if (GUIFit.Button(new Rect(w * 0.52f, controlY, w * 0.48f - 8f, 22f), rvFixLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
+                else
+                    service.FixOrRespawnRV();
+            }
+
+            controlY += 28f;
+            string manorState = service.BenzieManorAccessEnabled ? "On" : "Off";
+            TMPHybridService.Instance.Label(6f, controlY + 2f, w * 0.48f, 18f,
+                "Benzie Manor Access: " + manorState,
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+
+            string manorLabel = canUseWorldControls ? (service.BenzieManorAccessEnabled ? "Turn Manor Off" : "Allow Manor Use") : "Host Only";
+            if (GUIFit.Button(new Rect(w * 0.52f, controlY, w * 0.48f - 8f, 22f), manorLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("Benzie Manor access is host-only in multiplayer");
+                else
+                    service.SetBenzieManorAccess(!service.BenzieManorAccessEnabled);
+            }
+
+            controlY += 26f;
+            TMPHybridService.Instance.Label(6f, controlY, w - 12f, 18f,
+                canUseWorldControls ? "Host tools for story RV state and Benzie Manor access." : "World controls are protected: only the host can sync these changes.",
+                canUseWorldControls
+                    ? GUISystemService.Instance.GetColorForCategory(LabelCategory.Label)
+                    : GUISystemService.Instance.GetColorForCategory(LabelCategory.Error),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+
+            y += 98f;
         }
 
         private static bool IsRiskySpawnConfirmed(int selected)
