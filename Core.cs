@@ -16,7 +16,7 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.9.2";
+        private const string Version = "0.9.5";
         private const int WindowId = 98765;
         private const float HeaderHeight = 56f;
         private const float TabStripHeight = 36f;
@@ -597,7 +597,19 @@ namespace NugzzMenu
             _cheatsState.PlayerScale = PlayerCheatService.Instance.PlayerScale;
         }
 
-        private void ToggleCamera(bool enabled) { CameraService.Instance.ToggleThirdPerson(enabled, _isMenuOpen); }
+        private void ToggleCamera(bool enabled)
+        {
+            if (ManagementClipboardService.Instance.IsActive())
+            {
+                if (CameraService.Instance.ThirdPersonEnabled)
+                    CameraService.Instance.ToggleThirdPerson(false, _isMenuOpen);
+
+                Status("3rd person disabled while using clipboard");
+                return;
+            }
+
+            CameraService.Instance.ToggleThirdPerson(enabled, _isMenuOpen);
+        }
 
         private void SavePosition() { TeleportService.Instance.SavePosition(); }
         private void LoadPosition() { TeleportService.Instance.LoadPosition(); }

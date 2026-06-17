@@ -138,6 +138,8 @@ namespace NugzzMenu.Services
         {
             if (property == null || employee == null)
                 return false;
+            if (IsRVProperty(property))
+                return false;
 
             if (Safe(() => employee.Fired, false))
                 return false;
@@ -149,6 +151,8 @@ namespace NugzzMenu.Services
         {
             if (employee == null || property == null)
                 return "No worker or property selected";
+            if (IsRVProperty(property))
+                return "Workers cannot be moved to the RV";
 
             string code = GetPropertyCode(property);
             if (string.IsNullOrEmpty(code))
@@ -189,6 +193,8 @@ namespace NugzzMenu.Services
         {
             if (property == null)
                 return "No property selected";
+            if (IsRVProperty(property))
+                return "Workers cannot be hired for the RV";
 
             var manager = GetEmployeeManager();
             if (manager == null)
@@ -222,6 +228,44 @@ namespace NugzzMenu.Services
                 default:
                     return type.ToString();
             }
+        }
+
+        public bool IsRVProperty(Property property)
+        {
+            if (property == null)
+                return false;
+
+            try
+            {
+                if (property.TryCast<Il2CppScheduleOne.Property.RV>() != null)
+                    return true;
+            }
+            catch { }
+
+            string code = GetPropertyCode(property);
+            if (LooksLikeRV(code))
+                return true;
+
+            try
+            {
+                string typeName = property.GetIl2CppType()?.Name;
+                if (string.Equals(typeName, "RV", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            catch { }
+
+            return LooksLikeRV(GetPropertyLabel(property));
+        }
+
+        private static bool LooksLikeRV(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            string lower = value.Trim().ToLowerInvariant();
+            return lower == "rv" ||
+                lower == "the rv" ||
+                lower.Contains("story rv");
         }
 
         private static T Safe<T>(Func<T> getter, T fallback)

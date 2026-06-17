@@ -157,12 +157,15 @@ namespace NugzzMenu.Services
     [HarmonyPatch(typeof(InteractionManager), "GetHoveredBuildableItem")]
     internal static class PlaceAnywhereHoveredBuildableSafetyPatch
     {
-        private static bool Prefix(
-            InteractionManager __instance, ref BuildableItem __result)
+        private static Exception Finalizer(
+            InteractionManager __instance, ref BuildableItem __result, Exception __exception)
         {
+            if (__exception == null)
+                return null;
+
             BuildingService.Instance.TryGetHoveredBuildableItem(
                 __instance, out __result);
-            return false;
+            return null;
         }
     }
 

@@ -92,6 +92,15 @@ namespace NugzzMenu.UI
             Property property, PropertyWorkerService service)
         {
             DrawHeader(ref y, w, "HIRE NEW WORKER");
+
+            if (service.IsRVProperty(property))
+            {
+                GUIFit.Panel(new Rect(0f, y, w, 36f), boxStyle);
+                Label(8f, y + 8f, w - 16f, 20f, "Workers are not supported on the RV.");
+                y += 44f;
+                return;
+            }
+
             GUIFit.Panel(new Rect(0f, y, w, 36f), boxStyle);
 
             float buttonW = (w - 20f) / WorkerTypes.Length;
@@ -150,6 +159,14 @@ namespace NugzzMenu.UI
             Property property, PropertiesState state, PropertyWorkerService service)
         {
             DrawHeader(ref y, w, "MOVE EXISTING WORKER HERE");
+
+            if (service.IsRVProperty(property))
+            {
+                GUIFit.Panel(new Rect(0f, y, w, 36f), boxStyle);
+                Label(8f, y + 8f, w - 16f, 20f, "Existing workers cannot be moved to the RV.");
+                y += 44f;
+                return;
+            }
 
             int totalEmployees = service.GetEmployeeCount();
             int availableCount = CountAvailableEmployees(property, service, totalEmployees);

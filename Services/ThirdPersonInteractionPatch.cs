@@ -6,6 +6,7 @@ using Il2CppScheduleOne.Equipping;
 using Il2CppScheduleOne.NPCs.Behaviour;
 using Il2CppScheduleOne.NPCs.Schedules;
 using Il2CppScheduleOne.PlayerScripts;
+using Il2CppScheduleOne.UI.Management;
 using UnityEngine;
 
 namespace NugzzMenu.Services
@@ -17,6 +18,9 @@ namespace NugzzMenu.Services
         {
             try
             {
+                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts)
+                    return true;
+
                 if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, includeTriggers, radius, out RaycastHit patchedHit))
                     return true;
 
@@ -39,6 +43,9 @@ namespace NugzzMenu.Services
         {
             try
             {
+                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts)
+                    return true;
+
                 if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, includeTriggers, 0f, out RaycastHit patchedHit))
                     return true;
 
@@ -61,6 +68,9 @@ namespace NugzzMenu.Services
         {
             try
             {
+                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts)
+                    return true;
+
                 if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, true, radius, out RaycastHit patchedHit))
                     return true;
 
@@ -223,6 +233,9 @@ namespace NugzzMenu.Services
         {
             try
             {
+                if (ManagementClipboardService.Instance.IsActive())
+                    return true;
+
                 if (__instance == null)
                     return false;
 
@@ -260,6 +273,69 @@ namespace NugzzMenu.Services
         {
             if (CameraService.Instance.ThirdPersonEnabled)
                 CameraService.Instance.ApplyThirdPersonCameraLate();
+        }
+    }
+
+    [HarmonyPatch(typeof(ManagementWorldspaceCanvas), "Update")]
+    internal static class ManagementCanvasVanillaUpdateSafetyPatch
+    {
+        private static void Prefix(ManagementWorldspaceCanvas __instance)
+        {
+            ManagementClipboardService.Instance.PrepareCanvasForVanillaUpdate(__instance);
+        }
+
+        private static Exception Finalizer(
+            ManagementWorldspaceCanvas __instance,
+            Exception __exception)
+        {
+            return ManagementClipboardService.Instance.HandleCanvasUpdateException(
+                __instance,
+                __exception);
+        }
+    }
+
+    [HarmonyPatch(typeof(ObjectSelector), "Update")]
+    internal static class ManagementObjectSelectorFallbackPatch
+    {
+        private static bool Prefix(ObjectSelector __instance)
+        {
+            if (ManagementClipboardService.Instance.RunObjectSelectorUpdate(__instance))
+                return false;
+
+            return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(NPCSelector), "Update")]
+    internal static class ManagementNpcSelectorFallbackPatch
+    {
+        private static bool Prefix(NPCSelector __instance)
+        {
+            if (ManagementClipboardService.Instance.RunNpcSelectorUpdate(__instance))
+                return false;
+
+            return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(TransitEntitySelector), "Update")]
+    internal static class ManagementTransitSelectorFallbackPatch
+    {
+        private static bool Prefix(TransitEntitySelector __instance)
+        {
+            if (ManagementClipboardService.Instance.RunTransitSelectorUpdate(__instance))
+                return false;
+
+            return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(Equippable_Trimmers), "Update")]
+    internal static class TrimmersUpdateSafetyPatch
+    {
+        private static Exception Finalizer(Exception __exception)
+        {
+            return ManagementClipboardService.Instance.HandleTrimmersUpdateException(__exception);
         }
     }
 }

@@ -525,7 +525,8 @@ namespace NugzzMenu.Services
 
         public void UpdateOutsideItemPickup(bool menuOpen)
         {
-            if (menuOpen || Time.unscaledTime < _nextOutsidePickupTime ||
+            if (menuOpen || ManagementClipboardService.Instance.IsActive() ||
+                Time.unscaledTime < _nextOutsidePickupTime ||
                 !Input.GetMouseButtonDown(1))
             {
                 return;

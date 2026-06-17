@@ -37,6 +37,7 @@ namespace NugzzMenu.Services
         public float Height => _height;
         public float ShoulderOffset => _shoulderOffset;
         public bool ShouldUseCustomCombatHit => _enabled && _overrideActive;
+        public bool ShouldUseVanillaManagementRaycasts => ManagementClipboardService.Instance.IsActive();
 
         public void SetDistance(float value) => _distance = Mathf.Clamp(value, 1.5f, 6f);
         public void SetHeight(float value) => _height = Mathf.Clamp(value, 0.8f, 2.4f);
@@ -65,6 +66,12 @@ namespace NugzzMenu.Services
         public void MaintainThirdPersonState(bool menuOpen = false)
         {
             _menuOpen = menuOpen;
+            if (ManagementClipboardService.Instance.IsActive())
+            {
+                ReleaseCameraForManagementClipboard();
+                return;
+            }
+
             if (!_enabled)
             {
                 MaintainFirstPersonSkateboardVisibility();
@@ -96,6 +103,12 @@ namespace NugzzMenu.Services
 
             try
             {
+                if (ManagementClipboardService.Instance.IsActive())
+                {
+                    ReleaseCameraForManagementClipboard();
+                    return;
+                }
+
                 PlayerCamera playerCamera = PlayerCamera.Instance;
                 var player = ManagerCacheService.Instance.LocalPlayer;
                 if (playerCamera == null || player == null)
@@ -199,6 +212,9 @@ namespace NugzzMenu.Services
         public bool TryThirdPersonInteractionRaycast(float range, LayerMask layerMask, bool includeTriggers, float radius, out RaycastHit hit)
         {
             hit = default;
+            if (ManagementClipboardService.Instance.IsActive())
+                return false;
+
             if (!_enabled || !_overrideActive)
                 return false;
 
@@ -536,6 +552,29 @@ namespace NugzzMenu.Services
 
             _overrideActive = false;
             _anglesReady = false;
+        }
+
+        private void ReleaseCameraForManagementClipboard()
+        {
+            bool wasEnabled = _enabled;
+            _enabled = false;
+
+            try
+            {
+                if (_overrideActive)
+                    StopCustomOverride(false);
+
+                PlayerCamera playerCamera = PlayerCamera.Instance;
+                playerCamera?.SetCanLook(true);
+            }
+            catch { }
+
+            try
+            {
+                if (wasEnabled)
+                    RestoreFirstPersonVisuals();
+            }
+            catch { }
         }
 
         private void ForceThirdPersonVisuals(bool visible)
