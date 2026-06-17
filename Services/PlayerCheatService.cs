@@ -35,6 +35,8 @@ namespace NugzzMenu.Services
         private float _baseAvatarWeight = 0.5f;
         private float _baseAvatarHeight = 1f;
         private float _allowForcedDeathUntil = -1f;
+        private bool _scaleNetworkSyncDisabled;
+        private bool _vanillaVisibleScaleDisabled;
 
         public bool GodMode { get; set; }
         public bool InfiniteStamina { get; set; }
@@ -223,7 +225,7 @@ namespace NugzzMenu.Services
 
         private void BroadcastPlayerScale(Player player, bool force)
         {
-            if (player == null)
+            if (player == null || _scaleNetworkSyncDisabled)
                 return;
 
             if (!force &&
@@ -236,7 +238,13 @@ namespace NugzzMenu.Services
             try
             {
                 ApplyVanillaVisibleScale(player, _playerScale, true);
-                EnsureScaleVariable(player);
+                if (!EnsureScaleVariable(player))
+                {
+                    _scaleNetworkSyncDisabled = true;
+                    _lastBroadcastPlayerScale = _playerScale;
+                    return;
+                }
+
                 string value = _playerScale.ToString("0.###", CultureInfo.InvariantCulture);
                 try { player.SetVariableValue(NetworkScaleVariable, value, false); } catch { }
                 player.SendValue(NetworkScaleVariable, value, true);
@@ -244,13 +252,15 @@ namespace NugzzMenu.Services
             }
             catch (Exception ex)
             {
+                _scaleNetworkSyncDisabled = true;
+                _lastBroadcastPlayerScale = _playerScale;
                 DebugLogService.Instance.VerboseWarning("Player scale sync failed: " + ex.Message);
             }
         }
 
         private void ApplyVanillaVisibleScale(Player player, float scale, bool broadcast)
         {
-            if (player == null)
+            if (player == null || _vanillaVisibleScaleDisabled)
                 return;
 
             try
@@ -288,6 +298,12 @@ namespace NugzzMenu.Services
             }
             catch (Exception ex)
             {
+                if (ex is FieldAccessException ||
+                    ex.Message.IndexOf("constant field", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    _vanillaVisibleScaleDisabled = true;
+                }
+
                 DebugLogService.Instance.VerboseWarning("Vanilla visible scale sync failed: " + ex.Message);
             }
         }
@@ -314,15 +330,15 @@ namespace NugzzMenu.Services
             }
         }
 
-        private static void EnsureScaleVariable(Player player)
+        private static bool EnsureScaleVariable(Player player)
         {
             if (player == null)
-                return;
+                return false;
 
             try
             {
                 if (player.GetVariable(NetworkScaleVariable) != null)
-                    return;
+                    return true;
             }
             catch { }
 
@@ -336,10 +352,12 @@ namespace NugzzMenu.Services
                     player,
                     1f);
                 player.AddVariable(variable);
+                return true;
             }
             catch (Exception ex)
             {
                 DebugLogService.Instance.VerboseWarning("Scale variable registration failed: " + ex.Message);
+                return false;
             }
         }
 

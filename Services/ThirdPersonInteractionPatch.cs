@@ -214,6 +214,45 @@ namespace NugzzMenu.Services
         }
     }
 
+    [HarmonyPatch(typeof(EquippedItemHandler), "Update")]
+    internal static class EquippedItemHandlerUpdateSafetyPatch
+    {
+        private static bool _warned;
+
+        private static bool Prefix(EquippedItemHandler __instance)
+        {
+            try
+            {
+                if (__instance == null)
+                    return false;
+
+                if (__instance._user == null || __instance._equippableData == null)
+                    return false;
+            }
+            catch
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static Exception Finalizer(Exception __exception)
+        {
+            if (__exception == null)
+                return null;
+
+            if (!_warned)
+            {
+                _warned = true;
+                DebugLogService.Instance.VerboseWarning(
+                    "Suppressed equipped item update error: " + __exception.Message);
+            }
+
+            return null;
+        }
+    }
+
     [HarmonyPatch(typeof(PlayerCamera), "LateUpdate")]
     internal static class ThirdPersonCameraLateUpdatePatch
     {

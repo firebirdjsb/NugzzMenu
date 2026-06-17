@@ -1,24 +1,22 @@
 using System;
 using Il2CppScheduleOne;
 using Il2CppScheduleOne.DevUtilities;
-using Il2CppScheduleOne.Networking;
 using Il2CppScheduleOne.Persistence;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.PlayerScripts.Health;
 using Il2CppScheduleOne.UI;
 using MelonLoader;
-using S1API.Lifecycle;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using NugzzMenu.Services;
 using NugzzMenu.UI;
-using ApiPlayer = S1API.Entities.Player;
 
 namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.9.0";
+        private const string Version = "0.9.1";
         private const int WindowId = 98765;
 
         private enum MenuTab
@@ -52,6 +50,10 @@ namespace NugzzMenu
         private MelonPreferences_Entry<string> _menuKeyPreference;
         private MelonPreferences_Entry<bool> _verboseDebugPreference;
         private HarmonyLib.Harmony _harmony;
+        private Delegate _s1LoadCompleteHandler;
+        private Delegate _s1PreSceneChangeHandler;
+        private Delegate _s1LocalPlayerSpawnedHandler;
+        private Delegate _s1PlayerSpawnedHandler;
 
         private Rect _windowRect = new Rect(40f, 40f, 820f, 690f);
         private float _measuredContentHeight = 620f;
@@ -70,10 +72,7 @@ namespace NugzzMenu
             LoggerInstance.Msg($"Nugzz v{Version} by XUnfairX | {_menuKeyPreference.Value} to open");
 
             GUISystemService.Instance.Initialize();
-            GameLifecycle.OnLoadComplete += HandleLoadComplete;
-            GameLifecycle.OnPreSceneChange += HandlePreSceneChange;
-            ApiPlayer.LocalPlayerSpawned += HandleApiPlayerSpawned;
-            ApiPlayer.PlayerSpawned += HandleApiPlayerSpawned;
+            SubscribeS1ApiEvents();
             try
             {
                 _harmony = new HarmonyLib.Harmony("com.xunfairx.nugzzmenu.thirdperson");
@@ -100,10 +99,7 @@ namespace NugzzMenu
 
         public override void OnDeinitializeMelon()
         {
-            GameLifecycle.OnLoadComplete -= HandleLoadComplete;
-            GameLifecycle.OnPreSceneChange -= HandlePreSceneChange;
-            ApiPlayer.LocalPlayerSpawned -= HandleApiPlayerSpawned;
-            ApiPlayer.PlayerSpawned -= HandleApiPlayerSpawned;
+            UnsubscribeS1ApiEvents();
             VehicleCollisionService.Instance.Reset();
             GUIFit.ClearCache();
             TMPHybridService.Instance.Reset();
@@ -121,7 +117,7 @@ namespace NugzzMenu
             VehicleCollisionService.Instance.Reset();
         }
 
-        private void HandleApiPlayerSpawned(ApiPlayer player)
+        private void HandleApiPlayerSpawned(object player)
         {
             ManagerCacheService.Instance.Invalidate();
             VehicleCollisionService.Instance.RefreshAll();
@@ -562,24 +558,9 @@ namespace NugzzMenu
             _settingsState.PlaceAnywhere = BuildingService.Instance.PlaceAnywhere;
             SettingsTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle, _settingsState, LobbyService.Instance.IsHost(),
-                Lobby.Instance, SetKeybind, JoinLanAddress, ForceExitToMainMenu, OpenSteamInviteUI,
+                SetKeybind,
                 value => ItemService.Instance.UseGameStackLogic = value, SetVerboseDebugLogging,
                 BuildingService.Instance.SetPlaceAnywhere);
-        }
-
-        private void OpenSteamInviteUI()
-        {
-            try
-            {
-                if (Lobby.Instance != null)
-                {
-                    Lobby.Instance.TryOpenInviteInterface();
-                }
-            }
-            catch (Exception ex)
-            {
-                NotificationService.Instance.Notify("Steam invite error: " + ex.Message);
-            }
         }
 
         private void SetKeybind(string key)
@@ -590,55 +571,12 @@ namespace NugzzMenu
             Status($"Keybind: {key}");
         }
 
-        private void JoinLanAddress(string address)
-        {
-            if (Lobby.Instance == null || string.IsNullOrWhiteSpace(address))
-                return;
-
-            Lobby.Instance.JoinAsClient(address.Trim());
-            Status($"Joining: {address.Trim()}");
-        }
-
         private void SetVerboseDebugLogging(bool enabled)
         {
             _verboseDebugPreference.Value = enabled;
             _preferences.SaveToFile(false);
             DebugLogService.Instance.SetVerbose(enabled);
             Status(enabled ? "Debug logs ON" : "Debug logs OFF");
-        }
-
-        private void ForceExitToMainMenu()
-        {
-            try
-            {
-                var loadManager = LoadManager.Instance;
-                if (loadManager == null)
-                    loadManager = UnityEngine.Object.FindObjectOfType<LoadManager>();
-
-                if (loadManager != null)
-                {
-                    loadManager.ExitToMenu(null, null, false);
-                    Status("Exiting to main menu");
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogWarning("[Nugzz] LoadManager.ExitToMenu failed: " + ex.Message);
-            }
-
-            try
-            {
-                if (Lobby.Instance != null && Lobby.Instance.IsInLobby)
-                    Lobby.Instance.LeaveLobby();
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogWarning("[Nugzz] Lobby leave fallback failed: " + ex.Message);
-            }
-
-            SceneManager.LoadScene("Menu");
-            Status("Forced to menu scene");
         }
 
         private void ToggleDevConsole()
@@ -659,5 +597,125 @@ namespace NugzzMenu
         private void Notify(string msg) { NotificationService.Instance.Notify(msg); }
 
         private void Status(string msg) { NotificationService.Instance.Status(msg); }
+
+        private void SubscribeS1ApiEvents()
+        {
+            Type lifecycleType = FindLoadedType("S1API.Lifecycle.GameLifecycle");
+            _s1LoadCompleteHandler = SubscribeStaticEvent(
+                lifecycleType,
+                "OnLoadComplete",
+                nameof(HandleLoadComplete));
+            _s1PreSceneChangeHandler = SubscribeStaticEvent(
+                lifecycleType,
+                "OnPreSceneChange",
+                nameof(HandlePreSceneChange));
+
+            Type apiPlayerType = FindLoadedType("S1API.Entities.Player");
+            _s1LocalPlayerSpawnedHandler = SubscribeStaticEvent(
+                apiPlayerType,
+                "LocalPlayerSpawned",
+                nameof(HandleApiPlayerSpawned));
+            _s1PlayerSpawnedHandler = SubscribeStaticEvent(
+                apiPlayerType,
+                "PlayerSpawned",
+                nameof(HandleApiPlayerSpawned));
+
+            if (lifecycleType == null && apiPlayerType == null)
+                LoggerInstance.Warning("[Nugzz] S1API runtime events unavailable; using MelonLoader scene hooks only");
+        }
+
+        private void UnsubscribeS1ApiEvents()
+        {
+            Type lifecycleType = FindLoadedType("S1API.Lifecycle.GameLifecycle");
+            UnsubscribeStaticEvent(lifecycleType, "OnLoadComplete", _s1LoadCompleteHandler);
+            UnsubscribeStaticEvent(lifecycleType, "OnPreSceneChange", _s1PreSceneChangeHandler);
+
+            Type apiPlayerType = FindLoadedType("S1API.Entities.Player");
+            UnsubscribeStaticEvent(apiPlayerType, "LocalPlayerSpawned", _s1LocalPlayerSpawnedHandler);
+            UnsubscribeStaticEvent(apiPlayerType, "PlayerSpawned", _s1PlayerSpawnedHandler);
+
+            _s1LoadCompleteHandler = null;
+            _s1PreSceneChangeHandler = null;
+            _s1LocalPlayerSpawnedHandler = null;
+            _s1PlayerSpawnedHandler = null;
+        }
+
+        private Delegate SubscribeStaticEvent(Type declaringType, string eventName, string handlerName)
+        {
+            try
+            {
+                EventInfo eventInfo = declaringType?.GetEvent(
+                    eventName,
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (eventInfo?.EventHandlerType == null)
+                    return null;
+
+                MethodInfo handler = GetType().GetMethod(
+                    handlerName,
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (handler == null)
+                    return null;
+
+                Delegate subscription = Delegate.CreateDelegate(
+                    eventInfo.EventHandlerType,
+                    this,
+                    handler,
+                    false);
+                if (subscription == null)
+                    return null;
+
+                eventInfo.AddEventHandler(null, subscription);
+                return subscription;
+            }
+            catch (Exception ex)
+            {
+                LoggerInstance.Warning(
+                    "[Nugzz] S1API event hook failed for " + eventName + ": " + ex.Message);
+                return null;
+            }
+        }
+
+        private static void UnsubscribeStaticEvent(Type declaringType, string eventName, Delegate subscription)
+        {
+            if (subscription == null)
+                return;
+
+            try
+            {
+                EventInfo eventInfo = declaringType?.GetEvent(
+                    eventName,
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                eventInfo?.RemoveEventHandler(null, subscription);
+            }
+            catch { }
+        }
+
+        private static Type FindLoadedType(string fullName)
+        {
+            if (string.IsNullOrEmpty(fullName))
+                return null;
+
+            try
+            {
+                Type direct = Type.GetType(fullName + ", S1API", false);
+                if (direct != null)
+                    return direct;
+            }
+            catch { }
+
+            try
+            {
+                Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < assemblies.Length; i++)
+                {
+                    Type type = assemblies[i]?.GetType(fullName, false);
+                    if (type != null)
+                        return type;
+                }
+            }
+            catch { }
+
+            return null;
+        }
     }
 }

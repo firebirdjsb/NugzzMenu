@@ -1,5 +1,4 @@
 using System;
-using Il2CppScheduleOne.Networking;
 using UnityEngine;
 using NugzzMenu.Services;
 
@@ -7,7 +6,6 @@ namespace NugzzMenu.UI
 {
     public class SettingsState
     {
-        public string LanJoinInput { get; set; } = "";
         public string MenuKeybind { get; set; } = "F8";
         public bool UseGameStackLogic { get; set; }
         public bool VerboseDebugLogging { get; set; }
@@ -16,12 +14,11 @@ namespace NugzzMenu.UI
 
     public static class SettingsTabRenderer
     {
-        private static readonly string[] AddressCharacters = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "." };
         private static readonly string[] MenuKeys = { "F6", "F7", "F8", "F9", "F10", "Insert", "Home", "Delete" };
 
         public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
             SettingsState state, bool isHost,
-            Lobby lobby, Action<string> setKeybind, Action<string> joinLanAddress, Action forceExitMenu, Action openSteamInvite,
+            Action<string> setKeybind,
             Action<bool> setGameStackLogic, Action<bool> setVerboseDebugLogging, Action<bool> setPlaceAnywhere)
         {
             GUI.Box(new Rect(0f, y, w, 100f), "", boxStyle);
@@ -44,88 +41,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
 
-            if (isHost && lobby != null && lobby.IsInLobby)
-            {
-                string localIP = GetLocalIPAddress();
-                ushort port = GetGamePort();
-                TMPHybridService.Instance.Label(0f, y + 80f, w, 18f, "Host LAN: " + localIP + ":" + port,
-                    GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
-                    GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
-                    GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
-                    GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
-            }
             y = rowY + 40f;
-
-            TMPHybridService.Instance.Label(4f, y, w, 18f, "JOIN (Steam + LAN)",
-                GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
-            y += 20f;
-            GUI.Box(new Rect(0f, y, w, 170f), "", boxStyle);
-            float joinRowY = y + 4f;
-
-            if (GUIFit.Button(new Rect(6f, joinRowY, w - 12f, 18f), "Open Steam Invite UI", buttonStyle))
-            {
-                openSteamInvite?.Invoke();
-            }
-            joinRowY += 24f;
-
-            TMPHybridService.Instance.Label(6f, joinRowY, 160f, 18f, "LAN / Direct Join:",
-                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
-            joinRowY += 22f;
-
-            TMPHybridService.Instance.Label(6f, joinRowY, 80f, 18f, "Address:",
-                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
-            TMPHybridService.Instance.Label(86f, joinRowY, w - 92f, 18f,
-                string.IsNullOrEmpty(state.LanJoinInput) ? "(type below)" : state.LanJoinInput,
-                !string.IsNullOrEmpty(state.LanJoinInput) ? GUISystemService.Instance.GetColorForCategory(LabelCategory.Header) : GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
-            joinRowY += 26f;
-
-            float charW = (w - 28f) / AddressCharacters.Length;
-            for (int c = 0; c < AddressCharacters.Length; c++)
-            {
-                if (GUIFit.Button(new Rect(6f + c * (charW + 2f), joinRowY, charW, 20f), AddressCharacters[c], buttonStyle))
-                {
-                    state.LanJoinInput += AddressCharacters[c];
-                }
-            }
-            joinRowY += 26f;
-
-            if (GUIFit.Button(new Rect(6f, joinRowY, 60f, 20f), "Back", buttonStyle))
-            {
-                if (state.LanJoinInput.Length > 0)
-                    state.LanJoinInput = state.LanJoinInput.Substring(0, state.LanJoinInput.Length - 1);
-            }
-            if (GUIFit.Button(new Rect(70f, joinRowY, 60f, 20f), "Clear", buttonStyle))
-            {
-                state.LanJoinInput = "";
-            }
-
-            if (GUIFit.Button(new Rect(134f, joinRowY, w - 140f, 20f), "Join LAN", buttonStyle))
-            {
-                if (!string.IsNullOrEmpty(state.LanJoinInput))
-                {
-                    joinLanAddress?.Invoke(state.LanJoinInput.Trim());
-                }
-            }
-
-            joinRowY += 28f;
-            if (GUIFit.Button(new Rect(6f, joinRowY, w - 12f, 22f), "Force Exit to Main Menu", buttonStyle))
-            {
-                forceExitMenu?.Invoke();
-            }
-
-            y = joinRowY + 38f;
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "KEYBIND",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
@@ -220,42 +136,6 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
             y += 18f;
-        }
-
-        private static string GetLocalIPAddress()
-        {
-            try
-            {
-                var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
-                foreach (var ip in host.AddressList)
-                {
-                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
-                        !System.Net.IPAddress.IsLoopback(ip))
-                    {
-                        return ip.ToString();
-                    }
-                }
-            }
-            catch { }
-            return "127.0.0.1";
-        }
-
-        private static ushort GetGamePort()
-        {
-            try
-            {
-                var transportType = System.Type.GetType("FishySteamworks.FishySteamworks");
-                if (transportType != null)
-                {
-                    var portField = transportType.GetField("_port",
-                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic |
-                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
-                    if (portField != null)
-                        return (ushort)(int)portField.GetValue(null);
-                }
-            }
-            catch { }
-            return 27015;
         }
     }
 }
