@@ -40,7 +40,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUI.Box(new Rect(0f, y, w, 184f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 184f), boxStyle);
             float rowY = y + 3f;
 
             DrawToggle(rowY, w, onStyle, offStyle, "God Mode", state.GodMode, value => state.GodMode = value);
@@ -76,7 +76,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUI.Box(new Rect(0f, y, w, 48f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 48f), boxStyle);
             rowY = y + 3f;
             TMPHybridService.Instance.Label(6f, rowY, w * 0.6f, 20f, "Fly (WASD+Space/Ctrl)",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
@@ -118,7 +118,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
             float cameraBoxHeight = state.ThirdPerson ? 100f : 28f;
-            GUI.Box(new Rect(0f, y, w, cameraBoxHeight), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, cameraBoxHeight), boxStyle);
             if (GUIFit.Button(new Rect(4f, y + 3f, w - 8f, 22f), state.ThirdPerson ? "3rd Person: ON (G)" : "1st Person - press G or click", state.ThirdPerson ? onStyle : buttonStyle))
             {
                 toggleCamera?.Invoke(!state.ThirdPerson);
@@ -137,7 +137,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUI.Box(new Rect(0f, y, w, 46f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 46f), boxStyle);
             rowY = y + 3f;
             float teleportButtonWidth = (w - 16f) / 4f;
             if (GUIFit.Button(new Rect(4f, rowY, teleportButtonWidth, 20f), "Fwd 10", buttonStyle))

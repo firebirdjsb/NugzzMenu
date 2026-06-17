@@ -37,7 +37,7 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
-                GUI.Box(new Rect(0f, y, w, 24f), "", boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, 24f), boxStyle);
                 float rowY = y + 3f;
                 float quantityButtonWidth = (w - 28f) / SpawnQuantities.Length;
 
@@ -60,7 +60,7 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
-                GUI.Box(new Rect(0f, y, w, 24f), "", boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, 24f), boxStyle);
                 rowY = y + 3f;
                 float qualityButtonWidth = (w - 24f) / QualityLabels.Length;
 
@@ -92,7 +92,7 @@ namespace NugzzMenu.UI
                 int categoryRows = (categoryCount + categoriesPerRow - 1) / categoriesPerRow;
                 float categoryBoxHeight = categoryRows * 30f + 12f;
 
-                GUI.Box(new Rect(0f, y, w, categoryBoxHeight), "", boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, categoryBoxHeight), boxStyle);
                 rowY = y + 4f;
                 float categoryButtonWidth = (w - (categoriesPerRow + 1) * 4f) / categoriesPerRow;
 
@@ -118,7 +118,7 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
-                GUI.Box(new Rect(0f, y, w, 56f), "", boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, 56f), boxStyle);
 
                 string previousSearch = string.Empty;
                 string newSearch = string.Empty;
@@ -230,7 +230,7 @@ namespace NugzzMenu.UI
                 y += 24f;
 
                 int itemRows = (pageItemCount + 2) / 3;
-                GUI.Box(new Rect(0f, y, w, (float)(itemRows * 24 + 8)), "", boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, (float)(itemRows * 24 + 8)), boxStyle);
                 float itemY = y + 3f;
                 float buttonW = (w - 12f) / 3f;
                 for (int i = 0; i < pageItemCount; i += 3)

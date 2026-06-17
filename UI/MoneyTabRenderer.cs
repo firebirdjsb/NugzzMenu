@@ -18,7 +18,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUI.Box(new Rect(0f, y, w, 46f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 46f), boxStyle);
             float rowY = y + 3f;
 
             TMPHybridService.Instance.Label(6f, rowY, 50f, 18f, "Amt:",
@@ -56,7 +56,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUI.Box(new Rect(0f, y, w, 24f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 24f), boxStyle);
             rowY = y + 3f;
 
             TMPHybridService.Instance.Label(6f, rowY, 24f, 18f, "XP:",

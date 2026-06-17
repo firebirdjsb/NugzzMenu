@@ -33,6 +33,22 @@ namespace NugzzMenu.Services
             return GUI.Button(rect, text ?? "", FittedStyle(style, rect, text));
         }
 
+        public static void Panel(Rect rect, GUIStyle style)
+        {
+            if (rect.width <= 0f || rect.height <= 0f)
+                return;
+
+            var gui = GUISystemService.Instance;
+            GUI.Box(rect, "", style);
+
+            if (gui.AccentSoftTexture == null)
+                return;
+
+            GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width, 1f), gui.AccentSoftTexture);
+            if (rect.height >= 24f)
+                GUI.DrawTexture(new Rect(rect.x, rect.y, 2f, rect.height), gui.AccentSoftTexture);
+        }
+
         public static string TextField(Rect rect, string text, int maxLength)
         {
             var style = FittedStyle(GUI.skin.textField, rect, text, 8);
@@ -44,7 +60,7 @@ namespace NugzzMenu.Services
             if (style == null)
                 return;
             if (style.font == null)
-                style.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                style.font = GUISystemService.Instance.UIFont ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
         }
 
         public static void ClearCache()

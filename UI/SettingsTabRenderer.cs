@@ -21,7 +21,7 @@ namespace NugzzMenu.UI
             Action<string> setKeybind,
             Action<bool> setGameStackLogic, Action<bool> setVerboseDebugLogging, Action<bool> setPlaceAnywhere)
         {
-            GUI.Box(new Rect(0f, y, w, 100f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 100f), boxStyle);
             float rowY = y + 16f;
             TMPHybridService.Instance.Label(0f, rowY, w, 28f, "Nugzz",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Title),
@@ -49,7 +49,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUI.Box(new Rect(0f, y, w, 50f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 50f), boxStyle);
             rowY = y + 3f;
             TMPHybridService.Instance.Label(6f, rowY, 100f, 18f, "Toggle Key:",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
@@ -80,7 +80,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUI.Box(new Rect(0f, y, w, 32f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 32f), boxStyle);
             TMPHybridService.Instance.Label(6f, y + 5f, w * 0.68f, 20f, state.UseGameStackLogic ? "Stack Mode: Game" : "Stack Mode: StackMod",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
@@ -100,7 +100,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUI.Box(new Rect(0f, y, w, 32f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 32f), boxStyle);
             TMPHybridService.Instance.Label(6f, y + 5f, w * 0.68f, 20f, state.VerboseDebugLogging ? "Verbose Debug Logs: ON" : "Verbose Debug Logs: OFF",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
@@ -120,7 +120,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUI.Box(new Rect(0f, y, w, 32f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 32f), boxStyle);
             bool placeAnywhere = state.PlaceAnywhere;
             if (GUIFit.Button(new Rect(6f, y + 5f, w - 12f, 20f), placeAnywhere ? "Place Anywhere: ON" : "Place Anywhere: OFF", buttonStyle))
             {

@@ -10,6 +10,7 @@ using Il2CppScheduleOne.NPCs.Relation;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.Product;
 using Il2CppScheduleOne.Property;
+using Il2CppScheduleOne.Employees;
 using Il2CppScheduleOne.Vehicles;
 using Il2CppSystem.Collections.Generic;
 using UnityEngine;
@@ -30,6 +31,7 @@ namespace NugzzMenu.Services
         private VehicleManager _vehicleManager;
         private ProductManager _productManager;
         private NPCManager _npcManager;
+        private EmployeeManager _employeeManager;
         private Registry _registry;
         private Player _localPlayer;
         private PlayerInventory _playerInventory;
@@ -48,6 +50,7 @@ namespace NugzzMenu.Services
             _vehicleManager = null;
             _productManager = null;
             _npcManager = null;
+            _employeeManager = null;
             _registry = null;
             _localPlayer = null;
             _playerInventory = null;
@@ -109,6 +112,16 @@ namespace NugzzMenu.Services
                 if (_npcManager == null)
                     _npcManager = SafeFind<NPCManager>();
                 return _npcManager;
+            }
+        }
+
+        public EmployeeManager EmployeeManager
+        {
+            get
+            {
+                if (_employeeManager == null)
+                    _employeeManager = SafeFind<EmployeeManager>();
+                return _employeeManager;
             }
         }
 

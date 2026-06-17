@@ -30,7 +30,7 @@ namespace NugzzMenu.UI
                 bool canSpawn = service.CanSpawnVehicles();
                 float warningH = selectedRisky ? 28f : 0f;
                 float hostNoticeH = canSpawn ? 0f : 24f;
-                GUI.Box(new Rect(0f, y, w, (float)(rows * 24 + 60) + warningH + hostNoticeH), "", boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, (float)(rows * 24 + 60) + warningH + hostNoticeH), boxStyle);
                 float rowY = y + 3f;
 
                 for (int i = 0; i < count; i += 3)
@@ -117,7 +117,7 @@ namespace NugzzMenu.UI
             y += 20f;
 
             bool canUseWorldControls = service.CanSpawnVehicles();
-            GUI.Box(new Rect(0f, y, w, 90f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 90f), boxStyle);
             float controlY = y + 6f;
 
             string rvBlowLabel = canUseWorldControls ? "Blow Up RV" : "Host Only";

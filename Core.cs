@@ -16,8 +16,11 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.9.1";
+        private const string Version = "0.9.2";
         private const int WindowId = 98765;
+        private const float HeaderHeight = 56f;
+        private const float TabStripHeight = 36f;
+        private const float WindowBottomPadding = 16f;
 
         private enum MenuTab
         {
@@ -25,12 +28,13 @@ namespace NugzzMenu
             Money,
             Time,
             Vehicles,
+            Properties,
             Items,
             Lobby,
             Settings
         }
 
-        private static readonly string[] TabLabels = { "Cheats", "Money", "Time", "Vehicles", "Items", "Lobby", "Settings" };
+        private static readonly string[] TabLabels = { "CHEATS", "MONEY", "TIME", "VEHICLES", "PROPERTIES", "ITEMS", "LOBBY", "SETTINGS" };
         private static readonly string[] MoneyAmountLabels = { "$500", "$1K", "$5K", "$10K", "$50K", "$100K", "$500K", "$1M" };
         private static readonly float[] MoneyAmounts = { 500f, 1000f, 5000f, 10000f, 50000f, 100000f, 500000f, 1000000f };
         private static readonly int[] ExperienceAmounts = { 100, 500, 1000, 5000, 10000, 50000 };
@@ -44,6 +48,7 @@ namespace NugzzMenu
         private readonly ItemsState _itemsState = new ItemsState();
         private readonly LobbyState _lobbyState = new LobbyState();
         private readonly SettingsState _settingsState = new SettingsState();
+        private readonly PropertiesState _propertiesState = new PropertiesState();
 
         private KeyCode _menuKey = KeyCode.F8;
         private MelonPreferences_Category _preferences;
@@ -187,9 +192,10 @@ namespace NugzzMenu
             {
                 const float notificationWidth = 420f;
                 float notificationX = (Screen.width - notificationWidth) / 2f;
-                GUI.Box(new Rect(notificationX, 10f, notificationWidth, 30f), "", gui.BoxStyle);
+                GUIFit.Panel(new Rect(notificationX, 10f, notificationWidth, 34f), gui.NotificationStyle);
+                GUI.DrawTexture(new Rect(notificationX, 10f, 4f, 34f), gui.AccentTexture);
                 text.Label(
-                    notificationX, 10f, notificationWidth, 30f,
+                    notificationX + 8f, 10f, notificationWidth - 16f, 34f,
                     notifications.NotificationMessage ?? string.Empty,
                     gui.GetColorForCategory(LabelCategory.Notif),
                     gui.GetFontSizeForCategory(LabelCategory.Notif),
@@ -200,19 +206,19 @@ namespace NugzzMenu
             if (!_isMenuOpen)
                 return;
 
-            if (notifications.HasStatus)
-            {
-                text.Label(
-                    4f, 24f, _windowRect.width - 8f, 16f,
-                    notifications.StatusMessage ?? string.Empty,
-                    gui.GetColorForCategory(LabelCategory.Status),
-                    gui.GetFontSizeForCategory(LabelCategory.Status),
-                    gui.GetAlignmentForCategory(LabelCategory.Status),
-                    gui.GetStyleForCategory(LabelCategory.Status));
-            }
-
             ApplyDynamicWindowSize();
             ClampWindowToScreen();
+
+            if (gui.ShadowTexture != null)
+                GUI.DrawTexture(new Rect(_windowRect.x + 8f, _windowRect.y + 10f, _windowRect.width, _windowRect.height), gui.ShadowTexture);
+            if (gui.BorderTexture != null)
+            {
+                GUI.DrawTexture(new Rect(_windowRect.x - 1f, _windowRect.y - 1f, _windowRect.width + 2f, 1f), gui.BorderTexture);
+                GUI.DrawTexture(new Rect(_windowRect.x - 1f, _windowRect.y + _windowRect.height, _windowRect.width + 2f, 1f), gui.BorderTexture);
+                GUI.DrawTexture(new Rect(_windowRect.x - 1f, _windowRect.y, 1f, _windowRect.height), gui.BorderTexture);
+                GUI.DrawTexture(new Rect(_windowRect.x + _windowRect.width, _windowRect.y, 1f, _windowRect.height), gui.BorderTexture);
+            }
+
             _windowRect = GUI.Window(WindowId, _windowRect, (GUI.WindowFunction)DrawWindow, string.Empty, gui.WindowStyle);
         }
 
@@ -246,11 +252,12 @@ namespace NugzzMenu
                     targetWidth = 720f;
                     break;
                 case MenuTab.Vehicles:
+                case MenuTab.Properties:
                 case MenuTab.Settings:
-                    targetWidth = 760f;
+                    targetWidth = 860f;
                     break;
                 case MenuTab.Items:
-                    targetWidth = 820f;
+                    targetWidth = 860f;
                     break;
                 default:
                     targetWidth = 700f;
@@ -258,7 +265,7 @@ namespace NugzzMenu
             }
 
             _windowRect.width = targetWidth;
-            _windowRect.height = _measuredContentHeight + 66f;
+            _windowRect.height = _measuredContentHeight + HeaderHeight + TabStripHeight + WindowBottomPadding;
         }
 
         private void DrawWindow(int id)
@@ -266,29 +273,57 @@ namespace NugzzMenu
             var gui = GUISystemService.Instance;
             var tmp = TMPHybridService.Instance;
 
-            float contentW = _windowRect.width - 16f;
+            float contentW = _windowRect.width - 20f;
             float y = 2f;
 
-            GUI.DrawTexture(new Rect(-8f, -8f, _windowRect.width + 16f, 30f), GUISystemService.Instance.TitleTexture);
-            tmp.Label(6f, 0f, 200f, 28f, "Nugzz",
+            GUI.DrawTexture(new Rect(-10f, -10f, _windowRect.width + 20f, 58f), gui.TitleTexture);
+            GUI.DrawTexture(new Rect(0f, 46f, _windowRect.width, 2f), gui.AccentTexture);
+            GUI.DrawTexture(new Rect(0f, 48f, _windowRect.width, 1f), gui.AccentSoftTexture);
+            GUI.DrawTexture(new Rect(0f, 0f, 4f, _windowRect.height), gui.AccentSoftTexture);
+
+            tmp.Label(12f, 0f, 220f, 32f, "NugzzMenu",
                 gui.GetColorForCategory(LabelCategory.Title),
                 gui.GetFontSizeForCategory(LabelCategory.Title),
                 gui.GetAlignmentForCategory(LabelCategory.Title),
                 gui.GetStyleForCategory(LabelCategory.Title));
-            tmp.Label(contentW - 160f, 7f, 160f, 16f, $"v{Version} by XUnfairX  |  {_menuKeyPreference.Value}",
+
+            tmp.Label(14f, 30f, 300f, 14f, "Schedule I control suite",
+                gui.GetColorForCategory(LabelCategory.Label),
+                10f,
+                TextAnchor.MiddleLeft,
+                FontStyle.Normal);
+
+            string rightText = $"v{Version}  |  {_menuKeyPreference.Value}";
+            GUIFit.Panel(new Rect(contentW - 165f, 10f, 160f, 24f), gui.BoxStyle);
+            tmp.Label(contentW - 158f, 13f, 146f, 18f, rightText,
                 gui.GetColorForCategory(LabelCategory.Subtitle),
                 gui.GetFontSizeForCategory(LabelCategory.Subtitle),
                 gui.GetAlignmentForCategory(LabelCategory.Subtitle),
                 gui.GetStyleForCategory(LabelCategory.Subtitle));
-            y = 24f;
+
+            if (NotificationService.Instance.HasStatus)
+            {
+                string status = NotificationService.Instance.StatusMessage ?? string.Empty;
+                float chipW = Mathf.Min(260f, Mathf.Max(110f, status.Length * 7f + 24f));
+                GUIFit.Panel(new Rect(contentW - 170f - chipW, 10f, chipW, 24f), gui.NotificationStyle);
+                tmp.Label(contentW - 162f - chipW, 12f, chipW - 16f, 20f, status,
+                    gui.GetColorForCategory(LabelCategory.Status),
+                    gui.GetFontSizeForCategory(LabelCategory.Status),
+                    TextAnchor.MiddleCenter,
+                    gui.GetStyleForCategory(LabelCategory.Status));
+            }
+
+            y = HeaderHeight;
 
             DrawTabs(ref y, contentW);
 
             try
             {
-                float drawW = Mathf.Min(contentW, 760f);
-                float drawX = Mathf.Max(0f, (contentW - drawW) * 0.5f);
+                float drawW = Mathf.Min(contentW, 840f);
+                float drawX = Mathf.Max(10f, (contentW - drawW) * 0.5f + 6f);
                 float localY = 0f;
+                GUI.DrawTexture(new Rect(drawX - 8f, y - 4f, drawW + 16f, Mathf.Max(80f, _windowRect.height - y - 10f)), gui.DarkTexture);
+                GUI.DrawTexture(new Rect(drawX - 8f, y - 4f, 3f, Mathf.Max(80f, _windowRect.height - y - 10f)), gui.AccentSoftTexture);
                 GUI.BeginGroup(new Rect(drawX, y, drawW, Mathf.Max(0f, _windowRect.height - y - 8f)));
                 try
                 {
@@ -305,6 +340,9 @@ namespace NugzzMenu
                             break;
                         case MenuTab.Vehicles:
                             DrawVehiclesTab(ref localY, drawW);
+                            break;
+                        case MenuTab.Properties:
+                            DrawPropertiesTab(ref localY, drawW);
                             break;
                         case MenuTab.Items:
                             DrawItemsTab(ref localY, drawW);
@@ -338,16 +376,24 @@ namespace NugzzMenu
 
         private void DrawTabs(ref float y, float w)
         {
-            float tabWidth = w / TabLabels.Length;
+            float tabWidth = (w - 12f) / TabLabels.Length;
             for (int i = 0; i < TabLabels.Length; i++)
             {
-                if (GUIFit.Button(new Rect(i * tabWidth, y, tabWidth - 2f, 22f), TabLabels[i],
-                        i == (int)_selectedTab ? GUISystemService.Instance.TabActiveStyle : GUISystemService.Instance.TabStyle))
+                bool selected = i == (int)_selectedTab;
+                Rect tabRect = new Rect(8f + i * tabWidth, y, tabWidth - 4f, 28f);
+                if (GUIFit.Button(tabRect, TabLabels[i],
+                        selected ? GUISystemService.Instance.TabActiveStyle : GUISystemService.Instance.TabStyle))
                 {
                     _selectedTab = (MenuTab)i;
                 }
+
+                if (selected)
+                {
+                    GUI.DrawTexture(new Rect(tabRect.x + 8f, tabRect.yMax - 3f, tabRect.width - 16f, 2f),
+                        GUISystemService.Instance.AccentTexture);
+                }
             }
-            y += 26f;
+            y += TabStripHeight;
         }
 
         private void ToggleMenu()
@@ -467,6 +513,12 @@ namespace NugzzMenu
         {
             VehicleTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle, VehicleService.Instance);
+        }
+
+        private void DrawPropertiesTab(ref float y, float w)
+        {
+            PropertiesTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
+                GUISystemService.Instance.BoxStyle, _propertiesState, PropertyWorkerService.Instance);
         }
 
         private void DrawItemsTab(ref float y, float w)

@@ -17,7 +17,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUI.Box(new Rect(0f, y, w, 24f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 24f), boxStyle);
             float speedButtonWidth = (w - 24f) / 5f;
             float rowY = y + 3f;
 
@@ -36,7 +36,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUI.Box(new Rect(0f, y, w, 46f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 46f), boxStyle);
             rowY = y + 3f;
             float timeButtonWidth = (w - 8f) / 2f;
 
@@ -54,7 +54,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUI.Box(new Rect(0f, y, w, 28f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 28f), boxStyle);
             rowY = y + 3f;
             float worldButtonWidth = (w - 8f) / 2f;
             if (GUIFit.Button(new Rect(4f, rowY, worldButtonWidth, 22f), "Auto-Grow All Plants", buttonStyle)) growAllPlants?.Invoke();

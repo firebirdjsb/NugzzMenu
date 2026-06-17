@@ -28,6 +28,8 @@ namespace NugzzMenu.Services
         private int _selectedIndex = 0;
         private readonly List<VisualRepairRequest> _visualRepairs = new List<VisualRepairRequest>();
         private bool _benzieManorAccessEnabled;
+        private float _nextVehicleCacheRetryTime;
+        private bool _reportedMissingVehicleManager;
 
         public bool BenzieManorAccessEnabled => _benzieManorAccessEnabled;
 
@@ -45,12 +47,23 @@ namespace NugzzMenu.Services
             if (_isCached)
                 return;
 
+            if (_reportedMissingVehicleManager && Time.unscaledTime < _nextVehicleCacheRetryTime)
+                return;
+
             try
             {
                 var vehicleManager = FindObjectOfType<VehicleManager>();
                 if (vehicleManager == null || vehicleManager.VehiclePrefabs == null || vehicleManager.VehiclePrefabs.Count == 0)
                 {
-                    UnityEngine.Debug.LogError("[Nugzz] VehicleManager not found or empty");
+                    if (Time.unscaledTime < _nextVehicleCacheRetryTime)
+                        return;
+
+                    _nextVehicleCacheRetryTime = Time.unscaledTime + 3f;
+                    if (!_reportedMissingVehicleManager)
+                    {
+                        _reportedMissingVehicleManager = true;
+                        UnityEngine.Debug.LogWarning("[Nugzz] VehicleManager not found or empty; vehicle list will retry quietly");
+                    }
                     return;
                 }
 
@@ -95,6 +108,7 @@ namespace NugzzMenu.Services
                 SortVehicles();
 
                 _isCached = true;
+                _reportedMissingVehicleManager = false;
                 UnityEngine.Debug.Log($"[Nugzz] Loaded {_vehicleCount} vehicles into cache");
             }
             catch (Exception ex)
@@ -174,6 +188,8 @@ namespace NugzzMenu.Services
             _vehicleCount = 0;
             _isCached = false;
             _selectedIndex = 0;
+            _nextVehicleCacheRetryTime = 0f;
+            _reportedMissingVehicleManager = false;
         }
 
         /// <summary>

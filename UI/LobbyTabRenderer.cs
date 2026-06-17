@@ -28,7 +28,7 @@ namespace NugzzMenu.UI
             int playerCount = players?.Count ?? 0;
             if (playerCount == 0)
             {
-                GUI.Box(new Rect(0f, y, w, 26f), "", boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, 26f), boxStyle);
                 TMPHybridService.Instance.Label(6f, y + 4f, w - 12f, 18f, "No players found",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
@@ -42,7 +42,7 @@ namespace NugzzMenu.UI
                 state.SelectedPlayerIndex = 0;
 
             int rows = Math.Min(playerCount, 8);
-            GUI.Box(new Rect(0f, y, w, (float)(rows * 22 + 4)), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, (float)(rows * 22 + 4)), boxStyle);
             float rowY = y + 3f;
 
             for (int i = 0; i < rows; i++)
@@ -64,7 +64,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUI.Box(new Rect(0f, y, w, 120f), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 120f), boxStyle);
             TMPHybridService.Instance.Label(6f, y + 4f, w - 12f, 18f, PlayerLabel(selectedPlayer),
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
@@ -101,7 +101,7 @@ namespace NugzzMenu.UI
             int effectRows = Math.Max(1, (effectCount + 3) / 4);
             float fxW = (w - 24f) / 4f;
             float localBoxH = 34f + effectRows * 24f;
-            GUI.Box(new Rect(0f, y, w, localBoxH), "", boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, localBoxH), boxStyle);
 
             if (GUIFit.Button(new Rect(6f, y + 6f, fxW, 18f), "Up", buttonStyle)) onTeleportUp?.Invoke();
             if (GUIFit.Button(new Rect(10f + fxW, y + 6f, fxW, 18f), "Ragdoll", buttonStyle)) onRagdoll?.Invoke();

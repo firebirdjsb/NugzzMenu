@@ -38,6 +38,7 @@ namespace NugzzMenu.Services
                 guiStyle.fontStyle = style;
                 guiStyle.wordWrap = wordWrap;
                 guiStyle.clipping = TextClipping.Clip;
+                guiStyle.font = GUISystemService.Instance.GetFontForText(fontSize, style);
                 GUIFit.EnsureFont(guiStyle);
                 _styles[key] = guiStyle;
             }
