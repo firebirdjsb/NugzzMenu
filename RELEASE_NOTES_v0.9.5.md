@@ -28,8 +28,5 @@ gameplay works again.
   of showing unsupported worker controls.
 
 ## Other Fixes Included
-
-- Kept the recent Build Anywhere safety fixes.
-- Kept the trimmer and clipboard crash guards.
 - Continued cleanup around camera and input state while management tools are
   active.
