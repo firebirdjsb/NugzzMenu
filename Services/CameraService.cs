@@ -556,8 +556,11 @@ namespace NugzzMenu.Services
 
         private void ReleaseCameraForManagementClipboard()
         {
-            bool wasEnabled = _enabled;
-            _enabled = false;
+            if (_enabled)
+            {
+                ToggleThirdPerson(false, false);
+                return;
+            }
 
             try
             {
@@ -566,13 +569,6 @@ namespace NugzzMenu.Services
 
                 PlayerCamera playerCamera = PlayerCamera.Instance;
                 playerCamera?.SetCanLook(true);
-            }
-            catch { }
-
-            try
-            {
-                if (wasEnabled)
-                    RestoreFirstPersonVisuals();
             }
             catch { }
         }

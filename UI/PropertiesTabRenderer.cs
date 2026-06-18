@@ -93,10 +93,10 @@ namespace NugzzMenu.UI
         {
             DrawHeader(ref y, w, "HIRE NEW WORKER");
 
-            if (service.IsRVProperty(property))
+            if (service.DoesNotSupportWorkers(property))
             {
                 GUIFit.Panel(new Rect(0f, y, w, 36f), boxStyle);
-                Label(8f, y + 8f, w - 16f, 20f, "Workers are not supported on the RV.");
+                Label(8f, y + 8f, w - 16f, 20f, service.GetWorkerUnsupportedMessage(property));
                 y += 44f;
                 return;
             }
@@ -160,10 +160,10 @@ namespace NugzzMenu.UI
         {
             DrawHeader(ref y, w, "MOVE EXISTING WORKER HERE");
 
-            if (service.IsRVProperty(property))
+            if (service.DoesNotSupportWorkers(property))
             {
                 GUIFit.Panel(new Rect(0f, y, w, 36f), boxStyle);
-                Label(8f, y + 8f, w - 16f, 20f, "Existing workers cannot be moved to the RV.");
+                Label(8f, y + 8f, w - 16f, 20f, "Existing workers cannot be moved here.");
                 y += 44f;
                 return;
             }

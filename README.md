@@ -3,23 +3,21 @@
 NugzzMenu is a MelonLoader IL2CPP mod menu for Schedule I. It integrates with
 S1API and provides player, inventory, vehicle, world, and camera utilities.
 
-Current release: [v0.9.5](https://github.com/firebirdjsb/NugzzMenu/releases/tag/v0.9.5)
+Current release: [v0.9.6](https://github.com/firebirdjsb/NugzzMenu/releases/tag/v0.9.6)
 
 ## Latest Changes
 
-### v0.9.5
+### v0.9.6
 
-- Fixed the management clipboard so selecting NPCs, workers, objects, lockers,
-  destinations, and management targets works again.
-- Restored worker assignment/linking flows such as botanists to plants and
-  NPCs to lockers or destinations.
-- Disabled third person automatically while the management clipboard is
-  equipped, and blocked the third-person hotkey/menu toggle during clipboard
-  use so camera overrides do not interfere with targeting.
-- Prevented hiring workers for the RV or moving existing workers to the RV,
-  since the game does not support that setup.
+- Worker controls are now blocked for any owned property with `0/0` worker
+  capacity, including Motel Room, Sewer Office, Laundromat, and the RV.
+- The Properties tab now shows unsupported-worker messaging instead of hire or
+  move controls for those locations.
+- Equipping the management clipboard while in third person now exits through
+  the normal camera toggle path so first-person visuals restore correctly.
+- Clipboard use still blocks third-person toggles while equipped.
 
-Full notes: [RELEASE_NOTES_v0.9.5.md](RELEASE_NOTES_v0.9.5.md)
+Full notes: [RELEASE_NOTES_v0.9.6.md](RELEASE_NOTES_v0.9.6.md)
 
 ## Requirements
 

@@ -138,7 +138,7 @@ namespace NugzzMenu.Services
         {
             if (property == null || employee == null)
                 return false;
-            if (IsRVProperty(property))
+            if (DoesNotSupportWorkers(property))
                 return false;
 
             if (Safe(() => employee.Fired, false))
@@ -151,8 +151,8 @@ namespace NugzzMenu.Services
         {
             if (employee == null || property == null)
                 return "No worker or property selected";
-            if (IsRVProperty(property))
-                return "Workers cannot be moved to the RV";
+            if (DoesNotSupportWorkers(property))
+                return "Workers cannot be moved to " + GetPropertyLabel(property);
 
             string code = GetPropertyCode(property);
             if (string.IsNullOrEmpty(code))
@@ -193,8 +193,8 @@ namespace NugzzMenu.Services
         {
             if (property == null)
                 return "No property selected";
-            if (IsRVProperty(property))
-                return "Workers cannot be hired for the RV";
+            if (DoesNotSupportWorkers(property))
+                return "Workers cannot be hired for " + GetPropertyLabel(property);
 
             var manager = GetEmployeeManager();
             if (manager == null)
@@ -255,6 +255,26 @@ namespace NugzzMenu.Services
             catch { }
 
             return LooksLikeRV(GetPropertyLabel(property));
+        }
+
+        public bool DoesNotSupportWorkers(Property property)
+        {
+            if (property == null)
+                return false;
+
+            try
+            {
+                if (property.EmployeeCapacity <= 0)
+                    return true;
+            }
+            catch { }
+
+            return IsRVProperty(property);
+        }
+
+        public string GetWorkerUnsupportedMessage(Property property)
+        {
+            return "Workers are not supported at " + GetPropertyLabel(property) + ".";
         }
 
         private static bool LooksLikeRV(string value)
