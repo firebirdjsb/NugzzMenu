@@ -23,8 +23,9 @@ namespace NugzzMenu.UI
         };
 
         public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
-            PropertiesState state, PropertyWorkerService service)
+            PropertiesState state, PropertyWorkerService service, VehicleService vehicleService)
         {
+            DrawWorldPropertyControls(ref y, w, buttonStyle, boxStyle, vehicleService);
             DrawHeader(ref y, w, "OWNED PROPERTIES");
 
             int propertyCount = service.GetOwnedPropertyCount();
@@ -44,6 +45,66 @@ namespace NugzzMenu.UI
             DrawHirePanel(ref y, w, buttonStyle, boxStyle, selectedProperty, service);
             DrawAssignedWorkers(ref y, w, buttonStyle, boxStyle, selectedProperty, service);
             DrawAvailableWorkers(ref y, w, buttonStyle, boxStyle, selectedProperty, state, service);
+        }
+
+        private static void DrawWorldPropertyControls(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
+            VehicleService vehicleService)
+        {
+            DrawHeader(ref y, w, "WORLD PROPERTY CONTROLS");
+
+            if (vehicleService == null)
+            {
+                GUIFit.Panel(new Rect(0f, y, w, 36f), boxStyle);
+                Label(8f, y + 8f, w - 16f, 20f, "Property world controls are not available.");
+                y += 44f;
+                return;
+            }
+
+            bool canUseWorldControls = vehicleService.CanSpawnVehicles();
+            GUIFit.Panel(new Rect(0f, y, w, 104f), boxStyle);
+            float rowY = y + 6f;
+
+            string rvBlowLabel = canUseWorldControls ? "Blow Up RV" : "Host Only";
+            if (GUIFit.Button(new Rect(6f, rowY, w * 0.48f - 8f, 22f), rvBlowLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
+                else
+                    vehicleService.BlowUpRV();
+            }
+
+            string rvFixLabel = canUseWorldControls ? "Fix / Respawn RV" : "Host Only";
+            if (GUIFit.Button(new Rect(w * 0.52f, rowY, w * 0.48f - 8f, 22f), rvFixLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
+                else
+                    vehicleService.FixOrRespawnRV();
+            }
+
+            rowY += 28f;
+            string manorState = vehicleService.BenzieManorAccessEnabled ? "On" : "Off";
+            Label(6f, rowY + 2f, w * 0.48f, 18f, "Benzie Manor Access: " + manorState);
+
+            string manorLabel = canUseWorldControls
+                ? vehicleService.BenzieManorAccessEnabled ? "Turn Manor Off" : "Allow Manor Use"
+                : "Host Only";
+            if (GUIFit.Button(new Rect(w * 0.52f, rowY, w * 0.48f - 8f, 22f), manorLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("Benzie Manor access is host-only in multiplayer");
+                else
+                    vehicleService.SetBenzieManorAccess(!vehicleService.BenzieManorAccessEnabled);
+            }
+
+            rowY += 28f;
+            Label(6f, rowY, w - 12f, 18f,
+                canUseWorldControls
+                    ? "Host tools for the story RV and Benzie Manor access."
+                    : "Protected in multiplayer: only the host can sync these world changes.",
+                canUseWorldControls ? LabelCategory.Label : LabelCategory.Error);
+
+            y += 112f;
         }
 
         private static void DrawPropertyPicker(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,

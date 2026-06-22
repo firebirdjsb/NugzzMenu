@@ -16,7 +16,7 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.9.6";
+        private const string Version = "0.9.8";
         private const int WindowId = 98765;
         private const float HeaderHeight = 56f;
         private const float TabStripHeight = 36f;
@@ -62,7 +62,10 @@ namespace NugzzMenu
 
         private Rect _windowRect = new Rect(40f, 40f, 820f, 690f);
         private float _measuredContentHeight = 620f;
+        private readonly float[] _tabContentHeights = new float[TabLabels.Length];
+        private readonly Vector2[] _tabScrollPositions = new Vector2[TabLabels.Length];
         private bool _isMenuOpen;
+        private float _nextGuiExceptionLogTime;
 
         public override void OnInitializeMelon()
         {
@@ -94,6 +97,7 @@ namespace NugzzMenu
 
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
         {
+            SaveManagementService.Instance.SetCurrentScene(sceneName);
             ManagerCacheService.Instance.Invalidate();
 
             if (sceneName == "Main")
@@ -106,6 +110,7 @@ namespace NugzzMenu
         {
             UnsubscribeS1ApiEvents();
             VehicleCollisionService.Instance.Reset();
+            VehicleMenuCameraService.Instance.Reset();
             GUIFit.ClearCache();
             TMPHybridService.Instance.Reset();
         }
@@ -153,9 +158,8 @@ namespace NugzzMenu
             ItemService.Instance.ProcessPendingSpawns();
             VehicleService.Instance.Update();
             VehicleCollisionService.Instance.Update();
+            VehicleMenuCameraService.Instance.Update(_isMenuOpen);
             BuildingService.Instance.UpdateOutsideItemPickup(_isMenuOpen);
-            CompatibilityService.Instance.Update(_harmony);
-
             // The registry can become available a few frames after scene initialization.
             if (!_itemCacheInitialized && ItemService.Instance.ItemCount == 0)
             {
@@ -171,6 +175,7 @@ namespace NugzzMenu
         {
             if (CameraService.Instance.ThirdPersonEnabled)
                 CameraService.Instance.ApplyThirdPersonCamera(_isMenuOpen);
+            VehicleMenuCameraService.Instance.LateUpdate(_isMenuOpen);
             if (FlyingService.Instance.Enabled)
                 FlyingService.Instance.ApplyPostMovementLock();
         }
@@ -206,6 +211,7 @@ namespace NugzzMenu
             if (!_isMenuOpen)
                 return;
 
+            RefreshSaveToolSceneState();
             ApplyDynamicWindowSize();
             ClampWindowToScreen();
 
@@ -265,7 +271,22 @@ namespace NugzzMenu
             }
 
             _windowRect.width = targetWidth;
-            _windowRect.height = _measuredContentHeight + HeaderHeight + TabStripHeight + WindowBottomPadding;
+            _windowRect.height = GetCurrentTabContentHeight() + HeaderHeight + TabStripHeight + WindowBottomPadding;
+        }
+
+        private float GetCurrentTabContentHeight()
+        {
+            int tabIndex = (int)_selectedTab;
+            if (tabIndex >= 0 && tabIndex < _tabContentHeights.Length &&
+                _tabContentHeights[tabIndex] > 0f)
+            {
+                return _tabContentHeights[tabIndex];
+            }
+
+            if (_selectedTab == MenuTab.Settings)
+                return Mathf.Max(_measuredContentHeight, 760f);
+
+            return _measuredContentHeight;
         }
 
         private void DrawWindow(int id)
@@ -321,49 +342,104 @@ namespace NugzzMenu
             {
                 float drawW = Mathf.Min(contentW, 840f);
                 float drawX = Mathf.Max(10f, (contentW - drawW) * 0.5f + 6f);
+                float availableH = Mathf.Max(0f, _windowRect.height - y - 8f);
+                int tabIndex = (int)_selectedTab;
+                float measuredHeight = GetCurrentTabContentHeight();
+                bool needsScroll = measuredHeight > availableH + 1f;
+                float viewW = needsScroll ? Mathf.Max(240f, drawW - 18f) : drawW;
+                float viewH = Mathf.Max(availableH, measuredHeight + 12f);
                 float localY = 0f;
-                GUI.DrawTexture(new Rect(drawX - 8f, y - 4f, drawW + 16f, Mathf.Max(80f, _windowRect.height - y - 10f)), gui.DarkTexture);
-                GUI.DrawTexture(new Rect(drawX - 8f, y - 4f, 3f, Mathf.Max(80f, _windowRect.height - y - 10f)), gui.AccentSoftTexture);
-                GUI.BeginGroup(new Rect(drawX, y, drawW, Mathf.Max(0f, _windowRect.height - y - 8f)));
+                GUI.DrawTexture(new Rect(drawX - 8f, y - 4f, drawW + 16f, Mathf.Max(80f, availableH + 2f)), gui.DarkTexture);
+                GUI.DrawTexture(new Rect(drawX - 8f, y - 4f, 3f, Mathf.Max(80f, availableH + 2f)), gui.AccentSoftTexture);
+                if (needsScroll)
+                {
+                    TMPHybridService.Instance.Label(drawX + drawW - 84f, y - 18f, 82f, 14f, "Scroll for more",
+                        gui.GetColorForCategory(LabelCategory.Subtitle),
+                        gui.GetFontSizeForCategory(LabelCategory.Subtitle),
+                        TextAnchor.MiddleRight,
+                        gui.GetStyleForCategory(LabelCategory.Subtitle));
+                }
+
+                Rect viewport = new Rect(drawX, y, drawW, availableH);
+                float maxScrollY = Mathf.Max(0f, measuredHeight - availableH + 12f);
+                if (needsScroll)
+                {
+                    Vector2 scroll = _tabScrollPositions[tabIndex];
+                    if (GUIFit.Button(new Rect(drawX + drawW - 72f, y - 20f, 32f, 16f), "Up", gui.ButtonStyle))
+                        scroll.y -= 80f;
+                    if (GUIFit.Button(new Rect(drawX + drawW - 36f, y - 20f, 34f, 16f), "Down", gui.ButtonStyle))
+                        scroll.y += 80f;
+
+                    _tabScrollPositions[tabIndex] = new Vector2(
+                        Mathf.Clamp(scroll.x, 0f, 0f),
+                        Mathf.Clamp(scroll.y, 0f, maxScrollY));
+                }
+                else
+                {
+                    _tabScrollPositions[tabIndex] = Vector2.zero;
+                }
+
+                GUI.BeginGroup(viewport);
+                GUI.BeginGroup(new Rect(0f, -_tabScrollPositions[tabIndex].y, viewW, viewH));
                 try
                 {
                     switch (_selectedTab)
                     {
                         case MenuTab.Cheats:
-                            DrawCheatsTab(ref localY, drawW);
+                            DrawCheatsTab(ref localY, viewW);
                             break;
                         case MenuTab.Money:
-                            DrawMoneyTab(ref localY, drawW);
+                            DrawMoneyTab(ref localY, viewW);
                             break;
                         case MenuTab.Time:
-                            DrawTimeTab(ref localY, drawW);
+                            DrawTimeTab(ref localY, viewW);
                             break;
                         case MenuTab.Vehicles:
-                            DrawVehiclesTab(ref localY, drawW);
+                            DrawVehiclesTab(ref localY, viewW);
                             break;
                         case MenuTab.Properties:
-                            DrawPropertiesTab(ref localY, drawW);
+                            DrawPropertiesTab(ref localY, viewW);
                             break;
                         case MenuTab.Items:
-                            DrawItemsTab(ref localY, drawW);
+                            DrawItemsTab(ref localY, viewW);
                             break;
                         case MenuTab.Lobby:
-                            DrawLobbyTab(ref localY, drawW);
+                            DrawLobbyTab(ref localY, viewW);
                             break;
                         case MenuTab.Settings:
-                            DrawSettingsTab(ref localY, drawW);
+                            DrawSettingsTab(ref localY, viewW);
                             break;
                     }
                 }
                 finally
                 {
                     GUI.EndGroup();
+                    GUI.EndGroup();
                 }
+
+                DrawManualScrollbar(viewport, measuredHeight, availableH, _tabScrollPositions[tabIndex].y);
                 y += localY;
                 _measuredContentHeight = Mathf.Max(100f, localY);
+                if (tabIndex >= 0 && tabIndex < _tabContentHeights.Length)
+                {
+                    _tabContentHeights[tabIndex] = _measuredContentHeight;
+                    float updatedMaxScrollY = Mathf.Max(0f, _measuredContentHeight - availableH + 12f);
+                    if (_tabScrollPositions[tabIndex].y > updatedMaxScrollY)
+                    {
+                        _tabScrollPositions[tabIndex] = new Vector2(
+                            _tabScrollPositions[tabIndex].x,
+                            updatedMaxScrollY);
+                    }
+                }
             }
             catch (Exception ex)
             {
+                if (Time.unscaledTime >= _nextGuiExceptionLogTime)
+                {
+                    _nextGuiExceptionLogTime = Time.unscaledTime + 2f;
+                    LoggerInstance.Warning("[Nugzz] GUI draw failed on " + _selectedTab + ": " + ex);
+                }
+
                 tmp.Label(4f, y, contentW, 20f, "Error: " + ex.Message,
                     gui.GetColorForCategory(LabelCategory.Error),
                     gui.GetFontSizeForCategory(LabelCategory.Error),
@@ -372,6 +448,25 @@ namespace NugzzMenu
             }
 
             GUI.DragWindow(new Rect(0f, 0f, _windowRect.width, 26f));
+        }
+
+        private static void DrawManualScrollbar(Rect viewport, float contentHeight, float visibleHeight, float scrollY)
+        {
+            if (contentHeight <= visibleHeight + 1f || visibleHeight <= 0f)
+                return;
+
+            var gui = GUISystemService.Instance;
+            float maxScrollY = Mathf.Max(1f, contentHeight - visibleHeight + 12f);
+            float trackH = Mathf.Max(40f, visibleHeight);
+            float thumbH = Mathf.Clamp((visibleHeight / Mathf.Max(contentHeight, 1f)) * trackH, 28f, trackH);
+            float thumbY = viewport.y + Mathf.Clamp(scrollY / maxScrollY, 0f, 1f) * (trackH - thumbH);
+            Rect track = new Rect(viewport.xMax - 8f, viewport.y, 5f, trackH);
+            Rect thumb = new Rect(viewport.xMax - 8f, thumbY, 5f, thumbH);
+
+            if (gui.AccentSoftTexture != null)
+                GUI.DrawTexture(track, gui.AccentSoftTexture);
+            if (gui.AccentTexture != null)
+                GUI.DrawTexture(thumb, gui.AccentTexture);
         }
 
         private void DrawTabs(ref float y, float w)
@@ -398,7 +493,9 @@ namespace NugzzMenu
 
         private void ToggleMenu()
         {
+            bool wasOpen = _isMenuOpen;
             _isMenuOpen = !_isMenuOpen;
+            VehicleMenuCameraService.Instance.NotifyMenuStateChanged(_isMenuOpen, wasOpen);
             ApplyMenuInputState();
         }
 
@@ -413,12 +510,31 @@ namespace NugzzMenu
                     : CursorLockMode.Locked;
 
                 var camera = PlayerCamera.Instance;
+                if (IsUsingNativeVehicleCamera(camera))
+                    return;
+
                 camera?.SetCanLook(
-                    !_isMenuOpen &&
+                    (!_isMenuOpen &&
                     !keepNativeCursor &&
-                    !CameraService.Instance.ThirdPersonEnabled);
+                    (!CameraService.Instance.ThirdPersonEnabled || IsUsingNativeVehicleCamera(camera))));
             }
             catch { }
+        }
+
+        private static bool IsUsingNativeVehicleCamera(PlayerCamera camera)
+        {
+            try
+            {
+                if (camera != null && camera.CameraMode == PlayerCamera.ECameraMode.Vehicle)
+                    return true;
+
+                var player = ManagerCacheService.Instance.LocalPlayer;
+                return player != null && player.IsInVehicle;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool ShouldKeepNativeCursor()
@@ -436,6 +552,24 @@ namespace NugzzMenu
             {
                 return false;
             }
+        }
+
+        private static void RefreshSaveToolSceneState()
+        {
+            try
+            {
+                Scene scene = SceneManager.GetActiveScene();
+                bool probablyMainMenu = false;
+                try
+                {
+                    probablyMainMenu = ManagerCacheService.Instance.LocalPlayer == null;
+                }
+                catch { }
+
+                if (scene.IsValid())
+                    SaveManagementService.Instance.SetCurrentScene(scene.name, probablyMainMenu);
+            }
+            catch { }
         }
 
         private static bool IsPauseMenuOpen()
@@ -518,7 +652,8 @@ namespace NugzzMenu
         private void DrawPropertiesTab(ref float y, float w)
         {
             PropertiesTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
-                GUISystemService.Instance.BoxStyle, _propertiesState, PropertyWorkerService.Instance);
+                GUISystemService.Instance.BoxStyle, _propertiesState, PropertyWorkerService.Instance,
+                VehicleService.Instance);
         }
 
         private void DrawItemsTab(ref float y, float w)
@@ -624,7 +759,7 @@ namespace NugzzMenu
                 GUISystemService.Instance.BoxStyle, _settingsState, LobbyService.Instance.IsHost(),
                 SetKeybind,
                 value => ItemService.Instance.UseGameStackLogic = value, SetVerboseDebugLogging,
-                BuildingService.Instance.SetPlaceAnywhere);
+                BuildingService.Instance.SetPlaceAnywhere, SaveManagementService.Instance);
         }
 
         private void SetKeybind(string key)
