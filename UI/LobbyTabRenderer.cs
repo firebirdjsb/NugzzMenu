@@ -35,60 +35,61 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
                 y += 30f;
-                return;
             }
-
-            if (state.SelectedPlayerIndex >= playerCount)
-                state.SelectedPlayerIndex = 0;
-
-            int rows = Math.Min(playerCount, 8);
-            GUIFit.Panel(new Rect(0f, y, w, (float)(rows * 22 + 4)), boxStyle);
-            float rowY = y + 3f;
-
-            for (int i = 0; i < rows; i++)
+            else
             {
-                Player player = players[i];
-                string text = PlayerLabel(player);
-                if (GUIFit.Button(new Rect(4f, rowY, w - 8f, 18f), text, i == state.SelectedPlayerIndex ? onStyle : buttonStyle))
+                if (state.SelectedPlayerIndex >= playerCount)
+                    state.SelectedPlayerIndex = 0;
+
+                int rows = Math.Min(playerCount, 8);
+                GUIFit.Panel(new Rect(0f, y, w, (float)(rows * 22 + 4)), boxStyle);
+                float rowY = y + 3f;
+
+                for (int i = 0; i < rows; i++)
                 {
-                    state.SelectedPlayerIndex = i;
+                    Player player = players[i];
+                    string text = PlayerLabel(player);
+                    if (GUIFit.Button(new Rect(4f, rowY, w - 8f, 18f), text, i == state.SelectedPlayerIndex ? onStyle : buttonStyle))
+                    {
+                        state.SelectedPlayerIndex = i;
+                    }
+                    rowY += 22f;
                 }
-                rowY += 22f;
-            }
-            y += (float)(rows * 22 + 8);
+                y += (float)(rows * 22 + 8);
 
-            Player selectedPlayer = players[state.SelectedPlayerIndex];
-            TMPHybridService.Instance.Label(4f, y, w, 18f, "SELECTED",
-                GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
-            y += 20f;
-            GUIFit.Panel(new Rect(0f, y, w, 120f), boxStyle);
-            TMPHybridService.Instance.Label(6f, y + 4f, w - 12f, 18f, PlayerLabel(selectedPlayer),
-                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+                Player selectedPlayer = players[state.SelectedPlayerIndex];
+                TMPHybridService.Instance.Label(4f, y, w, 18f, "SELECTED",
+                    GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
+                    GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
+                    GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
+                    GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
+                y += 20f;
+                GUIFit.Panel(new Rect(0f, y, w, 120f), boxStyle);
+                TMPHybridService.Instance.Label(6f, y + 4f, w - 12f, 18f, PlayerLabel(selectedPlayer),
+                    GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
 
-            float actionButtonWidth = (w - 18f) / 2f;
-            if (GUIFit.Button(new Rect(6f, y + 26f, actionButtonWidth, 18f), "Copy Code", buttonStyle))
-            {
-                GUIUtility.systemCopyBuffer = selectedPlayer?.PlayerCode ?? "";
+                float actionButtonWidth = (w - 18f) / 2f;
+                if (GUIFit.Button(new Rect(6f, y + 26f, actionButtonWidth, 18f), "Copy Code", buttonStyle))
+                {
+                    GUIUtility.systemCopyBuffer = selectedPlayer?.PlayerCode ?? "";
+                }
+                if (GUIFit.Button(new Rect(12f + actionButtonWidth, y + 26f, actionButtonWidth, 18f), "TP Self To Player", buttonStyle))
+                {
+                    tpToPlayer?.Invoke(selectedPlayer);
+                }
+                if (GUIFit.Button(new Rect(6f, y + 50f, actionButtonWidth, 18f), "Save Pos", buttonStyle))
+                {
+                    TeleportService.Instance.SavePosition();
+                }
+                if (GUIFit.Button(new Rect(12f + actionButtonWidth, y + 50f, actionButtonWidth, 18f), "Load Pos", buttonStyle))
+                {
+                    TeleportService.Instance.LoadPosition();
+                }
+                y += 124f;
             }
-            if (GUIFit.Button(new Rect(12f + actionButtonWidth, y + 26f, actionButtonWidth, 18f), "TP Self To Player", buttonStyle))
-            {
-                tpToPlayer?.Invoke(selectedPlayer);
-            }
-            if (GUIFit.Button(new Rect(6f, y + 50f, actionButtonWidth, 18f), "Save Pos", buttonStyle))
-            {
-                TeleportService.Instance.SavePosition();
-            }
-            if (GUIFit.Button(new Rect(12f + actionButtonWidth, y + 50f, actionButtonWidth, 18f), "Load Pos", buttonStyle))
-            {
-                TeleportService.Instance.LoadPosition();
-            }
-            y += 124f;
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "LOCAL EFFECT",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),

@@ -3,24 +3,27 @@
 NugzzMenu is a MelonLoader IL2CPP mod menu for Schedule I. It integrates with
 S1API and provides player, inventory, vehicle, world, and camera utilities.
 
-Current release: [v0.9.8](RELEASE_NOTES_v0.9.8.md)
+Current release: [v0.9.9](RELEASE_NOTES_v0.9.9.md)
 
 ## Latest Changes
 
-### v0.9.8
+### v0.9.9
 
-- Added a main-menu Save Manager in Settings for save inspection, backups,
-  archive-delete, tutorial flag edits, and local Steam Cloud marker handling.
-- Fixed Settings tab sizing with a safe scroll path so larger panels remain
-  reachable on-screen.
-- Cleaned up repeated missing-variable warning spam from legacy game variables
-  such as `cash_balance`, `total_money`, and `player_in_vehicle`.
-- Improved vehicle menu work with safer vehicle-camera handling, RV tools,
-  expanded spawn support, and current-vehicle tuning controls.
-- Added maintainer documentation and formatting rules so the project is easier
-  for other coders to understand and extend.
+- Fixed plant care interactions for watering, soil pouring, seed planting, and
+  trimming, with faster quality-of-life fallbacks where vanilla interaction was
+  failing.
+- Added buttons for auto-watering plants/pots and auto-filling empty pots with
+  the best available soil.
+- Added unlock buttons for achievements, items/supplies, properties, and
+  businesses.
+- Fixed item spawner categories, removed broken pseudo/white-square entries,
+  and repaired several items that were not spawning properly.
+- Fixed Place Anywhere interfering with vanilla floor/grid snapping and improved
+  close-to-player placement behavior.
+- Added and polished World Teleports in the Cheats tab, with cleaner labels and
+  duplicate location filtering.
 
-Full notes: [RELEASE_NOTES_v0.9.8.md](RELEASE_NOTES_v0.9.8.md)
+Full notes: [RELEASE_NOTES_v0.9.9.md](RELEASE_NOTES_v0.9.9.md)
 
 ## Requirements
 

@@ -20,7 +20,7 @@ namespace NugzzMenu.UI
             SettingsState state, bool isHost,
             Action<string> setKeybind,
             Action<bool> setGameStackLogic, Action<bool> setVerboseDebugLogging, Action<bool> setPlaceAnywhere,
-            SaveManagementService saveService)
+            SaveManagementService saveService, DebugTestRoomService testRoomService)
         {
             GUIFit.Panel(new Rect(0f, y, w, 100f), boxStyle);
             float rowY = y + 16f;
@@ -131,6 +131,22 @@ namespace NugzzMenu.UI
             }
             y += 38f;
 
+            DrawDebugTestRoom(ref y, w, buttonStyle, boxStyle, testRoomService);
+
+            DrawHeader(4f, y, w, "ACHIEVEMENTS");
+            y += 20f;
+            GUIFit.Panel(new Rect(0f, y, w, 32f), boxStyle);
+            TMPHybridService.Instance.Label(6f, y + 5f, w * 0.58f, 20f, "Unlock every Steam achievement",
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+            if (GUIFit.Button(new Rect(w * 0.62f, y + 5f, w * 0.36f, 20f), "Unlock All", buttonStyle))
+            {
+                UnlockService.Instance.UnlockAllAchievements();
+            }
+            y += 38f;
+
             DrawSaveManager(ref y, w, buttonStyle, boxStyle, saveService);
 
             TMPHybridService.Instance.Label(0f, y, w, 14f, "Config saved to UserData/MelonPreferences.cfg",
@@ -139,6 +155,37 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
             y += 18f;
+        }
+
+        private static void DrawDebugTestRoom(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
+            DebugTestRoomService testRoomService)
+        {
+            if (testRoomService == null)
+                return;
+
+            DrawHeader(4f, y, w, "DEBUG TEST ROOM");
+            y += 20f;
+            GUIFit.Panel(new Rect(0f, y, w, 88f), boxStyle);
+
+            float rowY = y + 6f;
+            float buttonW = (w - 20f) / 2f;
+
+            if (GUIFit.Button(new Rect(6f, rowY, buttonW, 22f), testRoomService.IsLoaded ? "Reload Test Room" : "Load Test Room", buttonStyle))
+                testRoomService.LoadRoom();
+            if (GUIFit.Button(new Rect(14f + buttonW, rowY, buttonW, 22f), "Teleport To Room", buttonStyle))
+                testRoomService.TeleportToRoom();
+
+            rowY += 28f;
+            if (GUIFit.Button(new Rect(6f, rowY, w - 12f, 22f), "Clear Test Room / Restore NPCs", buttonStyle))
+                testRoomService.ClearRoom();
+
+            rowY += 28f;
+            string summary = "Status: " + testRoomService.StatusMessage +
+                " | Displays: " + testRoomService.DisplayedBuildables +
+                " | NPCs: " + testRoomService.LinedUpNpcs;
+            DrawLabel(8f, rowY + 1f, w - 16f, 18f, summary, LabelCategory.Status);
+
+            y += 96f;
         }
 
         private static void DrawSaveManager(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,

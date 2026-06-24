@@ -8,7 +8,8 @@ namespace NugzzMenu.UI
     {
         public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
             Action<float> setTimeSpeed, Action<int> setTimeOfDay,
-            Action growAllPlants, Action completeDryingRacks)
+            Action growAllPlants, Action waterAllPlants, Action fillAllPotsWithSoil,
+            Action completeDryingRacks)
         {
             TMPHybridService.Instance.Label(4f, y, w, 18f, "TIME SPEED",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
@@ -54,12 +55,14 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUIFit.Panel(new Rect(0f, y, w, 28f), boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 56f), boxStyle);
             rowY = y + 3f;
             float worldButtonWidth = (w - 8f) / 2f;
             if (GUIFit.Button(new Rect(4f, rowY, worldButtonWidth, 22f), "Auto-Grow All Plants", buttonStyle)) growAllPlants?.Invoke();
             if (GUIFit.Button(new Rect(8f + worldButtonWidth, rowY, worldButtonWidth, 22f), "Complete Drying Racks", buttonStyle)) completeDryingRacks?.Invoke();
-            y += 34f;
+            if (GUIFit.Button(new Rect(4f, rowY + 28f, worldButtonWidth, 22f), "Auto-Water Plants", buttonStyle)) waterAllPlants?.Invoke();
+            if (GUIFit.Button(new Rect(8f + worldButtonWidth, rowY + 28f, worldButtonWidth, 22f), "Auto Dirt Pour", buttonStyle)) fillAllPotsWithSoil?.Invoke();
+            y += 62f;
         }
     }
 }

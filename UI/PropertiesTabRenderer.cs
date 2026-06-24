@@ -61,7 +61,7 @@ namespace NugzzMenu.UI
             }
 
             bool canUseWorldControls = vehicleService.CanSpawnVehicles();
-            GUIFit.Panel(new Rect(0f, y, w, 104f), boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 132f), boxStyle);
             float rowY = y + 6f;
 
             string rvBlowLabel = canUseWorldControls ? "Blow Up RV" : "Host Only";
@@ -98,13 +98,32 @@ namespace NugzzMenu.UI
             }
 
             rowY += 28f;
+            string unlockPropertiesLabel = canUseWorldControls ? "Unlock Properties" : "Host Only";
+            if (GUIFit.Button(new Rect(6f, rowY, w * 0.48f - 8f, 22f), unlockPropertiesLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("Property unlocks are host-only in multiplayer");
+                else
+                    UnlockService.Instance.UnlockAllProperties();
+            }
+
+            string ownBusinessesLabel = canUseWorldControls ? "Own Businesses" : "Host Only";
+            if (GUIFit.Button(new Rect(w * 0.52f, rowY, w * 0.48f - 8f, 22f), ownBusinessesLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("Business ownership is host-only in multiplayer");
+                else
+                    UnlockService.Instance.OwnAllBusinesses();
+            }
+
+            rowY += 28f;
             Label(6f, rowY, w - 12f, 18f,
                 canUseWorldControls
-                    ? "Host tools for the story RV and Benzie Manor access."
+                    ? "Host tools for the story RV, properties, businesses, and Benzie Manor."
                     : "Protected in multiplayer: only the host can sync these world changes.",
                 canUseWorldControls ? LabelCategory.Label : LabelCategory.Error);
 
-            y += 112f;
+            y += 140f;
         }
 
         private static void DrawPropertyPicker(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,

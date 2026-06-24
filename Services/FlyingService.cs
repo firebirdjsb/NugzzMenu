@@ -23,6 +23,10 @@ namespace NugzzMenu.Services
         private Camera _cachedCamera;
         private Vector3 _lastFlyPosition;
         private bool _hasFlyPosition;
+        private float _lastSpaceTapTime = -10f;
+        private float _lastSpaceToggleTime = -10f;
+        private const float DoubleSpaceWindowSeconds = 0.32f;
+        private const float SpaceToggleCooldownSeconds = 0.45f;
 
         public bool Enabled => _enabled;
         public float Speed
@@ -63,6 +67,42 @@ namespace NugzzMenu.Services
         public void SetSpeed(float speed)
         {
             Speed = speed;
+        }
+
+        public void UpdateHotkeys(bool menuOpen)
+        {
+            if (menuOpen)
+            {
+                ResetSpaceTap();
+                return;
+            }
+
+            if (!UnityEngine.Input.GetKeyDown(KeyCode.Space))
+                return;
+
+            if (ManagerCacheService.Instance.LocalPlayer == null)
+            {
+                ResetSpaceTap();
+                return;
+            }
+
+            float now = Time.unscaledTime;
+            if (now - _lastSpaceToggleTime < SpaceToggleCooldownSeconds)
+            {
+                _lastSpaceTapTime = now;
+                return;
+            }
+
+            if (now - _lastSpaceTapTime <= DoubleSpaceWindowSeconds)
+            {
+                SetEnabled(!_enabled);
+                NotificationService.Instance.Status(_enabled ? "Fly ON" : "Fly OFF");
+                _lastSpaceToggleTime = now;
+                ResetSpaceTap();
+                return;
+            }
+
+            _lastSpaceTapTime = now;
         }
 
         public void ApplyFlyMovement()
@@ -151,6 +191,11 @@ namespace NugzzMenu.Services
             player.transform.position += delta;
             _lastFlyPosition = player.transform.position;
             _hasFlyPosition = true;
+        }
+
+        private void ResetSpaceTap()
+        {
+            _lastSpaceTapTime = -10f;
         }
 
         private void SuppressGravity()

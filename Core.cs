@@ -16,7 +16,7 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.9.8";
+        private const string Version = "0.9.9";
         private const int WindowId = 98765;
         private const float HeaderHeight = 56f;
         private const float TabStripHeight = 36f;
@@ -97,8 +97,10 @@ namespace NugzzMenu
 
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
         {
+            DebugTestRoomService.Instance.ResetForScene();
             SaveManagementService.Instance.SetCurrentScene(sceneName);
             ManagerCacheService.Instance.Invalidate();
+            TeleportService.Instance.MarkCatalogDirty();
 
             if (sceneName == "Main")
             {
@@ -109,6 +111,7 @@ namespace NugzzMenu
         public override void OnDeinitializeMelon()
         {
             UnsubscribeS1ApiEvents();
+            DebugTestRoomService.Instance.ClearRoom();
             VehicleCollisionService.Instance.Reset();
             VehicleMenuCameraService.Instance.Reset();
             GUIFit.ClearCache();
@@ -123,13 +126,16 @@ namespace NugzzMenu
         private void HandlePreSceneChange()
         {
             _itemCacheInitialized = false;
+            DebugTestRoomService.Instance.ResetForScene();
             ManagerCacheService.Instance.Invalidate();
+            TeleportService.Instance.MarkCatalogDirty();
             VehicleCollisionService.Instance.Reset();
         }
 
         private void HandleApiPlayerSpawned(object player)
         {
             ManagerCacheService.Instance.Invalidate();
+            TeleportService.Instance.MarkCatalogDirty();
             VehicleCollisionService.Instance.RefreshAll();
         }
 
@@ -159,6 +165,7 @@ namespace NugzzMenu
             VehicleService.Instance.Update();
             VehicleCollisionService.Instance.Update();
             VehicleMenuCameraService.Instance.Update(_isMenuOpen);
+            FlyingService.Instance.UpdateHotkeys(_isMenuOpen);
             BuildingService.Instance.UpdateOutsideItemPickup(_isMenuOpen);
             // The registry can become available a few frames after scene initialization.
             if (!_itemCacheInitialized && ItemService.Instance.ItemCount == 0)
@@ -640,6 +647,8 @@ namespace NugzzMenu
                 TimeManagerService.Instance.SetTimeSpeed,
                 i => TimeManagerService.Instance.SetTimeOfDay(i),
                 () => WorldObjectService.Instance.GrowAllPlants(),
+                () => WorldObjectService.Instance.WaterAllPlants(),
+                () => WorldObjectService.Instance.FillAllPotsWithBestSoil(),
                 () => WorldObjectService.Instance.CompleteDryingRacks());
         }
 
@@ -759,7 +768,8 @@ namespace NugzzMenu
                 GUISystemService.Instance.BoxStyle, _settingsState, LobbyService.Instance.IsHost(),
                 SetKeybind,
                 value => ItemService.Instance.UseGameStackLogic = value, SetVerboseDebugLogging,
-                BuildingService.Instance.SetPlaceAnywhere, SaveManagementService.Instance);
+                BuildingService.Instance.SetPlaceAnywhere, SaveManagementService.Instance,
+                DebugTestRoomService.Instance);
         }
 
         private void SetKeybind(string key)

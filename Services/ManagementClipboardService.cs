@@ -15,7 +15,6 @@ namespace NugzzMenu.Services
         public static ManagementClipboardService Instance => _instance;
 
         private bool _warnedCanvasUpdate;
-        private bool _warnedTrimmersUpdate;
         private IConfigurable _outlinedConfigurable;
         private BuildableItem _outlinedObject;
         private NPC _outlinedNpc;
@@ -59,8 +58,8 @@ namespace NugzzMenu.Services
             {
                 _warnedCanvasUpdate = true;
                 DebugLogService.Instance.VerboseWarning(
-                    "Using management clipboard fallback after canvas update error: " +
-                    exception.Message);
+                    "Using management clipboard fallback after canvas update error (" +
+                    exception.GetType().Name + ")");
             }
 
             RunCanvasFallback(canvas);
@@ -137,21 +136,6 @@ namespace NugzzMenu.Services
                     "Management transit selector fallback failed: " + ex.Message);
                 return false;
             }
-        }
-
-        public Exception HandleTrimmersUpdateException(Exception exception)
-        {
-            if (exception == null)
-                return null;
-
-            if (!_warnedTrimmersUpdate)
-            {
-                _warnedTrimmersUpdate = true;
-                DebugLogService.Instance.VerboseWarning(
-                    "Suppressed trimmers update error: " + exception.Message);
-            }
-
-            return null;
         }
 
         private void RunCanvasFallback(ManagementWorldspaceCanvas canvas)

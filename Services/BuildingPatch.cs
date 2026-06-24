@@ -26,11 +26,6 @@ namespace NugzzMenu.Services
     [HarmonyPatch(typeof(BuildUpdate_Grid), "PositionObjectInFrontOfPlayer")]
     internal static class PlaceAnywhereGridPositionPatch
     {
-        private static void Postfix(BuildUpdate_Grid __instance)
-        {
-            BuildingService.Instance.ApplyPreciseGridPosition(__instance);
-        }
-
         private static Exception Finalizer(BuildUpdate_Grid __instance, Exception __exception)
         {
             if (__exception != null &&
@@ -40,15 +35,6 @@ namespace NugzzMenu.Services
             }
 
             return __exception;
-        }
-    }
-
-    [HarmonyPatch(typeof(BuildUpdate_Grid), "LateUpdate")]
-    internal static class PlaceAnywhereGridLatePositionPatch
-    {
-        private static void Postfix(BuildUpdate_Grid __instance)
-        {
-            BuildingService.Instance.ApplyPreciseGridPosition(__instance);
         }
     }
 

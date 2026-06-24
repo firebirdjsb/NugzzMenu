@@ -1,10 +1,13 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.Trash;
 using Il2CppScheduleOne.Variables;
 using Il2CppScheduleOne.Vehicles;
+using MelonLoader;
 using UnityEngine;
 
 namespace NugzzMenu.Services
@@ -15,12 +18,14 @@ namespace NugzzMenu.Services
         public static CompatibilityService Instance => _instance;
 
         private bool _unityLogFilterPatched;
+        private bool _actionListStaggeredPatched;
 
         private CompatibilityService() { }
 
         public void ApplyRuntimeCompatibilityFixes(HarmonyLib.Harmony harmony)
         {
             ApplyUnityLogFilter(harmony);
+            ApplyActionListStaggeredPatch(harmony);
         }
 
         private void ApplyUnityLogFilter(HarmonyLib.Harmony harmony)
@@ -30,26 +35,15 @@ namespace NugzzMenu.Services
 
             try
             {
-                MethodInfo prefix = typeof(CompatibilityService).GetMethod(
-                    nameof(UnityLoggerLogPrefix),
+                MethodInfo firstArgumentPrefix = typeof(CompatibilityService).GetMethod(
+                    nameof(UnityLogFirstArgumentPrefix),
                     BindingFlags.Static | BindingFlags.NonPublic);
-                if (prefix != null)
-                {
-                    MethodInfo[] methods = typeof(UnityEngine.Logger).GetMethods(
-                        BindingFlags.Instance | BindingFlags.Public);
-                    for (int i = 0; i < methods.Length; i++)
-                    {
-                        MethodInfo method = methods[i];
-                        if (method == null || method.Name != "Log")
-                            continue;
+                MethodInfo secondArgumentPrefix = typeof(CompatibilityService).GetMethod(
+                    nameof(UnityLogSecondArgumentPrefix),
+                    BindingFlags.Static | BindingFlags.NonPublic);
 
-                        ParameterInfo[] parameters = method.GetParameters();
-                        if (parameters.Length < 2 || parameters[0].ParameterType != typeof(LogType))
-                            continue;
-
-                        harmony.Patch(method, prefix: new HarmonyMethod(prefix));
-                    }
-                }
+                PatchUnityLogMethods(harmony, typeof(UnityEngine.Logger), firstArgumentPrefix, secondArgumentPrefix);
+                PatchUnityLogMethods(harmony, typeof(UnityEngine.Debug), firstArgumentPrefix, secondArgumentPrefix);
 
                 _unityLogFilterPatched = true;
             }
@@ -59,24 +53,93 @@ namespace NugzzMenu.Services
             }
         }
 
-        private static bool UnityLoggerLogPrefix(object[] __args)
+        private static void PatchUnityLogMethods(
+            HarmonyLib.Harmony harmony,
+            Type type,
+            MethodInfo firstArgumentPrefix,
+            MethodInfo secondArgumentPrefix)
         {
-            if (__args == null)
-                return true;
+            if (harmony == null || type == null)
+                return;
 
-            for (int i = 0; i < __args.Length; i++)
+            MethodInfo[] methods = type.GetMethods(
+                BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public);
+            for (int i = 0; i < methods.Length; i++)
             {
-                if (ShouldSuppressUnityLog(__args[i]))
-                    return false;
-            }
+                MethodInfo method = methods[i];
+                if (!ShouldPatchUnityLogMethod(method))
+                    continue;
 
-            return true;
+                MethodInfo prefix = SelectUnityLogPrefix(
+                    method,
+                    firstArgumentPrefix,
+                    secondArgumentPrefix);
+                if (prefix == null)
+                    continue;
+
+                try
+                {
+                    harmony.Patch(method, prefix: new HarmonyMethod(prefix));
+                }
+                catch { }
+            }
         }
 
-        private static bool ShouldSuppressUnityLog(object message)
+        private static bool ShouldPatchUnityLogMethod(MethodInfo method)
+        {
+            if (method == null)
+                return false;
+
+            return method.Name == "Log" ||
+                method.Name == "LogWarning" ||
+                method.Name == "LogError";
+        }
+
+        private static MethodInfo SelectUnityLogPrefix(
+            MethodInfo method,
+            MethodInfo firstArgumentPrefix,
+            MethodInfo secondArgumentPrefix)
+        {
+            ParameterInfo[] parameters = method?.GetParameters();
+            if (parameters == null || parameters.Length == 0)
+                return null;
+
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                string name = parameters[i]?.Name ?? string.Empty;
+                if (string.Equals(name, "message", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(name, "msg", StringComparison.OrdinalIgnoreCase))
+                {
+                    return i == 0 ? firstArgumentPrefix :
+                        i == 1 ? secondArgumentPrefix : null;
+                }
+            }
+
+            if (parameters[0].ParameterType == typeof(LogType) ||
+                parameters[0].ParameterType == typeof(string))
+            {
+                return parameters.Length > 1 ? secondArgumentPrefix : null;
+            }
+
+            return firstArgumentPrefix;
+        }
+
+        private static bool UnityLogFirstArgumentPrefix(object __0)
+        {
+            return !ShouldSuppressUnityLog(__0);
+        }
+
+        private static bool UnityLogSecondArgumentPrefix(object __1)
+        {
+            return !ShouldSuppressUnityLog(__1);
+        }
+
+        internal static bool ShouldSuppressUnityLog(object message)
         {
             return ShouldSuppressMissingVariableLog(message) ||
-                ShouldSuppressNegativeBoxColliderLog(message);
+                ShouldSuppressNegativeBoxColliderLog(message) ||
+                ShouldSuppressActionListStaggeredLog(message) ||
+                ShouldSuppressNavMeshAgentLog(message);
         }
 
         private static bool ShouldSuppressMissingVariableLog(object message)
@@ -99,7 +162,10 @@ namespace NugzzMenu.Services
         {
             return string.Equals(variableName, "cash_balance", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(variableName, "total_money", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(variableName, "player_in_vehicle", StringComparison.OrdinalIgnoreCase);
+                string.Equals(variableName, "player_in_vehicle", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(variableName, "inputhintstutorialdone", StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrEmpty(variableName) &&
+                 variableName.StartsWith("inventory", StringComparison.OrdinalIgnoreCase));
         }
 
         private static bool ShouldSuppressNegativeBoxColliderLog(object message)
@@ -108,11 +174,182 @@ namespace NugzzMenu.Services
             return text.IndexOf("BoxCollider does not support negative scale or size", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool ShouldSuppressActionListStaggeredLog(object message)
+        {
+            string text = message?.ToString() ?? string.Empty;
+            return text.IndexOf("Error invoking StaggeredInvoke", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                text.IndexOf("Index was out of range", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool ShouldSuppressNavMeshAgentLog(object message)
+        {
+            string text = message?.ToString() ?? string.Empty;
+            return text.IndexOf("Failed to create agent because it is not close enough to the NavMesh", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void ApplyActionListStaggeredPatch(HarmonyLib.Harmony harmony)
+        {
+            if (_actionListStaggeredPatched || harmony == null)
+                return;
+
+            try
+            {
+                Type actionListType = FindGameType("ActionList");
+                MethodInfo target = actionListType?.GetMethod(
+                    "InvokeAllStaggered",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(float) },
+                    null);
+                MethodInfo prefix = typeof(CompatibilityService).GetMethod(
+                    nameof(ActionListInvokeAllStaggeredPrefix),
+                    BindingFlags.Static | BindingFlags.NonPublic);
+
+                if (target != null && prefix != null)
+                    harmony.Patch(target, prefix: new HarmonyMethod(prefix));
+            }
+            catch { }
+
+            _actionListStaggeredPatched = true;
+        }
+
+        private static Type FindGameType(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName))
+                return null;
+
+            try
+            {
+                Type type = typeof(Player).Assembly.GetType(typeName, false);
+                if (type != null)
+                    return type;
+            }
+            catch { }
+
+            try
+            {
+                Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < assemblies.Length; i++)
+                {
+                    Assembly assembly = assemblies[i];
+                    string name = assembly?.GetName()?.Name ?? string.Empty;
+                    if (!string.Equals(name, "Assembly-CSharp", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    Type type = assembly.GetType(typeName, false);
+                    if (type != null)
+                        return type;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private static bool ActionListInvokeAllStaggeredPrefix(object __instance, float __0)
+        {
+            try
+            {
+                object[] callbacks = CollectActionListCallbacks(__instance);
+                if (callbacks == null)
+                    return true;
+                if (callbacks.Length == 0)
+                    return false;
+
+                MelonCoroutines.Start(InvokeActionListSnapshot(callbacks, __0));
+                return false;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static object[] CollectActionListCallbacks(object actionList)
+        {
+            if (actionList == null)
+                return null;
+
+            MethodInfo getter = actionList.GetType().GetMethod(
+                "GetInvocationList",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            object rawList = getter?.Invoke(actionList, null);
+            IEnumerable enumerable = rawList as IEnumerable;
+            if (enumerable == null)
+                return null;
+
+            var callbacks = new List<object>();
+            foreach (object callback in enumerable)
+            {
+                if (callback != null)
+                    callbacks.Add(callback);
+            }
+
+            return callbacks.ToArray();
+        }
+
+        private static IEnumerator InvokeActionListSnapshot(object[] callbacks, float staggerTime)
+        {
+            if (callbacks == null || callbacks.Length == 0)
+                yield break;
+
+            float delay = callbacks.Length > 1
+                ? Mathf.Max(0f, staggerTime) / callbacks.Length
+                : 0f;
+
+            for (int i = 0; i < callbacks.Length; i++)
+            {
+                try
+                {
+                    InvokeActionListCallback(callbacks[i]);
+                }
+                catch (Exception ex)
+                {
+                    DebugLogService.Instance.VerboseWarning(
+                        "Suppressed ActionList staggered callback error: " + ex.Message);
+                }
+
+                if (delay > 0f && i + 1 < callbacks.Length)
+                    yield return new WaitForSeconds(delay);
+                else
+                    yield return null;
+            }
+        }
+
+        private static void InvokeActionListCallback(object callback)
+        {
+            if (callback == null)
+                return;
+
+            Action action = callback as Action;
+            if (action != null)
+            {
+                action();
+                return;
+            }
+
+            Delegate del = callback as Delegate;
+            if (del != null)
+            {
+                del.DynamicInvoke();
+                return;
+            }
+
+            MethodInfo invoke = callback.GetType().GetMethod(
+                "Invoke",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                Type.EmptyTypes,
+                null);
+            invoke?.Invoke(callback, null);
+        }
+
         private static bool ContainsIgnoredMissingVariableName(string text)
         {
             return text.IndexOf("cash_balance", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 text.IndexOf("total_money", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                text.IndexOf("player_in_vehicle", StringComparison.OrdinalIgnoreCase) >= 0;
+                text.IndexOf("player_in_vehicle", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("inputhintstutorialdone", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool ContainsMissingInventoryVariable(string text)

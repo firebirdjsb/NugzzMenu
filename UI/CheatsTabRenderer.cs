@@ -21,6 +21,8 @@ namespace NugzzMenu.UI
         public float CameraDistance { get; set; }
         public float CameraHeight { get; set; }
         public float CameraShoulder { get; set; }
+        public int SelectedTeleportIndex { get; set; } = 0;
+        public int TeleportPageIndex { get; set; } = 0;
     }
 
     public static class CheatsTabRenderer
@@ -167,6 +169,97 @@ namespace NugzzMenu.UI
                 onLoadPos?.Invoke();
             }
             y += 54f;
+
+            DrawWorldTeleports(ref y, w, onStyle, buttonStyle, boxStyle, state);
+        }
+
+        private static void DrawWorldTeleports(ref float y, float w, GUIStyle onStyle, GUIStyle buttonStyle,
+            GUIStyle boxStyle, CheatsState state)
+        {
+            const int pageSize = 8;
+            const float rowHeight = 26f;
+
+            TMPHybridService.Instance.Label(4f, y, w, 18f, "WORLD TELEPORTS",
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
+            y += 20f;
+
+            TeleportService service = TeleportService.Instance;
+            int destinationCount = service.DestinationCount;
+            int pageCount = service.GetPageCount(pageSize);
+            if (state.TeleportPageIndex >= pageCount)
+                state.TeleportPageIndex = Math.Max(0, pageCount - 1);
+            if (state.TeleportPageIndex < 0)
+                state.TeleportPageIndex = 0;
+            if (state.SelectedTeleportIndex >= destinationCount)
+                state.SelectedTeleportIndex = Math.Max(0, destinationCount - 1);
+
+            int pageItemCount = service.GetPageItemCount(state.TeleportPageIndex, pageSize);
+            float panelHeight = 74f + Math.Max(1, pageItemCount) * rowHeight;
+            GUIFit.Panel(new Rect(0f, y, w, panelHeight), boxStyle);
+
+            float smallW = (w - 30f) / 4f;
+            if (GUIFit.Button(new Rect(6f, y + 6f, smallW, 22f), "Refresh", buttonStyle))
+            {
+                service.RefreshCatalog();
+                destinationCount = service.DestinationCount;
+                pageCount = service.GetPageCount(pageSize);
+                state.TeleportPageIndex = Math.Min(state.TeleportPageIndex, Math.Max(0, pageCount - 1));
+                state.SelectedTeleportIndex = Math.Min(state.SelectedTeleportIndex, Math.Max(0, destinationCount - 1));
+                pageItemCount = service.GetPageItemCount(state.TeleportPageIndex, pageSize);
+            }
+            if (GUIFit.Button(new Rect(12f + smallW, y + 6f, smallW, 22f), "Teleport", buttonStyle))
+            {
+                service.TeleportToDestination(state.SelectedTeleportIndex);
+            }
+            if (GUIFit.Button(new Rect(18f + smallW * 2f, y + 6f, smallW, 22f), "Prev", buttonStyle))
+            {
+                state.TeleportPageIndex = Math.Max(0, state.TeleportPageIndex - 1);
+            }
+            if (GUIFit.Button(new Rect(24f + smallW * 3f, y + 6f, smallW, 22f), "Next", buttonStyle))
+            {
+                state.TeleportPageIndex = Math.Min(pageCount - 1, state.TeleportPageIndex + 1);
+            }
+
+            TMPHybridService.Instance.Label(6f, y + 32f, w - 12f, 18f,
+                $"Page {state.TeleportPageIndex + 1}/{pageCount} | {destinationCount} destinations",
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+            TMPHybridService.Instance.Label(6f, y + 50f, w - 12f, 18f,
+                service.GetDestinationSummary(state.SelectedTeleportIndex),
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+
+            if (pageItemCount == 0)
+            {
+                TMPHybridService.Instance.Label(6f, y + 74f, w - 12f, 20f, service.StatusMessage,
+                    GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+                y += panelHeight + 4f;
+                return;
+            }
+
+            int firstIndex = state.TeleportPageIndex * pageSize;
+            for (int slot = 0; slot < pageItemCount; slot++)
+            {
+                int index = firstIndex + slot;
+                Rect rect = new Rect(6f, y + 74f + slot * rowHeight, w - 12f, 22f);
+                string label = service.GetDestinationButtonLabel(index);
+                if (GUIFit.Button(rect, label, index == state.SelectedTeleportIndex ? onStyle : buttonStyle, 6, true))
+                {
+                    state.SelectedTeleportIndex = index;
+                }
+            }
+
+            y += panelHeight + 4f;
         }
 
         private static void DrawCameraOption(float y, float w, string label, float value, float step,

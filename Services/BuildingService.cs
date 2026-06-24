@@ -36,10 +36,6 @@ namespace NugzzMenu.Services
         private const float OutsidePickupRange = 6f;
         private const float OutsidePickupCooldown = 0.25f;
         private const float PlacementFloorRange = 30f;
-        private const float PlacementFloorGraceTime = 0.5f;
-        private const float MinimumFloorNormalY = 0.45f;
-        private const float PlacementPlaneMaxDistance = 18f;
-        private const float PlacementMaxFrameMove = 2.5f;
         private const float SurfaceUpdateLogInterval = 1f;
         private bool _placeAnywhere;
         private GameObject _previewRoot;
@@ -48,12 +44,6 @@ namespace NugzzMenu.Services
         private float _nextInvalidPlacementLogTime;
         private float _nextHostOnlyNoticeTime;
         private float _nextOutsidePickupTime;
-        private GameObject _positionedGhost;
-        private Vector3 _placementFloorPoint;
-        private float _lastPlacementFloorTime;
-        private int _lastPlacementFloorFrame = -1;
-        private bool _hasPlacementFloorPoint;
-        private float _placementFloorY;
         private float _nextSurfaceUpdateLogTime;
         private readonly HashSet<string> _outsidePlacedItemGuids =
             new HashSet<string>(StringComparer.Ordinal);
@@ -97,6 +87,14 @@ namespace NugzzMenu.Services
                 if (buildable == null || ghost == null)
                     return;
 
+                IgnoreGhostAgainstPlayers(ghost);
+
+                if (HasNativeGridPlacement(buildable))
+                {
+                    DestroyUnusedPreview();
+                    return;
+                }
+
                 Vector3 origin = buildable.OriginFootprint != null
                     ? buildable.OriginFootprint.transform.position
                     : ghost.transform.position;
@@ -134,153 +132,18 @@ namespace NugzzMenu.Services
             _previewOrigin = Vector3.zero;
         }
 
-        public void ApplyPreciseGridPosition(BuildUpdate_Grid buildUpdate)
+        public void ForceGridValid(BuildUpdate_Grid buildUpdate)
         {
-            if (buildUpdate == null)
+            if (!CanOverridePlacementValidation || buildUpdate == null)
                 return;
-
             try
             {
                 GridItem buildable = buildUpdate.BuildableItemClass;
-                GameObject ghost = buildUpdate.GhostModel;
-                PlayerCamera playerCamera = PlayerCamera.Instance;
-                if (buildable == null || ghost == null || playerCamera == null)
+                if (HasCompleteNativeTileIntersections(buildable))
                     return;
 
-                if (_positionedGhost != ghost)
-                {
-                    _positionedGhost = ghost;
-                    _hasPlacementFloorPoint = false;
-                    _lastPlacementFloorFrame = -1;
-                }
-
-                if (_lastPlacementFloorFrame != Time.frameCount)
-                {
-                    _lastPlacementFloorFrame = Time.frameCount;
-                    Transform floorAnchor = GetGridPlacementAnchor(buildable, ghost);
-                    if (TryGetPlacementFloorPoint(playerCamera, ghost, floorAnchor, out Vector3 floorPoint))
-                    {
-                        _placementFloorPoint = floorPoint;
-                        _placementFloorY = floorPoint.y;
-                        _lastPlacementFloorTime = Time.unscaledTime;
-                        _hasPlacementFloorPoint = true;
-                    }
-                }
-
-                if (!_hasPlacementFloorPoint ||
-                    Time.unscaledTime - _lastPlacementFloorTime > PlacementFloorGraceTime)
-                {
-                    return;
-                }
-
-                Transform anchor = GetGridPlacementAnchor(buildable, ghost);
-                Vector3 offset = _placementFloorPoint - anchor.position;
-                if (offset.sqrMagnitude <= 0.000001f)
-                    return;
-                if (_placeAnywhere &&
-                    offset.sqrMagnitude > PlacementMaxFrameMove * PlacementMaxFrameMove)
-                {
-                    offset = offset.normalized * PlacementMaxFrameMove;
-                }
-
-                ghost.transform.position += offset;
-                Physics.SyncTransforms();
-            }
-            catch (Exception ex)
-            {
-                DebugLogService.Instance.VerboseWarning(
-                    "Precise place-anywhere positioning failed: " + ex.Message);
-            }
-        }
-
-        private static bool TryGetPlacementFloorPoint(
-            PlayerCamera playerCamera, GameObject ghost, Transform anchor, out Vector3 floorPoint)
-        {
-            floorPoint = default;
-            Camera camera = playerCamera.Camera != null ? playerCamera.Camera : Camera.main;
-            if (camera == null || ghost == null)
-                return false;
-
-            Vector3 origin = camera.transform.position;
-            Vector3 direction = camera.transform.forward;
-            if (!IsFinite(origin) || !IsFinite(direction) || direction.sqrMagnitude < 0.0001f)
-                return false;
-
-            direction.Normalize();
-            if (TryRaycastPlacementFloor(origin, direction, ghost, out floorPoint))
-                return true;
-
-            float planeY = anchor != null ? anchor.position.y : ghost.transform.position.y;
-            if (!IsFinite(new Vector3(0f, planeY, 0f)) || Mathf.Abs(direction.y) < 0.03f)
-                return false;
-
-            float distance = (planeY - origin.y) / direction.y;
-            if (distance <= 0.05f || distance > PlacementPlaneMaxDistance)
-                return false;
-
-            floorPoint = origin + direction * distance;
-            return IsFinite(floorPoint);
-        }
-
-        private static bool TryRaycastPlacementFloor(
-            Vector3 origin, Vector3 direction, GameObject ghost, out Vector3 floorPoint)
-        {
-            floorPoint = default;
-            RaycastHit[] hits = Physics.RaycastAll(
-                origin,
-                direction,
-                PlacementFloorRange,
-                -1,
-                QueryTriggerInteraction.Ignore);
-            float nearestDistance = float.MaxValue;
-            bool found = false;
-
-            for (int i = 0; i < hits.Length; i++)
-            {
-                RaycastHit hit = hits[i];
-                Collider collider = hit.collider;
-                if (collider == null || hit.distance >= nearestDistance ||
-                    hit.normal.y < MinimumFloorNormalY)
-                {
-                    continue;
-                }
-
-                Transform hitTransform = collider.transform;
-                if (hitTransform.IsChildOf(ghost.transform) ||
-                    collider.GetComponentInParent<Player>() != null ||
-                    collider.GetComponentInParent<BuildableItem>() != null ||
-                    collider.GetComponentInParent<Tile>() != null ||
-                    collider.GetComponentInParent<FootprintTile>() != null)
-                {
-                    continue;
-                }
-
-                nearestDistance = hit.distance;
-                floorPoint = hit.point;
-                found = true;
-            }
-
-            return found;
-        }
-
-        private static Transform GetGridPlacementAnchor(GridItem buildable, GameObject ghost)
-        {
-            if (buildable?.OriginFootprint != null)
-                return buildable.OriginFootprint.transform;
-            if (buildable?.BuildPoint != null)
-                return buildable.BuildPoint;
-            return ghost != null ? ghost.transform : null;
-        }
-
-        public void ForceGridValid(BuildUpdate_Grid buildUpdate)
-        {
-            if (!_placeAnywhere || buildUpdate == null)
-                return;
-            try
-            {
                 buildUpdate._validPosition =
-                    HasPlacementAuthority() &&
-                    HasCompleteTileIntersections(buildUpdate.BuildableItemClass);
+                    HasCompleteSyntheticTileIntersections(buildable);
             }
             catch { }
         }
@@ -297,10 +160,12 @@ namespace NugzzMenu.Services
             }
             if (buildUpdate == null || buildUpdate.BuildableItemClass == null)
                 return false;
+            if (HasCompleteNativeTileIntersections(buildUpdate.BuildableItemClass))
+                return true;
             if (_previewGrid == null || _previewRoot == null)
                 return false;
 
-            return HasCompleteTileIntersections(buildUpdate.BuildableItemClass);
+            return HasCompleteSyntheticTileIntersections(buildUpdate.BuildableItemClass);
         }
 
         public void EnsureSyntheticGridForNetworkItem(GridItem item)
@@ -769,6 +634,8 @@ namespace NugzzMenu.Services
                 if (camera == null)
                     return false;
 
+                IgnoreGhostAgainstPlayers(buildUpdate.GhostModel);
+
                 Transform cameraTransform = camera.transform;
                 Vector3 origin = cameraTransform.position;
                 Vector3 direction = cameraTransform.forward;
@@ -804,6 +671,8 @@ namespace NugzzMenu.Services
                     {
                         continue;
                     }
+                    if (IsPlayerPlacementCollider(collider))
+                        continue;
 
                     Surface surface = collider.GetComponentInParent<Surface>();
                     if (surface == null || !IsSurfaceTypeAllowed(buildUpdate.BuildableItemClass, surface))
@@ -1017,7 +886,165 @@ namespace NugzzMenu.Services
             catch { }
         }
 
+        private static void IgnoreGhostAgainstPlayers(GameObject ghost)
+        {
+            if (ghost == null)
+                return;
+
+            try
+            {
+                Collider[] ghostColliders = ghost.GetComponentsInChildren<Collider>(true);
+                if (ghostColliders == null || ghostColliders.Length == 0)
+                    return;
+
+                var players = Player.PlayerList;
+                if (players == null || players.Count == 0)
+                {
+                    IgnoreGhostAgainstPlayer(ghostColliders, Player.Local);
+                    return;
+                }
+
+                for (int i = 0; i < players.Count; i++)
+                    IgnoreGhostAgainstPlayer(ghostColliders, players[i]);
+            }
+            catch { }
+        }
+
+        private static void IgnoreGhostAgainstPlayer(Collider[] ghostColliders, Player player)
+        {
+            if (ghostColliders == null || player == null)
+                return;
+
+            try
+            {
+                Collider cap = player.CapCol;
+                Collider controller = player.CharacterController;
+                Collider[] playerColliders = player.GetComponentsInChildren<Collider>(true);
+                for (int i = 0; i < ghostColliders.Length; i++)
+                {
+                    Collider ghostCollider = ghostColliders[i];
+                    if (ghostCollider == null)
+                        continue;
+
+                    if (cap != null && cap != ghostCollider)
+                        Physics.IgnoreCollision(cap, ghostCollider, true);
+                    if (controller != null && controller != cap && controller != ghostCollider)
+                        Physics.IgnoreCollision(controller, ghostCollider, true);
+
+                    if (playerColliders == null)
+                        continue;
+
+                    for (int j = 0; j < playerColliders.Length; j++)
+                    {
+                        Collider playerCollider = playerColliders[j];
+                        if (playerCollider != null && playerCollider != ghostCollider)
+                            Physics.IgnoreCollision(playerCollider, ghostCollider, true);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private static bool IsPlayerPlacementCollider(Collider collider)
+        {
+            if (collider == null)
+                return false;
+
+            try
+            {
+                if (collider.GetComponentInParent<Player>() != null)
+                    return true;
+            }
+            catch { }
+
+            try
+            {
+                var players = Player.PlayerList;
+                if (players != null)
+                {
+                    for (int i = 0; i < players.Count; i++)
+                    {
+                        if (IsColliderForPlayer(collider, players[i]))
+                            return true;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                return IsColliderForPlayer(collider, Player.Local) ||
+                    IsColliderForPlayer(collider, ManagerCacheService.Instance.LocalPlayer);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsColliderForPlayer(Collider collider, Player player)
+        {
+            if (collider == null || player == null)
+                return false;
+
+            try
+            {
+                if (collider == player.CapCol || collider == player.CharacterController)
+                    return true;
+            }
+            catch { }
+
+            try
+            {
+                Transform colliderTransform = collider.transform;
+                Transform playerTransform = player.transform;
+                if (colliderTransform == null || playerTransform == null)
+                    return false;
+
+                return colliderTransform == playerTransform ||
+                    colliderTransform.IsChildOf(playerTransform) ||
+                    playerTransform.IsChildOf(colliderTransform) ||
+                    colliderTransform.root == playerTransform.root;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool HasNativeGridPlacement(GridItem buildable)
+        {
+            if (buildable == null)
+                return false;
+
+            try
+            {
+                buildable.CalculateFootprintTileIntersections();
+                return HasCompleteNativeTileIntersections(buildable);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool HasCompleteTileIntersections(GridItem buildable)
+        {
+            return HasCompleteTileIntersections(buildable, TileIntersectionSource.Any);
+        }
+
+        private static bool HasCompleteNativeTileIntersections(GridItem buildable)
+        {
+            return HasCompleteTileIntersections(buildable, TileIntersectionSource.Native);
+        }
+
+        private static bool HasCompleteSyntheticTileIntersections(GridItem buildable)
+        {
+            return HasCompleteTileIntersections(buildable, TileIntersectionSource.Synthetic);
+        }
+
+        private static bool HasCompleteTileIntersections(
+            GridItem buildable, TileIntersectionSource source)
         {
             if (buildable == null || buildable.CoordinateFootprintTilePairs == null ||
                 buildable.CoordinateFootprintTilePairs.Count == 0)
@@ -1029,11 +1056,45 @@ namespace NugzzMenu.Services
             {
                 var footprint = buildable.CoordinateFootprintTilePairs[i]?.footprintTile;
                 var detector = footprint?.tileDetector;
-                if (detector?.intersectedTiles == null || detector.intersectedTiles.Count == 0)
+                if (detector?.intersectedTiles == null ||
+                    !HasTileIntersection(detector.intersectedTiles, source))
+                {
                     return false;
+                }
             }
 
             return true;
+        }
+
+        private static bool HasTileIntersection(
+            Il2CppSystem.Collections.Generic.List<Tile> tiles, TileIntersectionSource source)
+        {
+            if (tiles == null || tiles.Count == 0)
+                return false;
+
+            for (int i = 0; i < tiles.Count; i++)
+            {
+                Tile tile = tiles[i];
+                if (tile == null)
+                    continue;
+
+                bool synthetic = IsSyntheticTileObject(tile);
+                if (source == TileIntersectionSource.Any ||
+                    (source == TileIntersectionSource.Native && !synthetic) ||
+                    (source == TileIntersectionSource.Synthetic && synthetic))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private enum TileIntersectionSource
+        {
+            Any,
+            Native,
+            Synthetic
         }
 
         private static string CreateSyntheticGridGuid(
@@ -1440,6 +1501,11 @@ namespace NugzzMenu.Services
             return false;
         }
 
+        private static bool IsSyntheticTileObject(Tile tile)
+        {
+            return tile != null && IsSyntheticPlacementTransform(tile.transform);
+        }
+
         private static bool IsFinite(Vector3 value)
         {
             return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
@@ -1471,9 +1537,6 @@ namespace NugzzMenu.Services
             _previewRoot = null;
             _previewGrid = null;
             _previewOrigin = Vector3.zero;
-            _positionedGhost = null;
-            _hasPlacementFloorPoint = false;
-            _lastPlacementFloorFrame = -1;
         }
     }
 }

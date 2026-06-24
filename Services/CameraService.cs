@@ -29,6 +29,8 @@ namespace NugzzMenu.Services
         private float _distance = 2.65f;
         private float _height = 1.45f;
         private float _shoulderOffset;
+        private int _nativeToolRaycastFrame = -1;
+        private bool _nativeToolRaycastActive;
 
         private CameraService() { }
 
@@ -38,6 +40,7 @@ namespace NugzzMenu.Services
         public float ShoulderOffset => _shoulderOffset;
         public bool ShouldUseCustomCombatHit => _enabled && _overrideActive;
         public bool ShouldUseVanillaManagementRaycasts => ManagementClipboardService.Instance.IsActive();
+        public bool ShouldUseVanillaToolRaycasts => IsNativeToolRaycastActive();
 
         public void SetDistance(float value) => _distance = Mathf.Clamp(value, 1.5f, 6f);
         public void SetHeight(float value) => _height = Mathf.Clamp(value, 0.8f, 2.4f);
@@ -135,7 +138,7 @@ namespace NugzzMenu.Services
                     _anglesReady = true;
                 }
 
-                if (!_menuOpen && _lastInputFrame != Time.frameCount)
+                if (!_menuOpen && !InputLockService.Instance.IsLocked && _lastInputFrame != Time.frameCount)
                 {
                     _yaw += Input.GetAxisRaw("Mouse X") * 1.6f;
                     _pitch = Mathf.Clamp(_pitch - Input.GetAxisRaw("Mouse Y") * 1.3f, -35f, 55f);
@@ -212,7 +215,7 @@ namespace NugzzMenu.Services
         public bool TryThirdPersonInteractionRaycast(float range, LayerMask layerMask, bool includeTriggers, float radius, out RaycastHit hit)
         {
             hit = default;
-            if (ManagementClipboardService.Instance.IsActive())
+            if (ManagementClipboardService.Instance.IsActive() || IsNativeToolRaycastActive())
                 return false;
 
             if (!_enabled || !_overrideActive)
@@ -847,6 +850,48 @@ namespace NugzzMenu.Services
                     return true;
                 if (collider.GetComponentInParent<Equippable_MeleeWeapon>() != null)
                     return true;
+            }
+            catch { }
+
+            return false;
+        }
+
+        private bool IsNativeToolRaycastActive()
+        {
+            if (!_enabled || !_overrideActive)
+                return false;
+
+            int frame = Time.frameCount;
+            if (_nativeToolRaycastFrame == frame)
+                return _nativeToolRaycastActive;
+
+            _nativeToolRaycastFrame = frame;
+            _nativeToolRaycastActive =
+                HasActiveEquippable<Equippable_Trimmers>() ||
+                HasActiveEquippable<Equippable_Pourable>();
+
+            return _nativeToolRaycastActive;
+        }
+
+        private static bool HasActiveEquippable<T>()
+            where T : Equippable
+        {
+            try
+            {
+                T[] tools = UnityEngine.Object.FindObjectsOfType<T>();
+                if (tools == null)
+                    return false;
+
+                for (int i = 0; i < tools.Length; i++)
+                {
+                    T tool = tools[i];
+                    if (tool == null || !tool.enabled)
+                        continue;
+
+                    GameObject gameObject = tool.gameObject;
+                    if (gameObject != null && gameObject.activeInHierarchy)
+                        return true;
+                }
             }
             catch { }
 

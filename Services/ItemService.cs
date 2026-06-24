@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
 using Il2CppScheduleOne;
+using Il2CppScheduleOne.Clothing;
+using Il2CppScheduleOne.Equipping.Framework;
+using Il2CppScheduleOne.Growing;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.Product;
+using Il2CppScheduleOne.Product.Packaging;
 using Il2CppScheduleOne.Storage;
 using UnityEngine;
 
@@ -15,6 +19,7 @@ namespace NugzzMenu.Services
         public static ItemService Instance => _instance;
         private string[] _itemIds = new string[0];
         private string[] _itemNames = new string[0];
+        private string[] _itemCategories = new string[0];
         private ItemDefinition[] _itemDefinitions = new ItemDefinition[0];
         private int _itemCount = 0;
         private bool _isCached = false;
@@ -44,25 +49,122 @@ namespace NugzzMenu.Services
             public EQuality Quality;
         }
 
-        private static readonly (string label, string[] match, string[] exclude)[] Cat =
+        private struct KnownCatalogItem
         {
-            ("All", new string[0], new string[0]),
-            ("Drugs", new[] { "ogkush", "okkush", "sourdiesel", "greencrack", "granddaddy", "babyblue", "bikercrank", "meth", "cocaine", "weed", "pseudo", "cocaleaf", "cocainebase" }, new string[0]),
-            ("Grow", new[] { "seed", "soil", "pot", "grow", "halogen", "led", "fullspectrum", "wateringcan", "trimmer", "fertilizer", "pgr", "speedgrow" }, new string[0]),
-            ("Gear", new[] { "chemistry", "laboven", "packaging", "cauldron", "mixingstation", "brickpress", "dryingrack", "storagerack", "displaycab", "safe", "trash" }, new string[0]),
-            ("Weapons", new[] { "baseballbat", "fryingpan", "machete", "revolver", "m1911", "cylinder", "mag", "bat" }, new string[0]),
-            ("Clothes", new[] { "clothes", "apron", "blazer", "belt", "buckethat", "buttonup", "rolledbuttonup", "cap", "cargopants", "chefhat", "collarjacket", "combatboots", "cowboyhat", "dressshoes", "fingerlessgloves", "flannelshirt", "flatcap", "flats", "gloves", "jeans", "jorts", "legendsunglasses", "longskirt", "overalls", "porkpiehat", "rectangleframeglasses", "sandals", "skirt", "smallroundglasses", "sneakers", "speeddealershades", "tacticalvest", "tshirt", "vest", "vneck" }, new string[0]),
-            ("Misc", new[] { "" }, new string[0]),
+            public string Id;
+            public string Name;
+            public string Category;
+
+            public KnownCatalogItem(string id, string name, string category)
+            {
+                Id = id;
+                Name = name;
+                Category = category;
+            }
+        }
+
+        private static readonly KnownCatalogItem[] KnownCatalogItems =
+        {
+            new KnownCatalogItem("suspensionrack", "Suspension Rack", "Equipment"),
+        };
+
+        private static readonly string[] Categories =
+        {
+            "All",
+            "Drugs",
+            "Seeds",
+            "Mixers",
+            "Grow",
+            "Tools",
+            "Packaging",
+            "Equipment",
+            "Furniture",
+            "Storage",
+            "Lights",
+            "Weapons",
+            "Skateboards",
+            "Clothes",
+            "Decor",
+            "Misc",
+        };
+
+        private static readonly string[] WeaponKeys =
+        {
+            "baseballbat", "fryingpan", "machete", "revolver", "m1911",
+            "pump shotgun", "pumpshotgun", "shotgunshell", "cylinder", "magazine",
+            "goldenm1911"
+        };
+
+        private static readonly string[] DrugKeys =
+        {
+            "ogkush", "sourdiesel", "greencrack", "granddaddypurple",
+            "weed", "meth", "liquidmeth", "cocaine", "cocainebase",
+            "shroom", "pseudo", "liquidbabyblue", "liquidbikercrank",
+            "liquidglass", "cocaleaf"
+        };
+
+        private static readonly string[] IngredientKeys =
+        {
+            "acid", "addy", "banana", "battery", "chili", "cuke", "donut",
+            "energydrink", "flumedicine", "gasoline", "horsesemen", "iodine",
+            "megabean", "motoroil", "mouthwash", "paracetamol", "phosphorus",
+            "viagor", "viagra"
+        };
+
+        private static readonly string[] ToolKeys =
+        {
+            "wateringcan", "spraybottle", "trimmer", "spraypaint",
+            "graffiticleaner", "grafitticleaner", "trashbag", "trashgrabber",
+            "flashlight", "managementclipboard"
+        };
+
+        private static readonly string[] GrowKeys =
+        {
+            "soil", "fertilizer", "pgr", "speedgrow", "growtent", "pot",
+            "mushroombed", "mushroomspawnstation", "grainbag", "sporesyringe",
+            "substrate", "mushroomsubstrate", "shroomspawn", "acunit",
+            "soilpourer", "potsprinkler", "sprinkler", "bigsprinkler"
+        };
+
+        private static readonly string[] EquipmentKeys =
+        {
+            "chemistrystation", "laboven", "cauldron", "mixingstation",
+            "brickpress", "dryingrack", "packagingstation", "suspensionrack",
+            "launderingstation"
+        };
+
+        private static readonly string[] StorageKeys =
+        {
+            "storagerack", "storagecloset", "displaycabinet", "filingcabinet",
+            "locker", "safe"
+        };
+
+        private static readonly string[] LightKeys =
+        {
+            "lamp", "light", "halogen", "led", "fullspectrum"
+        };
+
+        private static readonly string[] SkateboardKeys =
+        {
+            "skateboard", "cruiser"
+        };
+
+        private static readonly string[] DecorKeys =
+        {
+            "artwork", "clock", "sign", "goldbar", "goldchain", "silverchain",
+            "goldwatch", "silverwatch", "chateaulapeepee", "brutdugloop",
+            "oldmanjimmyswhiskey", "garbagethrone", "trashcrown", "wallshelf",
+            "wallmountedshelf", "metalsign", "woodensign", "woodsign"
         };
 
         private ItemService() { }
 
-        public static int CategoryCount => Cat?.Length ?? 14;
+        public static int CategoryCount => Categories?.Length ?? 1;
         public static string GetCategoryLabel(int idx)
         {
-            if (Cat == null) return "All";
-            if (idx < 0 || idx >= Cat.Length) return "Other";
-            return Cat[idx].label;
+            if (Categories == null) return "All";
+            if (idx < 0 || idx >= Categories.Length) return "Other";
+            return Categories[idx];
         }
 
         private static bool IsBlockedCatalogItem(string itemId)
@@ -70,10 +172,29 @@ namespace NugzzMenu.Services
             string key = NormalizeItemKey(itemId);
             return key == "cash" ||
                 key == "defaultweed" ||
-                key == "metalsignbuilt" ||
                 key == "offer" ||
                 key == "stolendeaddrop" ||
-                key == "woodsignbuilt";
+                key == "lowqualitypseudo" ||
+                key == "lowqualitypseudoproduct" ||
+                key == "pseudolowquality" ||
+                key == "pseudolowqualityproduct" ||
+                key == "highqualitypseudo" ||
+                key == "highqualitypseudoproduct" ||
+                key == "pseudohighquality" ||
+                key == "pseudohighqualityproduct" ||
+                key == "poorqualitypseudo" ||
+                key == "poorqualitypseudoproduct" ||
+                key == "pseudopoorquality" ||
+                key == "pseudopoorqualityproduct" ||
+                key == "premiumqualitypseudo" ||
+                key == "premiumqualitypseudoproduct" ||
+                key == "pseudopremiumquality" ||
+                key == "pseudopremiumqualityproduct" ||
+                key == "cukepseudo" ||
+                key == "cukepseudoproduct" ||
+                key == "energydrinkpseudo" ||
+                key == "energydrinkpseudoproduct" ||
+                key == "brick";
         }
 
         private static string NormalizeItemKey(string value)
@@ -119,27 +240,25 @@ namespace NugzzMenu.Services
                     return;
                 }
 
-                int count = allItems.Count;
+                var products = ManagerCacheService.Instance.ProductManager?.AllProducts;
+                int productCount = products != null ? products.Count : 0;
+                int knownCount = KnownCatalogItems != null ? KnownCatalogItems.Length : 0;
+                int count = allItems.Count + productCount + knownCount;
                 _itemIds = new string[count];
                 _itemNames = new string[count];
+                _itemCategories = new string[count];
                 _itemDefinitions = new ItemDefinition[count];
                 _itemCount = 0;
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 for (int i = 0; i < count; i++)
                 {
+                    if (i >= allItems.Count)
+                        break;
+
                     try
                     {
-                        var def = allItems[i];
-                        string id = def?.name;
-                        if (string.IsNullOrEmpty(id)) continue;
-                        if (IsBlockedCatalogItem(id)) continue;
-
-                        string display = id;
-
-                        _itemIds[_itemCount] = id;
-                        _itemNames[_itemCount] = display;
-                        _itemDefinitions[_itemCount] = def;
-                        _itemCount++;
+                        AddCatalogItem(allItems[i], seen);
                     }
                     catch (Exception ex)
                     {
@@ -147,15 +266,114 @@ namespace NugzzMenu.Services
                     }
                 }
 
+                if (products != null)
+                {
+                    for (int i = 0; i < products.Count; i++)
+                    {
+                        try
+                        {
+                            AddCatalogItem(products[i], seen);
+                        }
+                        catch (Exception ex)
+                        {
+                            UnityEngine.Debug.LogError("[Nugzz] Product cache error " + i + ": " + ex.Message);
+                        }
+                    }
+                }
+
+                AddKnownCatalogItems(seen);
+
                 SortItemCache();
                 _isCached = true;
                 ApplyFilter();
-                UnityEngine.Debug.Log("[Nugzz] Loaded " + _itemCount + " items");
+                UnityEngine.Debug.Log("[Nugzz] Loaded " + _itemCount + " items (" + allItems.Count + " registry, " + productCount + " products, " + knownCount + " known)");
             }
             catch (Exception ex)
             {
                 UnityEngine.Debug.LogError("[Nugzz] InitCache fail: " + ex.Message);
             }
+        }
+
+        private void AddKnownCatalogItems(HashSet<string> seen)
+        {
+            if (KnownCatalogItems == null || seen == null)
+                return;
+
+            for (int i = 0; i < KnownCatalogItems.Length; i++)
+            {
+                KnownCatalogItem item = KnownCatalogItems[i];
+                if (string.IsNullOrEmpty(item.Id) || IsBlockedCatalogItem(item.Id))
+                    continue;
+
+                string key = NormalizeAliasKey(item.Id);
+                string alias = GetKnownAlias(key);
+                if (!string.IsNullOrEmpty(alias))
+                    key = alias;
+
+                if (!seen.Add(key))
+                    continue;
+                if (_itemCount >= _itemIds.Length)
+                    return;
+
+                _itemIds[_itemCount] = item.Id;
+                _itemNames[_itemCount] = string.IsNullOrEmpty(item.Name)
+                    ? GetDisplayName(item.Id, null)
+                    : item.Name;
+                _itemCategories[_itemCount] = string.IsNullOrEmpty(item.Category)
+                    ? GetCatalogCategory(item.Id, null)
+                    : item.Category;
+                _itemDefinitions[_itemCount] = null;
+                _itemCount++;
+            }
+        }
+
+        private void AddCatalogItem(ItemDefinition definition, HashSet<string> seen)
+        {
+            string id = definition?.name;
+            if (string.IsNullOrEmpty(id) || IsBlockedCatalogItem(id) ||
+                !CanCatalogDefinitionSpawn(definition))
+            {
+                return;
+            }
+
+            string key = NormalizeAliasKey(id);
+            string alias = GetKnownAlias(key);
+            if (!string.IsNullOrEmpty(alias))
+                key = alias;
+
+            if (!seen.Add(key))
+                return;
+
+            if (_itemCount >= _itemIds.Length)
+                return;
+
+            _itemIds[_itemCount] = id;
+            _itemNames[_itemCount] = GetDisplayName(id, definition);
+            _itemCategories[_itemCount] = GetCatalogCategory(id, definition);
+            _itemDefinitions[_itemCount] = definition;
+            _itemCount++;
+        }
+
+        private static bool CanCatalogDefinitionSpawn(ItemDefinition definition)
+        {
+            if (definition == null)
+                return false;
+
+            string key = NormalizeAliasKey(definition.name);
+            string alias = GetKnownAlias(key);
+            if (!string.IsNullOrEmpty(alias))
+                key = alias;
+            if (key == "suspensionrack")
+                return true;
+
+            if (TryCastDefinition<ProductDefinition>(definition) != null)
+                return true;
+            if (TryCastDefinition<StorableItemDefinition>(definition) != null)
+                return true;
+            if (TryCastDefinition<BuildableItemDefinition>(definition) != null)
+                return true;
+
+            return false;
         }
 
         private void SortItemCache()
@@ -164,6 +382,7 @@ namespace NugzzMenu.Services
             {
                 string name = _itemNames[i];
                 string id = _itemIds[i];
+                string category = _itemCategories[i];
                 ItemDefinition def = _itemDefinitions[i];
                 int j = i - 1;
 
@@ -171,18 +390,20 @@ namespace NugzzMenu.Services
                 {
                     _itemNames[j + 1] = _itemNames[j];
                     _itemIds[j + 1] = _itemIds[j];
+                    _itemCategories[j + 1] = _itemCategories[j];
                     _itemDefinitions[j + 1] = _itemDefinitions[j];
                     j--;
                 }
                 _itemNames[j + 1] = name;
                 _itemIds[j + 1] = id;
+                _itemCategories[j + 1] = category;
                 _itemDefinitions[j + 1] = def;
             }
         }
 
         public void SetFilter(int filterIndex)
         {
-            if (filterIndex < 0 || filterIndex >= Cat.Length) filterIndex = 0;
+            if (filterIndex < 0 || filterIndex >= Categories.Length) filterIndex = 0;
             if (_currentFilter != filterIndex)
             {
                 _currentFilter = filterIndex;
@@ -237,7 +458,7 @@ namespace NugzzMenu.Services
                 return;
             }
 
-            var (_, matchKeys, excludeKeys) = Cat[_currentFilter];
+            string selectedCategory = GetCategoryLabel(_currentFilter);
 
             for (int i = 0; i < _itemCount; i++)
             {
@@ -247,27 +468,8 @@ namespace NugzzMenu.Services
                 string idLower = _itemIds[i].ToLowerInvariant();
                 string nameLower = _itemNames[i].ToLowerInvariant();
 
-                if (excludeKeys != null && excludeKeys.Length > 0)
-                {
-                    bool isExcluded = false;
-                    for (int x = 0; x < excludeKeys.Length; x++)
-                    {
-                        if (idLower.Contains(excludeKeys[x]) || nameLower.Contains(excludeKeys[x]))
-                        { isExcluded = true; break; }
-                    }
-                    if (isExcluded) continue;
-                }
-
-                bool inCategory = false;
-                if (matchKeys != null && matchKeys.Length > 0)
-                {
-                    for (int m = 0; m < matchKeys.Length; m++)
-                    {
-                        if (idLower.Contains(matchKeys[m]) || nameLower.Contains(matchKeys[m]))
-                        { inCategory = true; break; }
-                    }
-                }
-                if (!inCategory) continue;
+                if (!string.Equals(_itemCategories[i], selectedCategory, StringComparison.OrdinalIgnoreCase))
+                    continue;
 
                 if (hasSearch)
                 {
@@ -300,6 +502,12 @@ namespace NugzzMenu.Services
         {
             if (string.IsNullOrEmpty(itemId) || quantity <= 0)
                 return;
+
+            if (IsBlockedCatalogItem(itemId))
+            {
+                NotificationService.Instance.Status("Item blocked: " + HumanizeItemId(itemId));
+                return;
+            }
 
             if (qualityIndex < 0 || qualityIndex > 4)
                 qualityIndex = _qualityIndex;
@@ -595,6 +803,9 @@ namespace NugzzMenu.Services
                     continue;
 
                 string key = NormalizeAliasKey(id);
+                string candidateAlias = GetKnownAlias(key);
+                if (!string.IsNullOrEmpty(candidateAlias))
+                    key = candidateAlias;
                 if (key != wanted)
                     continue;
 
@@ -663,6 +874,221 @@ namespace NugzzMenu.Services
             return key;
         }
 
+        private static string GetDisplayName(string itemId, ItemDefinition definition)
+        {
+            string known = GetKnownDisplayName(NormalizeAliasKey(itemId));
+            if (!string.IsNullOrEmpty(known))
+                return known;
+
+            try
+            {
+                string definitionName = definition?.name;
+                known = GetKnownDisplayName(NormalizeAliasKey(definitionName));
+                if (!string.IsNullOrEmpty(known))
+                    return known;
+            }
+            catch { }
+
+            return HumanizeItemId(itemId);
+        }
+
+        private static string GetCatalogCategory(string itemId, ItemDefinition definition)
+        {
+            string key = NormalizeAliasKey(itemId);
+            string alias = GetKnownAlias(key);
+            if (!string.IsNullOrEmpty(alias))
+                key = alias;
+
+            if (IsSeedKey(key) || TryCastDefinition<SeedDefinition>(definition) != null)
+                return "Seeds";
+
+            if (key == "suspensionrack")
+                return "Equipment";
+
+            if (key == "bomb" || key == "rdx")
+                return "Misc";
+            if (key == "mushroomhat")
+                return "Clothes";
+            if (key == "cocaleaf")
+                return "Drugs";
+
+            if (ContainsAny(key, WeaponKeys))
+                return "Weapons";
+            if (TryCastDefinition<ProductDefinition>(definition) != null || ContainsAny(key, DrugKeys))
+                return "Drugs";
+            if (TryCastDefinition<PackagingDefinition>(definition) != null)
+                return "Packaging";
+            if (TryCastDefinition<ClothingDefinition>(definition) != null)
+                return "Clothes";
+            if (ContainsAny(key, IngredientKeys))
+                return "Mixers";
+            if (ContainsAny(key, SkateboardKeys))
+                return "Skateboards";
+            if (ContainsAny(key, StorageKeys))
+                return "Storage";
+            if (ContainsAny(key, EquipmentKeys))
+                return "Equipment";
+            if (ContainsAny(key, ToolKeys))
+                return "Tools";
+            if (ContainsAny(key, GrowKeys) ||
+                TryCastDefinition<SoilDefinition>(definition) != null ||
+                TryCastDefinition<AdditiveDefinition>(definition) != null ||
+                TryCastDefinition<SporeSyringeDefinition>(definition) != null ||
+                TryCastDefinition<ShroomSpawnDefinition>(definition) != null)
+            {
+                return "Grow";
+            }
+
+            if (ContainsAny(key, LightKeys))
+                return "Lights";
+            if (ContainsAny(key, DecorKeys))
+                return "Decor";
+            if (TryCastDefinition<BuildableItemDefinition>(definition) != null)
+                return "Furniture";
+            if (TryCastDefinition<EquippableItemDefinition>(definition) != null ||
+                TryCastDefinition<WaterContainerDefinition>(definition) != null)
+            {
+                return "Tools";
+            }
+
+            return "Misc";
+        }
+
+        private static bool IsSeedKey(string key)
+        {
+            return key == "ogkushseed" ||
+                key == "greencrackseed" ||
+                key == "granddaddypurpleseed" ||
+                key == "sourdieselseed" ||
+                key == "cocaseed";
+        }
+
+        private static bool ContainsAny(string key, string[] needles)
+        {
+            if (string.IsNullOrEmpty(key) || needles == null)
+                return false;
+
+            for (int i = 0; i < needles.Length; i++)
+            {
+                string needle = needles[i];
+                if (!string.IsNullOrEmpty(needle) && key.Contains(needle))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static string HumanizeItemId(string itemId)
+        {
+            if (string.IsNullOrWhiteSpace(itemId))
+                return string.Empty;
+
+            string text = itemId
+                .Replace("_", " ")
+                .Replace("-", " ")
+                .Replace("(Clone)", string.Empty)
+                .Replace("Built", string.Empty);
+
+            var chars = new List<char>(text.Length + 8);
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                char previous = i > 0 ? text[i - 1] : '\0';
+                char next = i + 1 < text.Length ? text[i + 1] : '\0';
+
+                bool startsWord = i > 0 &&
+                    !char.IsWhiteSpace(previous) &&
+                    char.IsUpper(c) &&
+                    (char.IsLower(previous) || char.IsDigit(previous) ||
+                     (char.IsUpper(previous) && char.IsLower(next)));
+
+                if (startsWord)
+                    chars.Add(' ');
+                chars.Add(c);
+            }
+
+            text = new string(chars.ToArray()).Trim();
+            text = text
+                .Replace("M 1911", "M1911")
+                .Replace("P G R", "PGR")
+                .Replace("R D X", "RDX")
+                .Replace("O G ", "OG ")
+                .Replace("A C ", "AC ")
+                .Replace("T V", "TV")
+                .Replace("L E D", "LED")
+                .Replace("Mk Ii", "Mk II")
+                .Replace("Mk 2", "Mk 2");
+
+            return text;
+        }
+
+        private static string GetKnownDisplayName(string normalized)
+        {
+            switch (normalized)
+            {
+                case "acunit": return "AC Unit";
+                case "bigsprinkler": return "Big Sprinkler";
+                case "brickpress": return "Brick Press";
+                case "brutdugloop": return "Brut du Gloop";
+                case "chateaulapeepee": return "Chateau La Peepee";
+                case "cocaleaf": return "Coca Leaf";
+                case "cocaseed": return "Coca Seed";
+                case "cocainebase": return "Cocaine Base";
+                case "displaycabinet": return "Display Cabinet";
+                case "electricplanttrimmers": return "Electric Plant Trimmers";
+                case "extralonglifesoil": return "Extra Long-Life Soil";
+                case "flumedicine": return "Flu Medicine";
+                case "fullspectrumgrowlight": return "Full Spectrum Grow Light";
+                case "graffiticleaner":
+                case "grafitticleaner": return "Graffiti Cleaner";
+                case "granddaddypurple": return "Granddaddy Purple";
+                case "granddaddypurpleseed": return "Granddaddy Purple Seed";
+                case "greencrack": return "Green Crack";
+                case "greencrackseed": return "Green Crack Seed";
+                case "growtent": return "Grow Tent";
+                case "halogengrowlight": return "Halogen Grow Light";
+                case "horsesemen": return "Horse Semen";
+                case "laboven": return "Lab Oven";
+                case "ledgrowlight": return "LED Grow Light";
+                case "longlifesoil": return "Long-Life Soil";
+                case "megabean": return "Mega Bean";
+                case "mixingstationmk2":
+                case "mixingstationmkii": return "Mixing Station Mk 2";
+                case "moisturepreservingpot": return "Moisture-Preserving Pot";
+                case "motoroil": return "Motor Oil";
+                case "mouthwash": return "Mouth Wash";
+                case "mushroombed": return "Mushroom Bed";
+                case "mushroomhat": return "Mushroom Hat";
+                case "mushroomspawnstation": return "Mushroom Spawn Station";
+                case "mushroomsubstrate": return "Mushroom Substrate";
+                case "ogkush": return "OG Kush";
+                case "ogkushseed": return "OG Kush Seed";
+                case "oldmanjimmyswhiskey": return "Ol' Man Jimmy's Whiskey";
+                case "packagingstationmk2":
+                case "packagingstationmkii": return "Packaging Station Mk 2";
+                case "planttrimmers": return "Plant Trimmers";
+                case "potsprinkler": return "Pot Sprinkler";
+                case "pseudo":
+                case "pseudoproduct": return "Pseudo";
+                case "pumpshotgun": return "Pump Shotgun";
+                case "revolvercylinder": return "Revolver Cylinder";
+                case "shroomspawn": return "Shroom Spawn";
+                case "soilpourer": return "Soil Pourer";
+                case "sourdiesel": return "Sour Diesel";
+                case "sourdieselseed": return "Sour Diesel Seed";
+                case "speedgrow": return "Speed Grow";
+                case "sporesyringe": return "Spore Syringe";
+                case "floorrack":
+                case "suspensionrack":
+                case "suspensionrackbuilt": return "Suspension Rack";
+                case "trashgrabber": return "Trash Grabber";
+                case "viagra":
+                case "viagor": return "Viagor";
+                case "wallmountedshelf": return "Wall-Mounted Shelf";
+                default: return null;
+            }
+        }
+
         private static string GetKnownAlias(string normalized)
         {
             switch (normalized)
@@ -673,14 +1099,25 @@ namespace NugzzMenu.Services
                 case "granddaddypurps": return "granddaddypurple";
                 case "sourdiesel": return "sourdiesel";
                 case "greencrack": return "greencrack";
+                case "granddaddypurpleseed": return "granddaddypurpleseed";
+                case "greencrackseed": return "greencrackseed";
+                case "ogkushseed": return "ogkushseed";
+                case "sourdieselseed": return "sourdieselseed";
                 case "buttonuprolled": return "rolledbuttonup";
                 case "tshirt": return "tshirt";
                 case "goldwristwatch": return "goldwatch";
                 case "silverwristwatch": return "silverwatch";
+                case "graffiticleaner": return "graffiticleaner";
+                case "grafitticleaner": return "graffiticleaner";
+                case "viagra": return "viagor";
+                case "viagor": return "viagor";
+                case "packagingstationmkii": return "packagingstationmk2";
+                case "mixingstationmkii": return "mixingstationmk2";
+                case "pseudoproduct": return "pseudo";
+                case "floorrack": return "suspensionrack";
+                case "suspensionrackbuilt": return "suspensionrack";
                 case "chateaulepeepee": return "chateaulapeepee";
                 case "chateaulapeepee": return "chateaulapeepee";
-                case "energydrinkpseudo": return "energydrinkpseudo";
-                case "cukepseudo": return "cukepseudo";
                 default: return null;
             }
         }
@@ -1158,6 +1595,7 @@ namespace NugzzMenu.Services
         {
             _itemIds = new string[0];
             _itemNames = new string[0];
+            _itemCategories = new string[0];
             _itemDefinitions = new ItemDefinition[0];
             _itemCount = 0;
             _isCached = false;

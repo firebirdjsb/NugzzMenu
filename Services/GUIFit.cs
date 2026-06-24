@@ -28,9 +28,9 @@ namespace NugzzMenu.Services
             return GetCachedStyle(sourceStyle, smallest, wordWrap);
         }
 
-        public static bool Button(Rect rect, string text, GUIStyle style)
+        public static bool Button(Rect rect, string text, GUIStyle style, int minFontSize = DefaultMinFontSize, bool wordWrap = false)
         {
-            return GUI.Button(rect, text ?? "", FittedStyle(style, rect, text));
+            return GUI.Button(rect, text ?? "", FittedStyle(style, rect, text, minFontSize, wordWrap));
         }
 
         public static void Panel(Rect rect, GUIStyle style)

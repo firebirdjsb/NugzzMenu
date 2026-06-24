@@ -88,7 +88,7 @@ namespace NugzzMenu.UI
                 y += 20f;
 
                 int categoryCount = ItemService.CategoryCount;
-                const int categoriesPerRow = 6;
+                const int categoriesPerRow = 4;
                 int categoryRows = (categoryCount + categoriesPerRow - 1) / categoriesPerRow;
                 float categoryBoxHeight = categoryRows * 30f + 12f;
 
@@ -101,10 +101,14 @@ namespace NugzzMenu.UI
                     int row = categoryIndex / categoriesPerRow;
                     int column = categoryIndex % categoriesPerRow;
                     string label = ItemService.GetCategoryLabel(categoryIndex);
+                    bool selectedCategory = categoryIndex == state.FilterIndex;
+                    if (selectedCategory)
+                        label = "> " + label + " <";
+
                     if (GUIFit.Button(
                             new Rect(4f + column * (categoryButtonWidth + 4f), rowY + row * 30f, categoryButtonWidth, 26f),
                             label,
-                            _categoryButton))
+                            selectedCategory ? _selectedButton : _categoryButton))
                     {
                         state.FilterIndex = categoryIndex;
                         updateFilter?.Invoke(categoryIndex);
@@ -118,7 +122,7 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
-                GUIFit.Panel(new Rect(0f, y, w, 56f), boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, 84f), boxStyle);
 
                 string previousSearch = string.Empty;
                 string newSearch = string.Empty;
@@ -145,7 +149,13 @@ namespace NugzzMenu.UI
                     service.SetSearchText("");
                     state.SearchText = "";
                 }
-                y += 60f;
+
+                if (GUIFit.Button(new Rect(6f, y + 32f, w - 12f, 22f), "Unlock Vendor Access / All Items", _smallButton))
+                {
+                    UnlockService.Instance.UnlockAllProductsAndItems();
+                }
+
+                y += 88f;
 
                 int pageItemCount = 0;
                 int pageCount = 1;

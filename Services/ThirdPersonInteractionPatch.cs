@@ -18,7 +18,8 @@ namespace NugzzMenu.Services
         {
             try
             {
-                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts)
+                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts ||
+                    CameraService.Instance.ShouldUseVanillaToolRaycasts)
                     return true;
 
                 if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, includeTriggers, radius, out RaycastHit patchedHit))
@@ -43,7 +44,8 @@ namespace NugzzMenu.Services
         {
             try
             {
-                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts)
+                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts ||
+                    CameraService.Instance.ShouldUseVanillaToolRaycasts)
                     return true;
 
                 if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, includeTriggers, 0f, out RaycastHit patchedHit))
@@ -68,7 +70,8 @@ namespace NugzzMenu.Services
         {
             try
             {
-                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts)
+                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts ||
+                    CameraService.Instance.ShouldUseVanillaToolRaycasts)
                     return true;
 
                 if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, true, radius, out RaycastHit patchedHit))
@@ -224,48 +227,6 @@ namespace NugzzMenu.Services
         }
     }
 
-    [HarmonyPatch(typeof(EquippedItemHandler), "Update")]
-    internal static class EquippedItemHandlerUpdateSafetyPatch
-    {
-        private static bool _warned;
-
-        private static bool Prefix(EquippedItemHandler __instance)
-        {
-            try
-            {
-                if (ManagementClipboardService.Instance.IsActive())
-                    return true;
-
-                if (__instance == null)
-                    return false;
-
-                if (__instance._user == null || __instance._equippableData == null)
-                    return false;
-            }
-            catch
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        private static Exception Finalizer(Exception __exception)
-        {
-            if (__exception == null)
-                return null;
-
-            if (!_warned)
-            {
-                _warned = true;
-                DebugLogService.Instance.VerboseWarning(
-                    "Suppressed equipped item update error: " + __exception.Message);
-            }
-
-            return null;
-        }
-    }
-
     [HarmonyPatch(typeof(PlayerCamera), "LateUpdate")]
     internal static class ThirdPersonCameraLateUpdatePatch
     {
@@ -331,11 +292,45 @@ namespace NugzzMenu.Services
     }
 
     [HarmonyPatch(typeof(Equippable_Trimmers), "Update")]
-    internal static class TrimmersUpdateSafetyPatch
+    internal static class TrimmersToolFallbackPatch
     {
-        private static Exception Finalizer(Exception __exception)
+        private static bool Prefix(Equippable_Trimmers __instance)
         {
-            return ManagementClipboardService.Instance.HandleTrimmersUpdateException(__exception);
+            return !GrowToolFallbackService.Instance.RunTrimmersUpdate(__instance);
+        }
+
+        private static Exception Finalizer(Equippable_Trimmers __instance, Exception __exception)
+        {
+            return GrowToolFallbackService.Instance.HandleToolUpdateException(__instance, __exception);
         }
     }
+
+    [HarmonyPatch(typeof(Equippable_Pourable), "Update")]
+    internal static class PourableToolFallbackPatch
+    {
+        private static bool Prefix(Equippable_Pourable __instance)
+        {
+            return !GrowToolFallbackService.Instance.RunPourableUpdate(__instance);
+        }
+
+        private static Exception Finalizer(Equippable_Pourable __instance, Exception __exception)
+        {
+            return GrowToolFallbackService.Instance.HandleToolUpdateException(__instance, __exception);
+        }
+    }
+
+    [HarmonyPatch(typeof(Equippable_Seed), "Update")]
+    internal static class SeedToolFallbackPatch
+    {
+        private static bool Prefix(Equippable_Seed __instance)
+        {
+            return !GrowToolFallbackService.Instance.RunSeedUpdate(__instance);
+        }
+
+        private static Exception Finalizer(Equippable_Seed __instance, Exception __exception)
+        {
+            return GrowToolFallbackService.Instance.HandleToolUpdateException(__instance, __exception);
+        }
+    }
+
 }
