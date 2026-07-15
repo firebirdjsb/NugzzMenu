@@ -20,83 +20,63 @@ namespace NugzzMenu.Services
         private bool? _thirdPersonBodyVisible;
         private bool _skateboardVisibilityForced;
         private bool _vehicleVisibilityForced;
+        private bool _viewmodelHiddenForExternalView;
         private bool _anglesReady;
         private bool _overrideActive;
         private bool _menuOpen;
         private int _lastInputFrame = -1;
         private float _yaw;
         private float _pitch;
-        private float _distance = 2.65f;
-        private float _height = 1.45f;
-        private float _shoulderOffset;
+        private float _distance = 1.90f;
+        private float _height = 0.80f;
+        private float _shoulderOffset = 0.20f;
+        private float _firstPersonRestoreUntil;
         private int _nativeToolRaycastFrame = -1;
         private bool _nativeToolRaycastActive;
+        private int _nativeBuildRaycastFrame = -1;
+        private bool _nativeBuildRaycastActive;
 
         private CameraService() { }
 
-        public bool ThirdPersonEnabled => _enabled;
-        public float Distance => _distance;
-        public float Height => _height;
-        public float ShoulderOffset => _shoulderOffset;
-        public bool ShouldUseCustomCombatHit => _enabled && _overrideActive;
+        public bool ThirdPersonEnabled => ThirdPersonCameraService.Instance.Enabled;
+        public float Distance => ThirdPersonCameraService.Instance.Distance;
+        public float Height => ThirdPersonCameraService.Instance.Height;
+        public float ShoulderOffset => ThirdPersonCameraService.Instance.ShoulderOffset;
+        public bool ShouldUseCustomCombatHit => ThirdPersonCameraService.Instance.IsCombatOverrideActive;
+        public bool ShouldUseCustomInteractionRaycasts =>
+            ThirdPersonCameraService.Instance.ShouldUseCustomInteractionRaycasts;
         public bool ShouldUseVanillaManagementRaycasts => ManagementClipboardService.Instance.IsActive();
-        public bool ShouldUseVanillaToolRaycasts => IsNativeToolRaycastActive();
+        public bool ShouldUseVanillaToolRaycasts => ThirdPersonCameraService.Instance.ShouldUseVanillaToolRaycasts;
 
-        public void SetDistance(float value) => _distance = Mathf.Clamp(value, 1.5f, 6f);
-        public void SetHeight(float value) => _height = Mathf.Clamp(value, 0.8f, 2.4f);
-        public void SetShoulderOffset(float value) => _shoulderOffset = Mathf.Clamp(value, -1f, 1f);
+        public void SetDistance(float value) => ThirdPersonCameraService.Instance.SetDistance(value);
+        public void SetHeight(float value) => ThirdPersonCameraService.Instance.SetHeight(value);
+        public void SetShoulderOffset(float value) => ThirdPersonCameraService.Instance.SetShoulderOffset(value);
 
         public void ToggleThirdPerson(bool enabled, bool menuOpen = false)
         {
-            _menuOpen = menuOpen;
             _enabled = enabled;
-            _thirdPersonBodyVisible = null;
-            _anglesReady = false;
-
-            if (_enabled)
-            {
-                ForceThirdPersonVisuals(true);
-                ApplyThirdPersonCamera(menuOpen);
-                NotificationService.Instance.Status("Camera: 3rd Person");
-                return;
-            }
-
-            StopCustomOverride(menuOpen);
-            ForceThirdPersonVisuals(false);
-            NotificationService.Instance.Status("Camera: 1st Person");
+            _menuOpen = menuOpen;
+            ThirdPersonCameraService.Instance.Toggle(enabled, menuOpen);
         }
 
         public void MaintainThirdPersonState(bool menuOpen = false)
         {
+            _enabled = ThirdPersonCameraService.Instance.Enabled;
             _menuOpen = menuOpen;
-            if (ManagementClipboardService.Instance.IsActive())
-            {
-                ReleaseCameraForManagementClipboard();
-                return;
-            }
-
-            if (!_enabled)
-            {
-                MaintainFirstPersonSkateboardVisibility();
-                _vehicleVisibilityForced = false;
-                return;
-            }
-
-            if (MaintainThirdPersonVehicleVisibility())
-                return;
-
-            ForceThirdPersonVisuals(true);
+            ThirdPersonCameraService.Instance.Maintain(menuOpen);
         }
 
         public void ApplyThirdPersonCamera(bool menuOpen = false)
         {
+            _enabled = ThirdPersonCameraService.Instance.Enabled;
             _menuOpen = menuOpen;
-            ApplyThirdPersonCameraInternal();
+            ThirdPersonCameraService.Instance.Apply(menuOpen);
         }
 
         public void ApplyThirdPersonCameraLate()
         {
-            ApplyThirdPersonCameraInternal();
+            _enabled = ThirdPersonCameraService.Instance.Enabled;
+            ThirdPersonCameraService.Instance.ApplyLate();
         }
 
         private void ApplyThirdPersonCameraInternal()
@@ -112,16 +92,25 @@ namespace NugzzMenu.Services
                     return;
                 }
 
+                if (IsNativeBuildRaycastActive())
+                {
+                    ReleaseCameraForNativeBuildable();
+                    return;
+                }
+
                 PlayerCamera playerCamera = PlayerCamera.Instance;
                 var player = ManagerCacheService.Instance.LocalPlayer;
                 if (playerCamera == null || player == null)
                     return;
 
-                if (IsNativeExternalCamera(playerCamera) || player.IsInVehicle)
+                if (IsNativeAvatarView(playerCamera) || player.IsInVehicle)
                 {
                     if (_overrideActive)
                         StopCustomOverride(_menuOpen);
-                    MaintainThirdPersonVehicleVisibility();
+                    if (IsNativeAvatarView(playerCamera))
+                        ForceThirdPersonVisuals(true);
+                    else
+                        MaintainThirdPersonVehicleVisibility();
                     return;
                 }
 
@@ -214,51 +203,12 @@ namespace NugzzMenu.Services
 
         public bool TryThirdPersonInteractionRaycast(float range, LayerMask layerMask, bool includeTriggers, float radius, out RaycastHit hit)
         {
-            hit = default;
-            if (ManagementClipboardService.Instance.IsActive() || IsNativeToolRaycastActive())
-                return false;
-
-            if (!_enabled || !_overrideActive)
-                return false;
-
-            try
-            {
-                PlayerCamera playerCamera = PlayerCamera.Instance;
-                var player = ManagerCacheService.Instance.LocalPlayer;
-                Camera camera = playerCamera?.Camera != null ? playerCamera.Camera : Camera.main;
-                if (camera == null)
-                    return true;
-
-                Vector3 origin = player != null
-                    ? player.transform.position + Vector3.up * _height
-                    : camera.transform.position;
-                Vector3 direction = camera.transform.forward;
-                QueryTriggerInteraction query = includeTriggers
-                    ? QueryTriggerInteraction.Collide
-                    : QueryTriggerInteraction.Ignore;
-                RaycastHit[] hits = radius > 0f
-                    ? Physics.SphereCastAll(origin, radius, direction, range, layerMask, query)
-                    : Physics.RaycastAll(origin, direction, range, layerMask, query);
-
-                float nearest = float.MaxValue;
-                for (int i = 0; i < hits.Length; i++)
-                {
-                    RaycastHit candidate = hits[i];
-                    if (candidate.collider == null || IsLocalPlayerCollider(candidate.collider, player))
-                        continue;
-                    if (candidate.distance >= nearest)
-                        continue;
-
-                    nearest = candidate.distance;
-                    hit = candidate;
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugLogService.Instance.VerboseWarning("Third-person interaction ray failed: " + ex.Message);
-            }
-
-            return true;
+            return ThirdPersonCameraService.Instance.TryInteractionRaycast(
+                range,
+                layerMask,
+                includeTriggers,
+                radius,
+                out hit);
         }
 
         public bool ExecutePunchSafely(PunchController punchController, float power)
@@ -274,9 +224,9 @@ namespace NugzzMenu.Services
                 if (player == null || camera == null)
                     return false;
 
-                bool thirdPerson = _enabled && _overrideActive;
+                bool thirdPerson = ThirdPersonCameraService.Instance.IsCombatOverrideActive;
                 Vector3 origin = thirdPerson
-                    ? player.transform.position + Vector3.up * Mathf.Clamp(_height * 0.82f, 1.05f, 1.45f)
+                    ? player.transform.position + Vector3.up * Mathf.Clamp(ThirdPersonCameraService.Instance.Height * 0.82f, 1.05f, 1.45f)
                     : camera.transform.position;
                 Vector3 direction = camera.transform.forward.normalized;
                 int layerMask = -5;
@@ -372,10 +322,10 @@ namespace NugzzMenu.Services
                 if (player == null || camera == null)
                     return false;
 
-                bool thirdPerson = _enabled && _overrideActive;
+                bool thirdPerson = ThirdPersonCameraService.Instance.IsCombatOverrideActive;
                 Vector3 origin = thirdPerson
                     ? player.transform.position +
-                        Vector3.up * Mathf.Clamp(_height * 0.82f, 1.05f, 1.45f)
+                        Vector3.up * Mathf.Clamp(ThirdPersonCameraService.Instance.Height * 0.82f, 1.05f, 1.45f)
                     : camera.transform.position;
                 Vector3 direction = camera.transform.forward.normalized;
                 float range = Mathf.Max(0.5f, weapon.Range);
@@ -543,13 +493,29 @@ namespace NugzzMenu.Services
             }
         }
 
+        private static bool IsNativeAvatarView(PlayerCamera playerCamera)
+        {
+            try
+            {
+                return playerCamera != null &&
+                    (playerCamera.ViewingAvatar || IsNativeExternalCamera(playerCamera));
+            }
+            catch
+            {
+                return IsNativeExternalCamera(playerCamera);
+            }
+        }
+
         private void StopCustomOverride(bool menuOpen)
         {
             try
             {
                 PlayerCamera playerCamera = PlayerCamera.Instance;
-                if (playerCamera != null && !IsNativeExternalCamera(playerCamera))
-                    playerCamera.StopTransformOverride(0f, !menuOpen, false);
+                if (playerCamera != null && !IsNativeAvatarView(playerCamera))
+                {
+                    playerCamera.StopTransformOverride(0f, true, false);
+                    playerCamera.SetCanLook(!menuOpen);
+                }
             }
             catch { }
 
@@ -578,6 +544,15 @@ namespace NugzzMenu.Services
 
         private void ForceThirdPersonVisuals(bool visible)
         {
+            if (!visible)
+            {
+                RestoreFirstPersonVisuals();
+                return;
+            }
+
+            if (_thirdPersonBodyVisible == true && _viewmodelHiddenForExternalView)
+                return;
+
             try
             {
                 var player = ManagerCacheService.Instance.LocalPlayer;
@@ -587,6 +562,7 @@ namespace NugzzMenu.Services
                     player.SetVisibleToLocalPlayer(visible);
                     if (player.Avatar != null)
                         player.Avatar.SetVisible(visible);
+                    SetLocalAvatarRenderers(player, true);
                     _thirdPersonBodyVisible = visible;
                 }
             }
@@ -597,45 +573,42 @@ namespace NugzzMenu.Services
 
             try
             {
-                if (visible)
-                    SetViewmodelRenderersVisible(false);
-                else
-                    RestoreViewmodelVisuals();
-            }
-            catch { }
-
-            try
-            {
-                var viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
-                if (viewmodelAvatar != null)
-                {
-                    if (visible)
-                        SetRenderersVisible(viewmodelAvatar.gameObject, false);
-                }
+                HideViewmodelVisuals();
+                _viewmodelHiddenForExternalView = true;
             }
             catch { }
         }
 
         private void RestoreFirstPersonVisuals()
         {
-            try
+            bool needsPawnRestore = _thirdPersonBodyVisible != false;
+            if (needsPawnRestore)
             {
-                var player = ManagerCacheService.Instance.LocalPlayer;
-                if (player != null)
+                try
                 {
-                    player.SetThirdPersonMeshesVisibility(false);
-                    player.SetVisibleToLocalPlayer(true);
-                    if (player.Avatar != null)
-                        player.Avatar.SetVisible(true);
-                    _thirdPersonBodyVisible = false;
+                    var player = ManagerCacheService.Instance.LocalPlayer;
+                    if (player != null)
+                    {
+                        player.SetThirdPersonMeshesVisibility(false);
+                        player.SetVisibleToLocalPlayer(false);
+                        if (player.Avatar != null)
+                            player.Avatar.SetVisible(false);
+                        SetLocalAvatarRenderers(player, false);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                DebugLogService.Instance.VerboseWarning("First-person mesh restore failed: " + ex.Message);
+                catch (Exception ex)
+                {
+                    DebugLogService.Instance.VerboseWarning("First-person mesh restore failed: " + ex.Message);
+                }
+
+                _thirdPersonBodyVisible = false;
             }
 
-            RestoreViewmodelVisuals();
+            if (_viewmodelHiddenForExternalView || needsPawnRestore)
+            {
+                RestoreViewmodelVisuals();
+                _viewmodelHiddenForExternalView = false;
+            }
         }
 
         private void HideLocalPawnForVehicle()
@@ -649,6 +622,7 @@ namespace NugzzMenu.Services
                     player.SetVisibleToLocalPlayer(false);
                     if (player.Avatar != null)
                         player.Avatar.SetVisible(false);
+                    SetLocalAvatarRenderers(player, false);
                     _thirdPersonBodyVisible = false;
                 }
             }
@@ -658,6 +632,7 @@ namespace NugzzMenu.Services
             }
 
             RestoreViewmodelVisuals();
+            _viewmodelHiddenForExternalView = false;
         }
 
         private static void RestoreViewmodelVisuals()
@@ -674,14 +649,26 @@ namespace NugzzMenu.Services
             {
                 var viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
                 if (viewmodelAvatar != null)
-                {
                     viewmodelAvatar.SetVisibility(true);
-                    SetRenderersVisible(viewmodelAvatar.gameObject, true);
-                    if (viewmodelAvatar.RightHandContainer != null)
-                        SetRenderersVisible(viewmodelAvatar.RightHandContainer.gameObject, true);
-                    if (viewmodelAvatar.Avatar != null)
-                        SetRenderersVisible(viewmodelAvatar.Avatar.gameObject, true);
-                }
+            }
+            catch { }
+        }
+
+        private static void HideViewmodelVisuals()
+        {
+            try
+            {
+                var inventory = PlayerInventory.Instance;
+                if (inventory != null)
+                    inventory.SetViewmodelVisible(false);
+            }
+            catch { }
+
+            try
+            {
+                var viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
+                if (viewmodelAvatar != null)
+                    viewmodelAvatar.SetVisibility(false);
             }
             catch { }
         }
@@ -690,15 +677,17 @@ namespace NugzzMenu.Services
         {
             try
             {
+                var inventory = PlayerInventory.Instance;
+                if (inventory != null)
+                    inventory.SetViewmodelVisible(visible);
+            }
+            catch { }
+
+            try
+            {
                 var viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
                 if (viewmodelAvatar != null)
-                {
-                    SetRenderersVisible(viewmodelAvatar.gameObject, visible);
-                    if (viewmodelAvatar.RightHandContainer != null)
-                        SetRenderersVisible(viewmodelAvatar.RightHandContainer.gameObject, visible);
-                    if (viewmodelAvatar.Avatar != null)
-                        SetRenderersVisible(viewmodelAvatar.Avatar.gameObject, visible);
-                }
+                    viewmodelAvatar.SetVisibility(visible);
             }
             catch { }
 
@@ -762,43 +751,203 @@ namespace NugzzMenu.Services
             return false;
         }
 
-        private void MaintainFirstPersonSkateboardVisibility()
+        private bool MaintainFirstPersonSkateboardVisibility()
         {
             try
             {
                 var player = ManagerCacheService.Instance.LocalPlayer;
                 if (player == null)
-                    return;
+                    return false;
 
                 if (!IsLocalPlayerSkating(player))
                 {
                     if (_skateboardVisibilityForced)
                     {
                         _skateboardVisibilityForced = false;
-                        ForceThirdPersonVisuals(false);
+                        RestoreFirstPersonVisuals();
+                        _firstPersonRestoreUntil = Time.unscaledTime + 0.35f;
                     }
 
-                    return;
+                    return false;
                 }
 
-                player.SetThirdPersonMeshesVisibility(true);
-                player.SetVisibleToLocalPlayer(true);
-                if (player.Avatar != null)
-                    player.Avatar.SetVisible(true);
+                if (!_skateboardVisibilityForced)
+                    ApplyFirstPersonSkateboardVisuals(player);
                 _skateboardVisibilityForced = true;
+                return true;
             }
             catch (Exception ex)
             {
                 DebugLogService.Instance.VerboseWarning("Skateboard visibility repair failed: " + ex.Message);
             }
+
+            return false;
         }
 
+        private bool MaintainNativeExternalCameraVisibility()
+        {
+            try
+            {
+                PlayerCamera camera = PlayerCamera.Instance;
+                var player = ManagerCacheService.Instance.LocalPlayer;
+                if (camera == null || player == null || player.IsInVehicle ||
+                    !IsNativeAvatarView(camera))
+                {
+                    return false;
+                }
+
+                ForceThirdPersonVisuals(true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("Native view visibility repair failed: " + ex.Message);
+            }
+
+            return false;
+        }
+
+        private void ApplyFirstPersonSkateboardVisuals(Player player)
+        {
+            if (player == null)
+                return;
+
+            player.SetThirdPersonMeshesVisibility(true);
+            player.SetVisibleToLocalPlayer(true);
+            if (player.Avatar != null)
+                player.Avatar.SetVisible(true);
+            HideFirstPersonObstructingAvatarRenderers(player);
+            SetViewmodelRenderersVisible(false);
+            _thirdPersonBodyVisible = true;
+            _viewmodelHiddenForExternalView = true;
+        }
+
+        private static void SetLocalAvatarRenderers(Player player, bool visible)
+        {
+            if (player == null)
+                return;
+
+            try
+            {
+                GameObject root = player.Avatar != null
+                    ? player.Avatar.gameObject
+                    : player.gameObject;
+                SetRenderersVisible(root, visible);
+            }
+            catch { }
+        }
+
+        private static void HideFirstPersonObstructingAvatarRenderers(Player player)
+        {
+            if (player == null)
+                return;
+
+            try
+            {
+                Transform root = player.Avatar != null
+                    ? player.Avatar.transform
+                    : player.transform;
+                if (root == null)
+                    return;
+
+                Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+                if (renderers == null)
+                    return;
+
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    Renderer renderer = renderers[i];
+                    if (renderer == null)
+                        continue;
+
+                    if (ShouldHideInFirstPerson(renderer.transform, root))
+                        renderer.enabled = false;
+                }
+            }
+            catch { }
+        }
+
+        private static bool ShouldHideInFirstPerson(Transform transform, Transform root)
+        {
+            string path = GetTransformPath(transform, root).ToLowerInvariant();
+            return path.Contains("head") ||
+                path.Contains("hair") ||
+                path.Contains("eye") ||
+                path.Contains("brow") ||
+                path.Contains("face") ||
+                path.Contains("mouth") ||
+                path.Contains("teeth") ||
+                path.Contains("tongue") ||
+                path.Contains("beard") ||
+                path.Contains("nose") ||
+                path.Contains("ear") ||
+                path.Contains("glasses") ||
+                path.Contains("mask") ||
+                path.Contains("hat") ||
+                path.Contains("cap") ||
+                path.Contains("helmet") ||
+                path.Contains("accessor");
+        }
+
+        private static string GetTransformPath(Transform transform, Transform root)
+        {
+            if (transform == null)
+                return string.Empty;
+
+            try
+            {
+                string path = transform.name ?? string.Empty;
+                Transform current = transform.parent;
+                while (current != null && current != root)
+                {
+                    path = (current.name ?? string.Empty) + "/" + path;
+                    current = current.parent;
+                }
+
+                return path;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
         private static bool IsLocalPlayerSkating(Player player)
         {
             try
             {
                 return player != null &&
                     (player.IsSkating || player.ActiveSkateboard != null);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void ReleaseCameraForNativeBuildable()
+        {
+            if (_enabled)
+            {
+                ToggleThirdPerson(false, false);
+                return;
+            }
+
+            try
+            {
+                if (_overrideActive)
+                    StopCustomOverride(false);
+
+                PlayerCamera playerCamera = PlayerCamera.Instance;
+                playerCamera?.SetCanLook(true);
+            }
+            catch { }
+        }
+
+        private static bool IsPlayerInVehicle(Player player)
+        {
+            try
+            {
+                return player != null && player.IsInVehicle;
             }
             catch
             {
@@ -871,6 +1020,23 @@ namespace NugzzMenu.Services
                 HasActiveEquippable<Equippable_Pourable>();
 
             return _nativeToolRaycastActive;
+        }
+
+        private bool IsNativeBuildRaycastActive()
+        {
+            if (!_enabled && !_overrideActive)
+                return false;
+
+            int frame = Time.frameCount;
+            if (_nativeBuildRaycastFrame == frame)
+                return _nativeBuildRaycastActive;
+
+            _nativeBuildRaycastFrame = frame;
+            _nativeBuildRaycastActive =
+                HasActiveEquippable<Equippable_BuildableItem>() ||
+                HasActiveEquippable<Equippable_SurfaceItem>();
+
+            return _nativeBuildRaycastActive;
         }
 
         private static bool HasActiveEquippable<T>()

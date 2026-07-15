@@ -3,27 +3,24 @@
 NugzzMenu is a MelonLoader IL2CPP mod menu for Schedule I. It integrates with
 S1API and provides player, inventory, vehicle, world, and camera utilities.
 
-Current release: [v0.9.9](RELEASE_NOTES_v0.9.9.md)
+Current release: [v0.9.9R2](RELEASE_NOTES_v0.9.9R2.md)
 
 ## Latest Changes
 
-### v0.9.9
+### v0.9.9R2
 
-- Fixed plant care interactions for watering, soil pouring, seed planting, and
-  trimming, with faster quality-of-life fallbacks where vanilla interaction was
-  failing.
-- Added buttons for auto-watering plants/pots and auto-filling empty pots with
-  the best available soil.
-- Added unlock buttons for achievements, items/supplies, properties, and
-  businesses.
-- Fixed item spawner categories, removed broken pseudo/white-square entries,
-  and repaired several items that were not spawning properly.
-- Fixed Place Anywhere interfering with vanilla floor/grid snapping and improved
-  close-to-player placement behavior.
-- Added and polished World Teleports in the Cheats tab, with cleaner labels and
-  duplicate location filtering.
+- Completely removed Build Anywhere and its synthetic placement grids so
+  vanilla building owns placement, snapping, validation, and networking.
+- Reworked third-person, first-person viewmodels, skateboard transitions, and
+  vehicle-menu camera handling around separate state/visibility services.
+- Added FPS and quest-control tabs, a low-cost keybind HUD, jump/gravity tuning,
+  optional double-space fly, and driven-vehicle flight.
+- Restored native quest variable calls, added targeted Welcome quest recovery,
+  and repaired consumed-item trash and trash-bag interactions used by quests.
+- Added multiplayer vehicle-tune messages for Nugzz clients and retained native
+  vehicle color replication.
 
-Full notes: [RELEASE_NOTES_v0.9.9.md](RELEASE_NOTES_v0.9.9.md)
+Full transparent diff notes: [RELEASE_NOTES_v0.9.9R2.md](RELEASE_NOTES_v0.9.9R2.md)
 
 ## Requirements
 
@@ -56,17 +53,6 @@ recoverable: the save folder is moved under that profile's `Backups` folder.
 The Steam Cloud control renames the local `steam_autocloud.vdf` marker inside
 the save profile. Fully disabling Steam Cloud still needs to be done in Steam's
 game properties.
-
-## Build Anywhere
-
-Enable **Place Anywhere** in the Settings tab to place supported grid, surface,
-and procedural buildables outside purchased property bounds.
-
-- Placement follows the floor under the crosshair and remains grounded when
-  aiming near the player's feet.
-- Placed objects remain visible outside property culling areas.
-- Aim at an outside placed object and right-click to return its original item
-  to inventory. The object remains in place when inventory space is unavailable.
 
 ## Maintainers
 

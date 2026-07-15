@@ -18,11 +18,12 @@ namespace NugzzMenu.Services
         {
             try
             {
-                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts ||
-                    CameraService.Instance.ShouldUseVanillaToolRaycasts)
+                if (!CameraService.Instance.ShouldUseCustomInteractionRaycasts)
                     return true;
 
                 if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, includeTriggers, radius, out RaycastHit patchedHit))
+                    return true;
+                if (patchedHit.collider == null)
                     return true;
 
                 hit = patchedHit;
@@ -35,32 +36,7 @@ namespace NugzzMenu.Services
                 return true;
             }
         }
-    }
 
-    [HarmonyPatch(typeof(PlayerCamera), nameof(PlayerCamera.LookRaycast_ExcludeBuildables))]
-    internal static class ThirdPersonLookRaycastExcludeBuildablesPatch
-    {
-        private static bool Prefix(float range, ref RaycastHit hit, LayerMask layerMask, bool includeTriggers, ref bool __result)
-        {
-            try
-            {
-                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts ||
-                    CameraService.Instance.ShouldUseVanillaToolRaycasts)
-                    return true;
-
-                if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, includeTriggers, 0f, out RaycastHit patchedHit))
-                    return true;
-
-                hit = patchedHit;
-                __result = patchedHit.collider != null;
-                return false;
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogWarning("[Nugzz] LookRaycast_ExcludeBuildables patch error: " + ex.Message);
-                return true;
-            }
-        }
     }
 
     [HarmonyPatch(typeof(PlayerCamera), nameof(PlayerCamera.LookSpherecast))]
@@ -70,11 +46,12 @@ namespace NugzzMenu.Services
         {
             try
             {
-                if (CameraService.Instance.ShouldUseVanillaManagementRaycasts ||
-                    CameraService.Instance.ShouldUseVanillaToolRaycasts)
+                if (!CameraService.Instance.ShouldUseCustomInteractionRaycasts)
                     return true;
 
                 if (!CameraService.Instance.TryThirdPersonInteractionRaycast(range, layerMask, true, radius, out RaycastHit patchedHit))
+                    return true;
+                if (patchedHit.collider == null)
                     return true;
 
                 hit = patchedHit;
@@ -87,6 +64,7 @@ namespace NugzzMenu.Services
                 return true;
             }
         }
+
     }
 
     [HarmonyPatch(typeof(PunchController), "ExecuteHit")]

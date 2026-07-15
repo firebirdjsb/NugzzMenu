@@ -55,7 +55,8 @@ Ask these questions:
 Common examples:
 
 - Save manager: `Menu` scene only.
-- Place Anywhere: host authority only.
+- Building placement: leave vanilla snapping untouched unless a feature is
+  explicitly host-authoritative and multiplayer-tested.
 - Time and vehicle spawning: host-only.
 - Camera helpers: local-only, but must respect vehicles and clipboard tools.
 

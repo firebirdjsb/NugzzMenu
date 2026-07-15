@@ -21,6 +21,8 @@ namespace NugzzMenu.Services
 
         private bool _speedBoost;
         private float _speedMultiplier = 2f;
+        private float _jumpMultiplier = 1f;
+        private float _gravityMultiplier = 1f;
         private bool _speedBaselineCaptured;
         private float _speedBaseline = 1f;
         private float _nextWantedClearTime;
@@ -57,6 +59,16 @@ namespace NugzzMenu.Services
             get => _speedMultiplier;
             set => _speedMultiplier = Mathf.Clamp(value, 1f, 10f);
         }
+        public float JumpMultiplier
+        {
+            get => _jumpMultiplier;
+            set => _jumpMultiplier = Mathf.Clamp(value, 0.1f, 6f);
+        }
+        public float GravityMultiplier
+        {
+            get => _gravityMultiplier;
+            set => _gravityMultiplier = Mathf.Clamp(value, 0f, 5f);
+        }
         public bool InfiniteAmmo { get; set; }
         public bool NeverWanted { get; set; }
         public float PlayerScale
@@ -79,6 +91,7 @@ namespace NugzzMenu.Services
             if (InfiniteAmmo) ApplyInfiniteAmmo();
             if (NeverWanted) ApplyNeverWanted();
             ApplyPlayerScale();
+            ApplyMovementTuning();
             MaintainPlayerScaleSync();
         }
 
@@ -132,6 +145,26 @@ namespace NugzzMenu.Services
             catch (Exception ex)
             {
                 NotificationService.Instance.Error($"Speed boost failed: {ex.Message}");
+            }
+        }
+
+        private void ApplyMovementTuning()
+        {
+            try
+            {
+                PlayerMovement.JumpMultiplier = _jumpMultiplier;
+                if (!FlyingService.Instance.Enabled)
+                {
+                    float gravity = PlayerMovement.BaseGravityMultiplier * _gravityMultiplier;
+                    PlayerMovement.GravityMultiplier = gravity;
+                    var player = ManagerCacheService.Instance.LocalPlayer;
+                    if (player != null)
+                        player.SetGravityMultiplier(gravity);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("Movement tuning failed: " + ex.Message);
             }
         }
 
@@ -553,6 +586,7 @@ namespace NugzzMenu.Services
         private static void Postfix(Player __instance, string variableName, string value)
         {
             PlayerCheatService.TryApplyNetworkScale(__instance, variableName, value);
+            VehicleService.Instance.TryApplyNetworkVehicleTune(__instance, variableName, value);
         }
     }
 
@@ -562,6 +596,7 @@ namespace NugzzMenu.Services
         private static void Postfix(Player __instance, string variableName, string value)
         {
             PlayerCheatService.TryApplyNetworkScale(__instance, variableName, value);
+            VehicleService.Instance.TryApplyNetworkVehicleTune(__instance, variableName, value);
         }
     }
 }

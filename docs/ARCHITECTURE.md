@@ -155,8 +155,8 @@ Some features are intentionally scene-locked or host-locked.
 
 - Save tools are main-menu-only. Editing save files while a world is loaded can
   race active game objects, networking, or save writers.
-- Place Anywhere is host-authority only. Non-host clients should get feedback
-  instead of trying to create invalid networked buildables.
+- Building placement is vanilla-owned. Any future custom placement feature must
+  be explicitly host-authoritative and must not intercept normal grid snapping.
 - Vehicle spawning and time changes are host-only by game design.
 - Client-side visual helpers can run locally, but persistent world changes need
   host authority or a vanilla network path.

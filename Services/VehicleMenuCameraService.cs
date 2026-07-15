@@ -1,9 +1,5 @@
-using System;
-using System.Reflection;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.Vehicles;
-using UnityEngine;
-using static UnityEngine.Object;
 
 namespace NugzzMenu.Services
 {
@@ -15,11 +11,6 @@ namespace NugzzMenu.Services
         private static readonly VehicleMenuCameraService _instance = new VehicleMenuCameraService();
         public static VehicleMenuCameraService Instance => _instance;
 
-        private MethodInfo _forceCameraReturnMethod;
-        private FieldInfo _timeSinceManualField;
-        private FieldInfo _lastManualOffsetField;
-        private FieldInfo _lastFrameCameraOffsetField;
-
         private LandVehicle _controlledVehicle;
         private bool _capturedControls;
         private bool _previousOverrideControls;
@@ -27,10 +18,21 @@ namespace NugzzMenu.Services
         private float _previousSteerOverride;
         private bool _previousHandbrakeOverride;
 
-        private LandVehicle _lastVehicle;
-        private int _settleFramesRemaining;
+        private bool _blockCameraInput;
 
         private VehicleMenuCameraService() { }
+
+        public bool ShouldBlockCameraInput => _blockCameraInput;
+
+        public void MaintainDrivingLock(LandVehicle vehicle)
+        {
+            if (!_blockCameraInput || vehicle == null)
+                return;
+
+            LandVehicle drivenVehicle = GetLocalDrivenVehicle();
+            if (drivenVehicle == vehicle)
+                CaptureAndNeutralizeVehicleControls(vehicle);
+        }
 
         public void NotifyMenuStateChanged(bool isOpen, bool wasOpen)
         {
@@ -39,60 +41,44 @@ namespace NugzzMenu.Services
                 LandVehicle vehicle = GetLocalDrivenVehicle();
                 if (vehicle != null)
                 {
-                    _lastVehicle = vehicle;
-                    ReturnVanillaVehicleCamera(vehicle);
+                    _blockCameraInput = true;
+                    ThirdPersonCameraService.Instance.ForceDisableForVehicle(true);
+                    CaptureAndNeutralizeVehicleControls(vehicle);
                 }
+
                 return;
             }
 
+            _blockCameraInput = false;
             if (wasOpen)
-            {
                 RestoreVehicleControls();
-                LandVehicle vehicle = GetLocalDrivenVehicle() ?? _lastVehicle;
-                if (vehicle != null)
-                {
-                    _lastVehicle = vehicle;
-                    _settleFramesRemaining = 2;
-                    ReturnVanillaVehicleCamera(vehicle);
-                }
-            }
         }
 
         public void Update(bool menuOpen)
         {
             LandVehicle vehicle = GetLocalDrivenVehicle();
+            _blockCameraInput = menuOpen && vehicle != null;
+            if (vehicle != null)
+                ThirdPersonCameraService.Instance.ForceDisableForVehicle(menuOpen);
+
             if (menuOpen && vehicle != null)
             {
-                _lastVehicle = vehicle;
                 CaptureAndNeutralizeVehicleControls(vehicle);
-                ReturnVanillaVehicleCamera(vehicle);
                 return;
             }
 
             RestoreVehicleControls();
-
-            if (_settleFramesRemaining > 0)
-            {
-                _settleFramesRemaining--;
-                ResetManualCameraState(GetVehicleCamera(vehicle ?? _lastVehicle));
-            }
-
-            _lastVehicle = vehicle ?? _lastVehicle;
         }
 
         public void LateUpdate(bool menuOpen)
         {
-            if (!menuOpen)
-                return;
-
-            ReturnVanillaVehicleCamera(GetLocalDrivenVehicle() ?? _lastVehicle);
+            // The native VehicleCamera owns its transform and orbit state.
         }
 
         public void Reset()
         {
             RestoreVehicleControls();
-            _lastVehicle = null;
-            _settleFramesRemaining = 0;
+            _blockCameraInput = false;
         }
 
         private void CaptureAndNeutralizeVehicleControls(LandVehicle vehicle)
@@ -137,147 +123,31 @@ namespace NugzzMenu.Services
             try { vehicle.overrideControls = _previousOverrideControls; } catch { }
         }
 
-        private void ReturnVanillaVehicleCamera(LandVehicle vehicle)
-        {
-            VehicleCamera vehicleCamera = GetVehicleCamera(vehicle);
-            if (vehicleCamera == null)
-                return;
-
-            ResetManualCameraState(vehicleCamera);
-            EnsureVehicleCameraMode();
-
-            try
-            {
-                MethodInfo method = GetForceCameraReturnMethod();
-                method?.Invoke(vehicleCamera, null);
-            }
-            catch (Exception ex)
-            {
-                DebugLogService.Instance.VerboseWarning(
-                    "Vehicle camera return failed: " + ex.Message);
-            }
-        }
-
-        private void ResetManualCameraState(VehicleCamera vehicleCamera)
-        {
-            if (vehicleCamera == null)
-                return;
-
-            try { GetTimeSinceManualField()?.SetValue(vehicleCamera, 999f); } catch { }
-            try { GetLastManualOffsetField()?.SetValue(vehicleCamera, Vector3.zero); } catch { }
-            try { GetLastFrameCameraOffsetField()?.SetValue(vehicleCamera, Vector3.zero); } catch { }
-        }
-
-        private static void EnsureVehicleCameraMode()
-        {
-            try
-            {
-                PlayerCamera camera = PlayerCamera.Instance;
-                if (camera != null && camera.CameraMode != PlayerCamera.ECameraMode.Vehicle)
-                    camera.SetCameraMode(PlayerCamera.ECameraMode.Vehicle);
-            }
-            catch { }
-        }
-
-        private MethodInfo GetForceCameraReturnMethod()
-        {
-            if (_forceCameraReturnMethod != null)
-                return _forceCameraReturnMethod;
-
-            _forceCameraReturnMethod = typeof(VehicleCamera).GetMethod(
-                "ForceCameraReturn",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            return _forceCameraReturnMethod;
-        }
-
-        private FieldInfo GetTimeSinceManualField()
-        {
-            if (_timeSinceManualField != null)
-                return _timeSinceManualField;
-
-            _timeSinceManualField = typeof(VehicleCamera).GetField(
-                "timeSinceCameraManuallyAdjusted",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            return _timeSinceManualField;
-        }
-
-        private FieldInfo GetLastManualOffsetField()
-        {
-            if (_lastManualOffsetField != null)
-                return _lastManualOffsetField;
-
-            _lastManualOffsetField = typeof(VehicleCamera).GetField(
-                "lastManualOffset",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            return _lastManualOffsetField;
-        }
-
-        private FieldInfo GetLastFrameCameraOffsetField()
-        {
-            if (_lastFrameCameraOffsetField != null)
-                return _lastFrameCameraOffsetField;
-
-            _lastFrameCameraOffsetField = typeof(VehicleCamera).GetField(
-                "lastFrameCameraOffset",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            return _lastFrameCameraOffsetField;
-        }
-
         private static LandVehicle GetLocalDrivenVehicle()
         {
             try
             {
                 Player player = ManagerCacheService.Instance.LocalPlayer;
-                if (player == null || !player.IsInVehicle)
-                    return null;
-
-                if (player.CurrentVehicle != null)
+                if (player != null && player.IsInVehicle)
                 {
-                    LandVehicle vehicle = player.CurrentVehicle.GetComponent<LandVehicle>();
-                    if (vehicle != null)
-                        return vehicle;
-                }
-
-                if (player.CurrentVehicleSeat != null)
-                    return player.CurrentVehicleSeat.GetComponentInParent<LandVehicle>();
-            }
-            catch { }
-
-            return null;
-        }
-
-        private static VehicleCamera GetVehicleCamera(LandVehicle vehicle)
-        {
-            if (vehicle == null)
-                return null;
-
-            try
-            {
-                VehicleCamera camera = vehicle.GetComponentInChildren<VehicleCamera>(true);
-                if (camera != null)
-                    return camera;
-            }
-            catch { }
-
-            try
-            {
-                VehicleCamera[] cameras = FindObjectsOfType<VehicleCamera>(true);
-                if (cameras == null)
-                    return null;
-
-                for (int i = 0; i < cameras.Length; i++)
-                {
-                    VehicleCamera camera = cameras[i];
-                    if (camera == null)
-                        continue;
-
-                    try
+                    if (player.CurrentVehicle != null)
                     {
-                        if (camera.vehicle == vehicle)
-                            return camera;
+                        LandVehicle vehicle = player.CurrentVehicle.GetComponent<LandVehicle>();
+                        if (vehicle != null)
+                            return vehicle;
                     }
-                    catch { }
+
+                    if (player.CurrentVehicleSeat != null)
+                        return player.CurrentVehicleSeat.GetComponentInParent<LandVehicle>();
                 }
+            }
+            catch { }
+
+            try
+            {
+                PlayerMovement movement = PlayerMovement.Instance;
+                if (movement != null && movement.CurrentVehicle != null)
+                    return movement.CurrentVehicle.GetComponent<LandVehicle>();
             }
             catch { }
 

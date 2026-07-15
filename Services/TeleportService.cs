@@ -99,7 +99,6 @@ namespace NugzzMenu.Services
             AddSupplierLocations();
             AddDeadDrops();
             AddPoliceStations();
-            AddParkingLots();
             AddPOIs();
             AddNpcs();
 
@@ -265,7 +264,10 @@ namespace NugzzMenu.Services
                     if (poi == null || poi.transform == null)
                         continue;
 
-                    string label = SafeString(poi.MainText, poi.DefaultMainText, poi.name);
+                    string label = CleanLabel(SafeString(poi.MainText, poi.DefaultMainText, poi.name));
+                    if (ShouldSkipPoi(label))
+                        continue;
+
                     Add("POI", label, poi.transform.position);
                 }
             }
@@ -356,31 +358,6 @@ namespace NugzzMenu.Services
 
                     Transform point = station.SpawnPoint != null ? station.SpawnPoint : station.transform;
                     Add("Police", SafeString(station.name, "Police Station"), point.position);
-                }
-            }
-            catch { }
-        }
-
-        private void AddParkingLots()
-        {
-            try
-            {
-                ParkingLot[] lots = UnityEngine.Object.FindObjectsOfType<ParkingLot>(true);
-                if (lots == null)
-                    return;
-
-                for (int i = 0; i < lots.Length; i++)
-                {
-                    ParkingLot lot = lots[i];
-                    if (lot == null)
-                        continue;
-
-                    Transform point = lot.EntryPoint != null
-                        ? lot.EntryPoint
-                        : lot.HiddenVehicleAccessPoint != null
-                            ? lot.HiddenVehicleAccessPoint
-                            : lot.transform;
-                    Add("Parking", SafeString(lot.name, "Parking Lot"), point.position);
                 }
             }
             catch { }
@@ -478,6 +455,18 @@ namespace NugzzMenu.Services
         {
             return !string.Equals(category, "NPC", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(category, "Location", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ShouldSkipPoi(string label)
+        {
+            string normalized = Normalize(label);
+            if (string.IsNullOrEmpty(normalized))
+                return true;
+
+            return normalized == "poimaintext" ||
+                normalized == "poipoimaintext" ||
+                normalized == "maintext" ||
+                normalized.Contains("poimaintext");
         }
 
         private bool HasNearbyDestination(Vector3 position)

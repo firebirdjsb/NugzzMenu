@@ -61,10 +61,10 @@ namespace NugzzMenu.UI
             }
 
             bool canUseWorldControls = vehicleService.CanSpawnVehicles();
-            GUIFit.Panel(new Rect(0f, y, w, 132f), boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 160f), boxStyle);
             float rowY = y + 6f;
 
-            string rvBlowLabel = canUseWorldControls ? "Blow Up RV" : "Host Only";
+            string rvBlowLabel = canUseWorldControls ? "Blow Up RV (After Welcome)" : "Host Only";
             if (GUIFit.Button(new Rect(6f, rowY, w * 0.48f - 8f, 22f), rvBlowLabel, buttonStyle))
             {
                 if (!canUseWorldControls)
@@ -80,6 +80,16 @@ namespace NugzzMenu.UI
                     NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
                 else
                     vehicleService.FixOrRespawnRV();
+            }
+
+            rowY += 28f;
+            string forceRvLabel = canUseWorldControls ? "Force RV + Complete Welcome (Skips Story)" : "Host Only";
+            if (GUIFit.Button(new Rect(6f, rowY, w - 12f, 22f), forceRvLabel, buttonStyle))
+            {
+                if (!canUseWorldControls)
+                    NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
+                else
+                    vehicleService.ForceBlowUpRvAndCompleteWelcome();
             }
 
             rowY += 28f;
@@ -123,7 +133,7 @@ namespace NugzzMenu.UI
                     : "Protected in multiplayer: only the host can sync these world changes.",
                 canUseWorldControls ? LabelCategory.Label : LabelCategory.Error);
 
-            y += 140f;
+            y += 168f;
         }
 
         private static void DrawPropertyPicker(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,

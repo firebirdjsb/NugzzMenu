@@ -7,6 +7,7 @@ using Il2CppScheduleOne.ObjectScripts;
 using Il2CppScheduleOne.ObjectScripts.Soil;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.PlayerTasks;
+using Il2CppScheduleOne.Trash;
 using UnityEngine;
 
 namespace NugzzMenu.Services
@@ -150,7 +151,10 @@ namespace NugzzMenu.Services
                 }
 
                 pot.PlantSeed_Server(seed.name, 0f);
-                SpendOneEquippedStack(seed, seedTool);
+                SpendOneEquippedStack(
+                    seed,
+                    seedTool,
+                    ResolveSeedTrashPrefab(seed));
                 NotificationService.Instance.Status("Planted " + SafeName(seed));
             }
             catch (Exception ex)
@@ -245,7 +249,10 @@ namespace NugzzMenu.Services
                     return true;
                 }
 
-                SpendOneEquippedStack(soil, pourable);
+                SpendOneEquippedStack(
+                    soil,
+                    pourable,
+                    ResolvePourableTrashPrefab(pourable));
                 NotificationService.Instance.Status("Filled soil");
             }
             catch (Exception ex)
@@ -296,7 +303,10 @@ namespace NugzzMenu.Services
                 }
 
                 container.ApplyAdditive_Server(additive.name);
-                SpendOneEquippedStack(additive, pourable);
+                SpendOneEquippedStack(
+                    additive,
+                    pourable,
+                    ResolvePourableTrashPrefab(pourable));
                 NotificationService.Instance.Status("Applied " + SafeName(additive));
             }
             catch (Exception ex)
@@ -538,6 +548,8 @@ namespace NugzzMenu.Services
             string toolName = SafeName(pourable);
             string typeName = pourable.GetType().Name;
             return toolName.IndexOf("Soil", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                toolName.IndexOf("Substrate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("Substrate", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 typeName.IndexOf("Soil", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
@@ -657,6 +669,11 @@ namespace NugzzMenu.Services
                 return fromItem;
 
             string key = NormalizeKey(SafeName(pourable));
+            if (key.Contains("substrate"))
+                return ResolveDefinition<SoilDefinition>(
+                    "mushroomsubstrate",
+                    "substrate",
+                    "mushroom_substrate");
             if (key.Contains("extralonglife"))
                 return ResolveDefinition<SoilDefinition>("extralonglifesoil");
             if (key.Contains("longlife"))
@@ -804,7 +821,10 @@ namespace NugzzMenu.Services
             }
         }
 
-        private static bool SpendOneEquippedStack(ItemDefinition expectedDefinition, Equippable tool)
+        private static bool SpendOneEquippedStack(
+            ItemDefinition expectedDefinition,
+            Equippable tool,
+            TrashItem trashPrefab)
         {
             try
             {
@@ -825,6 +845,7 @@ namespace NugzzMenu.Services
 
                     try { slot.ReplicateStoredInstance(); } catch { }
                     try { ManagerCacheService.Instance.PlayerInventory?.Reequip(); } catch { }
+                    SpawnConsumedItemTrash(trashPrefab);
                     return true;
                 }
 
@@ -833,6 +854,7 @@ namespace NugzzMenu.Services
                 if (player != null && !string.IsNullOrEmpty(id))
                 {
                     player.RemoveEquippedItemFromInventory(id, 1);
+                    SpawnConsumedItemTrash(trashPrefab);
                     return true;
                 }
             }
@@ -843,6 +865,52 @@ namespace NugzzMenu.Services
             }
 
             return false;
+        }
+
+        private static TrashItem ResolveSeedTrashPrefab(SeedDefinition seed)
+        {
+            try { return seed?.FunctionSeedPrefab?.TrashPrefab; }
+            catch { return null; }
+        }
+
+        private static TrashItem ResolvePourableTrashPrefab(Equippable_Pourable pourable)
+        {
+            try { return pourable?.PourablePrefab?.TrashItem; }
+            catch { return null; }
+        }
+
+        private static void SpawnConsumedItemTrash(TrashItem prefab)
+        {
+            try
+            {
+                if (prefab == null || string.IsNullOrWhiteSpace(prefab.ID))
+                    return;
+
+                TrashManager manager = TrashManager.Instance;
+                Player player = ManagerCacheService.Instance.LocalPlayer;
+                if (manager == null || player == null || player.transform == null)
+                    return;
+
+                Transform origin = player.transform;
+                Vector3 position = origin.position +
+                    origin.forward * 0.35f +
+                    Vector3.up * 0.8f;
+                Vector3 velocity = origin.forward * 0.75f + Vector3.up * 0.2f;
+                Quaternion rotation = Quaternion.Euler(0f, origin.eulerAngles.y, 0f);
+
+                manager.CreateTrashItem(
+                    prefab.ID,
+                    position,
+                    rotation,
+                    velocity,
+                    string.Empty,
+                    false);
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning(
+                    "Failed to create consumed grow-item trash: " + ex.Message);
+            }
         }
 
         private static HotbarSlot GetEquippedSlot()

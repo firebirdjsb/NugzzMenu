@@ -64,7 +64,7 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
-                GUIFit.Panel(new Rect(0f, y, w, 120f), boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, 72f), boxStyle);
                 TMPHybridService.Instance.Label(6f, y + 4f, w - 12f, 18f, PlayerLabel(selectedPlayer),
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
@@ -80,15 +80,7 @@ namespace NugzzMenu.UI
                 {
                     tpToPlayer?.Invoke(selectedPlayer);
                 }
-                if (GUIFit.Button(new Rect(6f, y + 50f, actionButtonWidth, 18f), "Save Pos", buttonStyle))
-                {
-                    TeleportService.Instance.SavePosition();
-                }
-                if (GUIFit.Button(new Rect(12f + actionButtonWidth, y + 50f, actionButtonWidth, 18f), "Load Pos", buttonStyle))
-                {
-                    TeleportService.Instance.LoadPosition();
-                }
-                y += 124f;
+                y += 76f;
             }
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "LOCAL EFFECT",

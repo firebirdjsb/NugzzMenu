@@ -112,10 +112,9 @@ namespace NugzzMenu.Services
             try
             {
                 var pots = FindObjectsOfType<Pot>();
-                if (pots == null)
-                    return 0;
-
-                for (int i = 0; i < pots.Length; i++)
+                if (pots != null)
+                {
+                    for (int i = 0; i < pots.Length; i++)
                 {
                     Pot pot = pots[i];
                     if (pot == null)
@@ -138,6 +137,7 @@ namespace NugzzMenu.Services
                     {
                         UnityEngine.Debug.LogWarning("[Nugzz] Auto-soil failed: " + ex.Message);
                     }
+                    }
                 }
             }
             catch (Exception ex)
@@ -145,7 +145,47 @@ namespace NugzzMenu.Services
                 UnityEngine.Debug.LogWarning("[Nugzz] Pot soil scan failed: " + ex.Message);
             }
 
-            NotificationService.Instance.Status("Soil filled: " + filled);
+            SoilDefinition substrate = ResolveDefinition<SoilDefinition>(
+                "mushroomsubstrate",
+                "substrate",
+                "mushroom_substrate") ?? soil;
+            try
+            {
+                var beds = FindObjectsOfType<MushroomBed>();
+                if (beds != null && substrate != null)
+                {
+                    for (int i = 0; i < beds.Length; i++)
+                    {
+                        MushroomBed bed = beds[i];
+                        if (bed == null)
+                            continue;
+
+                        try
+                        {
+                            if (bed.NormalizedSoilAmount >= 0.995f &&
+                                bed.CurrentSoil != null)
+                            {
+                                continue;
+                            }
+
+                            if (!ApplySoil(bed, substrate))
+                                continue;
+
+                            filled++;
+                        }
+                        catch (Exception ex)
+                        {
+                            UnityEngine.Debug.LogWarning("[Nugzz] Auto-substrate failed: " + ex.Message);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[Nugzz] Mushroom substrate scan failed: " + ex.Message);
+            }
+
+            NotificationService.Instance.Status("Soil/substrate filled: " + filled);
             return filled;
         }
 

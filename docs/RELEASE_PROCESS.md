@@ -39,7 +39,7 @@ Minimum local checks:
 - vehicle camera survives opening/closing the menu while driving,
 - Settings tab fits all controls,
 - Items tab can spawn a quality-aware item,
-- Place Anywhere can be toggled by host and warns non-hosts,
+- Building still uses vanilla grid/floor snapping,
 - management clipboard still selects and links vanilla targets,
 - logs stay quiet during normal use.
 

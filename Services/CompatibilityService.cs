@@ -5,7 +5,6 @@ using System.Reflection;
 using HarmonyLib;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.Trash;
-using Il2CppScheduleOne.Variables;
 using Il2CppScheduleOne.Vehicles;
 using MelonLoader;
 using UnityEngine;
@@ -19,13 +18,16 @@ namespace NugzzMenu.Services
 
         private bool _unityLogFilterPatched;
         private bool _actionListStaggeredPatched;
+        private bool _temperatureDisplayPatched;
+        [ThreadStatic]
+        private static bool _temperatureDisplayUpdateActive;
 
         private CompatibilityService() { }
 
         public void ApplyRuntimeCompatibilityFixes(HarmonyLib.Harmony harmony)
         {
             ApplyUnityLogFilter(harmony);
-            ApplyActionListStaggeredPatch(harmony);
+            ApplyTemperatureDisplayPatch(harmony);
         }
 
         private void ApplyUnityLogFilter(HarmonyLib.Harmony harmony)
@@ -41,9 +43,12 @@ namespace NugzzMenu.Services
                 MethodInfo secondArgumentPrefix = typeof(CompatibilityService).GetMethod(
                     nameof(UnityLogSecondArgumentPrefix),
                     BindingFlags.Static | BindingFlags.NonPublic);
+                MethodInfo anyArgumentPrefix = typeof(CompatibilityService).GetMethod(
+                    nameof(UnityLogAnyArgumentPrefix),
+                    BindingFlags.Static | BindingFlags.NonPublic);
 
-                PatchUnityLogMethods(harmony, typeof(UnityEngine.Logger), firstArgumentPrefix, secondArgumentPrefix);
-                PatchUnityLogMethods(harmony, typeof(UnityEngine.Debug), firstArgumentPrefix, secondArgumentPrefix);
+                PatchUnityLogMethods(harmony, typeof(UnityEngine.Logger), firstArgumentPrefix, secondArgumentPrefix, anyArgumentPrefix);
+                PatchUnityLogMethods(harmony, typeof(UnityEngine.Debug), firstArgumentPrefix, secondArgumentPrefix, anyArgumentPrefix);
 
                 _unityLogFilterPatched = true;
             }
@@ -57,7 +62,8 @@ namespace NugzzMenu.Services
             HarmonyLib.Harmony harmony,
             Type type,
             MethodInfo firstArgumentPrefix,
-            MethodInfo secondArgumentPrefix)
+            MethodInfo secondArgumentPrefix,
+            MethodInfo anyArgumentPrefix)
         {
             if (harmony == null || type == null)
                 return;
@@ -73,7 +79,7 @@ namespace NugzzMenu.Services
                 MethodInfo prefix = SelectUnityLogPrefix(
                     method,
                     firstArgumentPrefix,
-                    secondArgumentPrefix);
+                    secondArgumentPrefix) ?? anyArgumentPrefix;
                 if (prefix == null)
                     continue;
 
@@ -81,7 +87,14 @@ namespace NugzzMenu.Services
                 {
                     harmony.Patch(method, prefix: new HarmonyMethod(prefix));
                 }
-                catch { }
+                catch
+                {
+                    if (anyArgumentPrefix == null || prefix == anyArgumentPrefix)
+                        continue;
+
+                    try { harmony.Patch(method, prefix: new HarmonyMethod(anyArgumentPrefix)); }
+                    catch { }
+                }
             }
         }
 
@@ -134,12 +147,37 @@ namespace NugzzMenu.Services
             return !ShouldSuppressUnityLog(__1);
         }
 
+        private static bool UnityLogAnyArgumentPrefix(object[] __args)
+        {
+            if (__args == null)
+                return true;
+
+            for (int i = 0; i < __args.Length; i++)
+            {
+                if (ShouldSuppressUnityLog(__args[i]))
+                    return false;
+            }
+
+            return true;
+        }
+
         internal static bool ShouldSuppressUnityLog(object message)
         {
             return ShouldSuppressMissingVariableLog(message) ||
+                ShouldSuppressTemperatureDisplayLookRotationLog(message) ||
                 ShouldSuppressNegativeBoxColliderLog(message) ||
                 ShouldSuppressActionListStaggeredLog(message) ||
-                ShouldSuppressNavMeshAgentLog(message);
+                ShouldSuppressNavMeshAgentLog(message) ||
+                ShouldSuppressPathFailureLog(message);
+        }
+
+        private static bool ShouldSuppressTemperatureDisplayLookRotationLog(object message)
+        {
+            if (!_temperatureDisplayUpdateActive)
+                return false;
+
+            string text = message?.ToString() ?? string.Empty;
+            return text.IndexOf("Look rotation viewing vector is zero", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool ShouldSuppressMissingVariableLog(object message)
@@ -154,18 +192,14 @@ namespace NugzzMenu.Services
                     ContainsMissingInventoryVariable(text);
             }
 
+            if (text.StartsWith("Variable ", StringComparison.OrdinalIgnoreCase) &&
+                text.EndsWith(" not found", StringComparison.OrdinalIgnoreCase))
+            {
+                return ContainsIgnoredMissingVariableName(text);
+            }
+
             return text.StartsWith("Variable with name inventory", StringComparison.OrdinalIgnoreCase) &&
                 text.IndexOf("does not exist in the database", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        internal static bool IsIgnoredMissingVariableName(string variableName)
-        {
-            return string.Equals(variableName, "cash_balance", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(variableName, "total_money", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(variableName, "player_in_vehicle", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(variableName, "inputhintstutorialdone", StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrEmpty(variableName) &&
-                 variableName.StartsWith("inventory", StringComparison.OrdinalIgnoreCase));
         }
 
         private static bool ShouldSuppressNegativeBoxColliderLog(object message)
@@ -185,6 +219,13 @@ namespace NugzzMenu.Services
         {
             string text = message?.ToString() ?? string.Empty;
             return text.IndexOf("Failed to create agent because it is not close enough to the NavMesh", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool ShouldSuppressPathFailureLog(object message)
+        {
+            string text = message?.ToString() ?? string.Empty;
+            return text.IndexOf("Path Failed : Computation Time", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("Searched all reachable nodes, but could not find target", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void ApplyActionListStaggeredPatch(HarmonyLib.Harmony harmony)
@@ -211,6 +252,130 @@ namespace NugzzMenu.Services
             catch { }
 
             _actionListStaggeredPatched = true;
+        }
+
+        private void ApplyTemperatureDisplayPatch(HarmonyLib.Harmony harmony)
+        {
+            if (_temperatureDisplayPatched || harmony == null)
+                return;
+
+            try
+            {
+                Type type = FindGameType("ScheduleOne.UI.TemperatureDisplay") ??
+                    FindGameType("Il2CppScheduleOne.UI.TemperatureDisplay") ??
+                    AccessTools.TypeByName("ScheduleOne.UI.TemperatureDisplay") ??
+                    AccessTools.TypeByName("Il2CppScheduleOne.UI.TemperatureDisplay");
+                MethodInfo target = AccessTools.Method(type, "UpdateCanvas");
+                MethodInfo prefix = typeof(CompatibilityService).GetMethod(
+                    nameof(TemperatureDisplayUpdateCanvasPrefix),
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                MethodInfo finalizer = typeof(CompatibilityService).GetMethod(
+                    nameof(TemperatureDisplayUpdateCanvasFinalizer),
+                    BindingFlags.Static | BindingFlags.NonPublic);
+
+                if (target != null && prefix != null && finalizer != null)
+                {
+                    harmony.Patch(
+                        target,
+                        prefix: new HarmonyMethod(prefix),
+                        finalizer: new HarmonyMethod(finalizer));
+                    DebugLogService.Instance.Verbose("Patched TemperatureDisplay.UpdateCanvas zero-vector guard");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning(
+                    "Temperature display compatibility patch failed: " + ex.Message);
+            }
+
+            _temperatureDisplayPatched = true;
+        }
+
+        private static bool TemperatureDisplayUpdateCanvasPrefix(object __instance)
+        {
+            if (ShouldSkipTemperatureDisplayCanvas(__instance))
+            {
+                _temperatureDisplayUpdateActive = false;
+                return false;
+            }
+
+            _temperatureDisplayUpdateActive = true;
+            return true;
+        }
+
+        private static Exception TemperatureDisplayUpdateCanvasFinalizer(Exception __exception)
+        {
+            _temperatureDisplayUpdateActive = false;
+            return __exception;
+        }
+
+        private static bool ShouldSkipTemperatureDisplayCanvas(object instance)
+        {
+            try
+            {
+                Camera camera = Camera.main;
+                if (camera == null || camera.transform == null)
+                    return true;
+
+                Component component = instance as Component;
+                if (component == null || component.transform == null)
+                    return false;
+
+                Vector3 cameraPosition = camera.transform.position;
+                if (!IsFinite(cameraPosition))
+                    return true;
+
+                if (IsZeroLookVector(cameraPosition, component.transform.position))
+                    return true;
+
+                RectTransform[] rects = component.GetComponentsInChildren<RectTransform>(true);
+                if (rects != null)
+                {
+                    for (int i = 0; i < rects.Length; i++)
+                    {
+                        RectTransform rect = rects[i];
+                        if (rect != null && IsZeroLookVector(cameraPosition, rect.position))
+                            return true;
+                    }
+                }
+
+                Transform[] transforms = component.GetComponentsInChildren<Transform>(true);
+                if (transforms != null)
+                {
+                    for (int i = 0; i < transforms.Length; i++)
+                    {
+                        Transform child = transforms[i];
+                        if (child != null && IsZeroLookVector(cameraPosition, child.position))
+                            return true;
+                    }
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private static bool IsZeroLookVector(Vector3 cameraPosition, Vector3 displayPosition)
+        {
+            if (!IsFinite(displayPosition))
+                return true;
+
+            Vector3 delta = cameraPosition - displayPosition;
+            if (!IsFinite(delta))
+                return true;
+
+            if (delta.sqrMagnitude <= 0.0001f)
+                return true;
+
+            delta.y = 0f;
+            return delta.sqrMagnitude <= 0.0001f;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+                !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+                !float.IsNaN(value.z) && !float.IsInfinity(value.z);
         }
 
         private static Type FindGameType(string typeName)
@@ -349,6 +514,9 @@ namespace NugzzMenu.Services
             return text.IndexOf("cash_balance", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 text.IndexOf("total_money", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 text.IndexOf("player_in_vehicle", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("playernearrv", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("PlayerNearRV", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("Nugzz.VehicleTune", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 text.IndexOf("inputhintstutorialdone", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
@@ -360,92 +528,6 @@ namespace NugzzMenu.Services
 
             string variableName = text.Substring(marker + 5).Trim();
             return variableName.StartsWith("inventory", StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    [HarmonyPatch(typeof(Player), nameof(Player.SetVariableValue), new[] { typeof(string), typeof(string), typeof(bool) })]
-    internal static class PlayerMissingVariableSetSpamPatch
-    {
-        private static bool _reported;
-
-        private static bool Prefix(string variableName)
-        {
-            if (!CompatibilityService.IsIgnoredMissingVariableName(variableName))
-                return true;
-
-            if (!_reported)
-            {
-                _reported = true;
-                DebugLogService.Instance.VerboseWarning(
-                    "Suppressed Player.SetVariableValue missing-variable warning spam");
-            }
-
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(Player), nameof(Player.GetVariable), new[] { typeof(string) })]
-    internal static class PlayerGetMissingVariableSpamPatch
-    {
-        private static bool _reported;
-
-        private static bool Prefix(string variableName, ref BaseVariable __result)
-        {
-            if (!CompatibilityService.IsIgnoredMissingVariableName(variableName))
-                return true;
-
-            __result = null;
-            if (!_reported)
-            {
-                _reported = true;
-                DebugLogService.Instance.VerboseWarning(
-                    "Suppressed Player.GetVariable missing-variable warning spam");
-            }
-
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(VariableDatabase), nameof(VariableDatabase.GetVariable), new[] { typeof(string) })]
-    internal static class VariableDatabaseGetMissingVariableSpamPatch
-    {
-        private static bool _reported;
-
-        private static bool Prefix(string variableName, ref BaseVariable __result)
-        {
-            if (!CompatibilityService.IsIgnoredMissingVariableName(variableName))
-                return true;
-
-            __result = null;
-            if (!_reported)
-            {
-                _reported = true;
-                DebugLogService.Instance.VerboseWarning(
-                    "Suppressed VariableDatabase.GetVariable missing-variable warning spam");
-            }
-
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(VariableDatabase), nameof(VariableDatabase.SetVariableValue), new[] { typeof(string), typeof(string), typeof(bool) })]
-    internal static class VariableDatabaseSetMissingVariableSpamPatch
-    {
-        private static bool _reported;
-
-        private static bool Prefix(VariableDatabase __instance, string variableName)
-        {
-            if (!CompatibilityService.IsIgnoredMissingVariableName(variableName))
-                return true;
-
-            if (!_reported)
-            {
-                _reported = true;
-                DebugLogService.Instance.VerboseWarning(
-                    "Suppressed VariableDatabase.SetVariableValue missing-variable warning spam");
-            }
-
-            return false;
         }
     }
 

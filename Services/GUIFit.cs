@@ -18,6 +18,9 @@ namespace NugzzMenu.Services
             int smallest = Mathf.Clamp(minFontSize, 5, startSize);
             string value = text ?? "";
 
+            if (!wordWrap && LikelyFits(sourceStyle, rect, value, startSize))
+                return sourceStyle;
+
             for (int size = startSize; size >= smallest; size--)
             {
                 GUIStyle style = GetCachedStyle(sourceStyle, size, wordWrap);
@@ -105,6 +108,20 @@ namespace NugzzMenu.Services
 
             Vector2 size = style.CalcSize(content);
             return size.x <= rect.width + 1f && size.y <= rect.height + 1f;
+        }
+
+        private static bool LikelyFits(GUIStyle style, Rect rect, string text, int fontSize)
+        {
+            if (style == null || rect.width <= 0f || rect.height <= 0f)
+                return true;
+
+            int length = string.IsNullOrEmpty(text) ? 0 : text.Length;
+            if (length > 18)
+                return false;
+
+            float estimatedWidth = length * fontSize * 0.62f + 12f;
+            float estimatedHeight = fontSize + 8f;
+            return estimatedWidth <= rect.width && estimatedHeight <= rect.height;
         }
     }
 }

@@ -9,7 +9,7 @@ namespace NugzzMenu.UI
         public string MenuKeybind { get; set; } = "F8";
         public bool UseGameStackLogic { get; set; }
         public bool VerboseDebugLogging { get; set; }
-        public bool PlaceAnywhere { get; set; }
+        public bool KeybindOverlay { get; set; } = true;
     }
 
     public static class SettingsTabRenderer
@@ -19,7 +19,8 @@ namespace NugzzMenu.UI
         public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
             SettingsState state, bool isHost,
             Action<string> setKeybind,
-            Action<bool> setGameStackLogic, Action<bool> setVerboseDebugLogging, Action<bool> setPlaceAnywhere,
+            Action<bool> setGameStackLogic, Action<bool> setVerboseDebugLogging,
+            Action<bool> setKeybindOverlay,
             SaveManagementService saveService, DebugTestRoomService testRoomService)
         {
             GUIFit.Panel(new Rect(0f, y, w, 100f), boxStyle);
@@ -75,6 +76,26 @@ namespace NugzzMenu.UI
 
             y += 54f;
 
+            TMPHybridService.Instance.Label(4f, y, w, 18f, "HUD",
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
+            y += 20f;
+            GUIFit.Panel(new Rect(0f, y, w, 32f), boxStyle);
+            TMPHybridService.Instance.Label(6f, y + 5f, w * 0.68f, 20f, state.KeybindOverlay ? "Keybind HUD: ON" : "Keybind HUD: OFF",
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+            if (GUIFit.Button(new Rect(w * 0.72f, y + 5f, w * 0.26f, 20f), state.KeybindOverlay ? "ON" : "OFF", buttonStyle))
+            {
+                bool next = !state.KeybindOverlay;
+                state.KeybindOverlay = next;
+                setKeybindOverlay?.Invoke(next);
+            }
+            y += 38f;
+
             TMPHybridService.Instance.Label(4f, y, w, 18f, "ITEM SPAWNER",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
@@ -112,22 +133,6 @@ namespace NugzzMenu.UI
                 bool next = !state.VerboseDebugLogging;
                 state.VerboseDebugLogging = next;
                 setVerboseDebugLogging?.Invoke(next);
-            }
-            y += 38f;
-
-            TMPHybridService.Instance.Label(4f, y, w, 18f, "BUILDING",
-                GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
-            y += 20f;
-            GUIFit.Panel(new Rect(0f, y, w, 32f), boxStyle);
-            bool placeAnywhere = state.PlaceAnywhere;
-            if (GUIFit.Button(new Rect(6f, y + 5f, w - 12f, 20f), placeAnywhere ? "Place Anywhere: ON" : "Place Anywhere: OFF", buttonStyle))
-            {
-                bool next = !state.PlaceAnywhere;
-                state.PlaceAnywhere = next;
-                setPlaceAnywhere?.Invoke(next);
             }
             y += 38f;
 
@@ -195,6 +200,17 @@ namespace NugzzMenu.UI
                 return;
 
             saveService.EnsureFresh();
+            if (!saveService.IsMainMenu)
+            {
+                DrawHeader(4f, y, w, "SAVE MANAGER");
+                y += 20f;
+                GUIFit.Panel(new Rect(0f, y, w, 32f), boxStyle);
+                DrawLabel(8f, y + 6f, w - 16f, 18f,
+                    "Save tools are hidden in-game. Return to the main menu to inspect, edit, or archive saves.",
+                    LabelCategory.Status);
+                y += 40f;
+                return;
+            }
 
             DrawHeader(4f, y, w, "SAVE MANAGER");
             y += 20f;

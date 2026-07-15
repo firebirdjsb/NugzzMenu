@@ -171,12 +171,12 @@ namespace NugzzMenu.UI
             rowY += 24f;
 
             bool changed = false;
-            changed |= DrawSlider(ref rowY, w, "Traction", ref tune.TractionMultiplier, 0.1f, 6f, "x");
-            changed |= DrawSlider(ref rowY, w, "Steering", ref tune.SteeringMultiplier, 0.1f, 5f, "x");
-            changed |= DrawSlider(ref rowY, w, "Engine / Max Speed", ref tune.SpeedMultiplier, 0.1f, 10f, "x");
-            changed |= DrawSlider(ref rowY, w, "Brake Strength", ref tune.BrakeMultiplier, 0.1f, 8f, "x");
-            changed |= DrawSlider(ref rowY, w, "Handbrake Bite", ref tune.BrakeHardnessMultiplier, 0.1f, 8f, "x");
-            changed |= DrawSlider(ref rowY, w, "Headlight Brightness", ref tune.HeadlightBrightnessMultiplier, 0.1f, 10f, "x");
+            changed |= DrawSlider(ref rowY, w, "Traction", ref tune.TractionMultiplier, 0.4f, 3f, "x");
+            changed |= DrawSlider(ref rowY, w, "Steering", ref tune.SteeringMultiplier, 0.4f, 2.5f, "x");
+            changed |= DrawSlider(ref rowY, w, "Engine / Max Speed", ref tune.SpeedMultiplier, 0.5f, 4f, "x");
+            changed |= DrawSlider(ref rowY, w, "Brake Strength", ref tune.BrakeMultiplier, 0.5f, 4f, "x");
+            changed |= DrawSlider(ref rowY, w, "Handbrake Bite", ref tune.BrakeHardnessMultiplier, 0.5f, 4f, "x");
+            changed |= DrawSlider(ref rowY, w, "Headlight Brightness", ref tune.HeadlightBrightnessMultiplier, 0.2f, 5f, "x");
 
             Label(8f, rowY, w - 16f, 18f, "Headlight Color", LabelCategory.Header);
             rowY += 18f;

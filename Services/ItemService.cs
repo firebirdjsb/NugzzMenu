@@ -66,6 +66,9 @@ namespace NugzzMenu.Services
         private static readonly KnownCatalogItem[] KnownCatalogItems =
         {
             new KnownCatalogItem("suspensionrack", "Suspension Rack", "Equipment"),
+            new KnownCatalogItem("mushroombed", "Mushroom Bed", "Grow"),
+            new KnownCatalogItem("mushroomspawnstation", "Mushroom Spawn Station", "Grow"),
+            new KnownCatalogItem("mushroomsubstrate", "Mushroom Substrate", "Grow"),
         };
 
         private static readonly string[] Categories =
@@ -902,6 +905,14 @@ namespace NugzzMenu.Services
             if (IsSeedKey(key) || TryCastDefinition<SeedDefinition>(definition) != null)
                 return "Seeds";
 
+            if (key == "mushroombed" ||
+                key == "mushroomspawnstation" ||
+                key == "mushroomsubstrate" ||
+                key == "substratebag")
+            {
+                return "Grow";
+            }
+
             if (key == "suspensionrack")
                 return "Equipment";
 
@@ -1061,6 +1072,7 @@ namespace NugzzMenu.Services
                 case "mushroomhat": return "Mushroom Hat";
                 case "mushroomspawnstation": return "Mushroom Spawn Station";
                 case "mushroomsubstrate": return "Mushroom Substrate";
+                case "substratebag": return "Mushroom Substrate";
                 case "ogkush": return "OG Kush";
                 case "ogkushseed": return "OG Kush Seed";
                 case "oldmanjimmyswhiskey": return "Ol' Man Jimmy's Whiskey";
@@ -1116,6 +1128,7 @@ namespace NugzzMenu.Services
                 case "pseudoproduct": return "pseudo";
                 case "floorrack": return "suspensionrack";
                 case "suspensionrackbuilt": return "suspensionrack";
+                case "substratebag": return "mushroomsubstrate";
                 case "chateaulepeepee": return "chateaulapeepee";
                 case "chateaulapeepee": return "chateaulapeepee";
                 default: return null;

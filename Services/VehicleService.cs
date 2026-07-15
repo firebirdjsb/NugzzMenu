@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Il2CppScheduleOne;
 using Il2CppScheduleOne.Lighting;
 using Il2CppScheduleOne.Map;
@@ -67,6 +68,11 @@ namespace NugzzMenu.Services
         private LandVehicle _cachedDrivenVehicle;
         private float _nextDrivenVehicleLookupTime;
         private float _nextVehicleTuneMaintenanceTime;
+        private const string NetworkTuneVariable = "Nugzz.VehicleTune";
+        private const float NetworkTuneBroadcastInterval = 0.2f;
+        private string _lastNetworkTunePayload = "";
+        private float _nextNetworkTuneBroadcastTime;
+        private bool _suppressNetworkTuneBroadcast;
 
         public bool BenzieManorAccessEnabled => _benzieManorAccessEnabled;
 
@@ -936,7 +942,9 @@ namespace NugzzMenu.Services
             if (vehicle == null)
                 return;
 
-            ApplyVehicleTune(vehicle, GetOrCreateVehicleTune(vehicle));
+            VehicleTuneSettings tune = GetOrCreateVehicleTune(vehicle);
+            ApplyVehicleTune(vehicle, tune);
+            BroadcastVehicleTune(vehicle, tune, false);
         }
 
         public void ResetDrivenVehicleTune()
@@ -960,6 +968,7 @@ namespace NugzzMenu.Services
             }
 
             ApplyVehicleTune(vehicle, tune);
+            BroadcastVehicleTune(vehicle, tune, true);
             tune.BodyColorEnabled = false;
             NotificationService.Instance.Status("Vehicle tuning reset");
         }
@@ -977,6 +986,16 @@ namespace NugzzMenu.Services
                 RV storyRV = FindStoryRV();
                 if (storyRV != null)
                 {
+                    // Do not manually invoke the opening quest's cinematic. It has its own
+                    // timing and message callbacks; the explicit Force button is the only
+                    // intentional story-skip path.
+                    if (QuestService.Instance.IsWelcomeQuestActive())
+                    {
+                        NotificationService.Instance.Warning(
+                            "Welcome quest is active. Let the story trigger the RV, or use Force RV + Complete Welcome to skip it.");
+                        return null;
+                    }
+
                     PrepareStoryRVForBlowUp(storyRV);
                     storyRV.BlowUp();
                     NotificationService.Instance.Notify("Story RV blown up.");
@@ -1004,6 +1023,12 @@ namespace NugzzMenu.Services
 
             try
             {
+                if (QuestService.Instance.IsWelcomeQuestActive())
+                {
+                    NotificationService.Instance.Warning("Finish the Welcome quest before repairing the story RV.");
+                    return null;
+                }
+
                 RV storyRV = FindStoryRV();
                 if (storyRV != null)
                 {
@@ -1848,6 +1873,25 @@ namespace NugzzMenu.Services
             return _cachedDrivenVehicle;
         }
 
+        public string ForceBlowUpRvAndCompleteWelcome()
+        {
+            if (!CanSpawnVehicles())
+            {
+                NotificationService.Instance.Warning("RV controls are host-only in multiplayer");
+                return null;
+            }
+
+            if (!QuestService.Instance.CompleteWelcomeQuestForManualRvAction())
+            {
+                NotificationService.Instance.Warning("Welcome quest could not be completed; RV was not changed.");
+                return null;
+            }
+
+            NotificationService.Instance.Warning(
+                "Manual RV action skipped and completed Welcome to Hyland Point.");
+            return BlowUpRV();
+        }
+
         private static bool IsDrivenTunableVehicleValid(LandVehicle vehicle)
         {
             if (vehicle == null)
@@ -1960,6 +2004,11 @@ namespace NugzzMenu.Services
 
         private void ApplyVehicleTune(LandVehicle vehicle, VehicleTuneSettings tune)
         {
+            ApplyVehicleTune(vehicle, tune, true);
+        }
+
+        private void ApplyVehicleTune(LandVehicle vehicle, VehicleTuneSettings tune, bool broadcastBodyColor)
+        {
             if (vehicle == null || tune == null)
                 return;
 
@@ -2009,7 +2058,7 @@ namespace NugzzMenu.Services
 
                 ApplyWheelTraction(vehicle, baseline, traction);
                 ApplyHeadlightTune(vehicle, baseline, tune);
-                ApplyBodyColorTune(vehicle, baseline, tune);
+                ApplyBodyColorTune(vehicle, baseline, tune, broadcastBodyColor);
             }
             catch (Exception ex)
             {
@@ -2084,6 +2133,214 @@ namespace NugzzMenu.Services
             {
                 return "name:" + SafeVehicleName(vehicle);
             }
+        }
+
+        private void BroadcastVehicleTune(LandVehicle vehicle, VehicleTuneSettings tune, bool force)
+        {
+            if (_suppressNetworkTuneBroadcast || vehicle == null || tune == null)
+                return;
+
+            if (!force && Time.unscaledTime < _nextNetworkTuneBroadcastTime)
+                return;
+
+            string payload = BuildVehicleTunePayload(vehicle, tune);
+            if (string.IsNullOrEmpty(payload))
+                return;
+
+            if (!force && string.Equals(payload, _lastNetworkTunePayload, StringComparison.Ordinal))
+                return;
+
+            try
+            {
+                Player player = ManagerCacheService.Instance.LocalPlayer;
+                if (player == null)
+                    return;
+
+                player.SendValue(NetworkTuneVariable, payload, true);
+                _lastNetworkTunePayload = payload;
+                _nextNetworkTuneBroadcastTime = Time.unscaledTime + NetworkTuneBroadcastInterval;
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("Vehicle tune sync failed: " + ex.Message);
+            }
+        }
+
+        private string BuildVehicleTunePayload(LandVehicle vehicle, VehicleTuneSettings tune)
+        {
+            string key = GetVehicleTuneKey(vehicle);
+            if (string.IsNullOrEmpty(key))
+                return "";
+
+            Vector3 position = Vector3.zero;
+            try { position = vehicle.transform.position; } catch { }
+
+            return string.Join("|",
+                "1",
+                key,
+                SafeVehicleCode(vehicle),
+                FormatNetworkFloat(position.x),
+                FormatNetworkFloat(position.y),
+                FormatNetworkFloat(position.z),
+                FormatNetworkFloat(Mathf.Clamp(tune.TractionMultiplier, 0.1f, 6f)),
+                FormatNetworkFloat(Mathf.Clamp(tune.SteeringMultiplier, 0.1f, 5f)),
+                FormatNetworkFloat(Mathf.Clamp(tune.SpeedMultiplier, 0.1f, 10f)),
+                FormatNetworkFloat(Mathf.Clamp(tune.BrakeMultiplier, 0.1f, 8f)),
+                FormatNetworkFloat(Mathf.Clamp(tune.BrakeHardnessMultiplier, 0.1f, 8f)),
+                FormatNetworkFloat(Mathf.Clamp(tune.HeadlightBrightnessMultiplier, 0.1f, 10f)),
+                FormatNetworkFloat(Mathf.Clamp01(tune.HeadlightRed)),
+                FormatNetworkFloat(Mathf.Clamp01(tune.HeadlightGreen)),
+                FormatNetworkFloat(Mathf.Clamp01(tune.HeadlightBlue)),
+                tune.BodyColorEnabled ? "1" : "0",
+                ((int)tune.BodyColor).ToString(CultureInfo.InvariantCulture));
+        }
+
+        internal bool TryApplyNetworkVehicleTune(Player player, string variableName, string value)
+        {
+            if (!string.Equals(variableName, NetworkTuneVariable, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (string.IsNullOrEmpty(value))
+                return true;
+
+            try
+            {
+                if (player != null && player.IsLocalPlayer &&
+                    string.Equals(value, _lastNetworkTunePayload, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            catch { }
+
+            string[] parts = value.Split('|');
+            if (parts.Length < 17 || parts[0] != "1")
+                return true;
+
+            string key = parts[1];
+            string code = parts[2];
+            if (!TryParseNetworkFloat(parts[3], out float x) ||
+                !TryParseNetworkFloat(parts[4], out float y) ||
+                !TryParseNetworkFloat(parts[5], out float z))
+            {
+                return true;
+            }
+
+            LandVehicle vehicle = FindVehicleForNetworkTune(key, code, new Vector3(x, y, z));
+            if (vehicle == null)
+                return true;
+
+            VehicleTuneSettings tune = GetOrCreateVehicleTune(vehicle);
+            if (!TryParseNetworkFloat(parts[6], out tune.TractionMultiplier)) return true;
+            if (!TryParseNetworkFloat(parts[7], out tune.SteeringMultiplier)) return true;
+            if (!TryParseNetworkFloat(parts[8], out tune.SpeedMultiplier)) return true;
+            if (!TryParseNetworkFloat(parts[9], out tune.BrakeMultiplier)) return true;
+            if (!TryParseNetworkFloat(parts[10], out tune.BrakeHardnessMultiplier)) return true;
+            if (!TryParseNetworkFloat(parts[11], out tune.HeadlightBrightnessMultiplier)) return true;
+            if (!TryParseNetworkFloat(parts[12], out tune.HeadlightRed)) return true;
+            if (!TryParseNetworkFloat(parts[13], out tune.HeadlightGreen)) return true;
+            if (!TryParseNetworkFloat(parts[14], out tune.HeadlightBlue)) return true;
+
+            tune.BodyColorEnabled = parts[15] == "1";
+            if (int.TryParse(parts[16], NumberStyles.Integer, CultureInfo.InvariantCulture, out int bodyColor))
+                tune.BodyColor = (EVehicleColor)bodyColor;
+            tune.HasAppliedBodyColor = false;
+
+            try
+            {
+                _suppressNetworkTuneBroadcast = true;
+                ApplyVehicleTune(vehicle, tune, false);
+            }
+            finally
+            {
+                _suppressNetworkTuneBroadcast = false;
+            }
+
+            return true;
+        }
+
+        private LandVehicle FindVehicleForNetworkTune(string key, string code, Vector3 position)
+        {
+            LandVehicle nearest = null;
+            float nearestSqr = float.MaxValue;
+
+            try
+            {
+                var manager = ManagerCacheService.Instance.VehicleManager ?? FindObjectOfType<VehicleManager>();
+                var vehicles = manager?.AllVehicles;
+                if (vehicles != null)
+                {
+                    for (int i = 0; i < vehicles.Count; i++)
+                    {
+                        LandVehicle match = ConsiderNetworkTuneCandidate(vehicles[i], key, code, position, ref nearest, ref nearestSqr);
+                        if (match != null)
+                            return match;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                LandVehicle[] vehicles = FindObjectsOfType<LandVehicle>(true);
+                if (vehicles != null)
+                {
+                    for (int i = 0; i < vehicles.Length; i++)
+                    {
+                        LandVehicle match = ConsiderNetworkTuneCandidate(vehicles[i], key, code, position, ref nearest, ref nearestSqr);
+                        if (match != null)
+                            return match;
+                    }
+                }
+            }
+            catch { }
+
+            return nearestSqr <= 144f ? nearest : null;
+        }
+
+        private LandVehicle ConsiderNetworkTuneCandidate(
+            LandVehicle vehicle,
+            string key,
+            string code,
+            Vector3 position,
+            ref LandVehicle nearest,
+            ref float nearestSqr)
+        {
+            if (vehicle == null)
+                return null;
+
+            string candidateKey = GetVehicleTuneKey(vehicle);
+            if (!string.IsNullOrEmpty(candidateKey) && string.Equals(candidateKey, key, StringComparison.Ordinal))
+                return vehicle;
+
+            string candidateCode = SafeVehicleCode(vehicle);
+            if (!string.IsNullOrEmpty(code) &&
+                !string.Equals(candidateCode, code, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            try
+            {
+                float sqr = (vehicle.transform.position - position).sqrMagnitude;
+                if (sqr < nearestSqr)
+                {
+                    nearest = vehicle;
+                    nearestSqr = sqr;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private static string FormatNetworkFloat(float value)
+        {
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        private static bool TryParseNetworkFloat(string value, out float result)
+        {
+            return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
         }
 
         private void CaptureWheelBaselines(LandVehicle vehicle, VehicleTuneBaseline baseline)
@@ -2329,7 +2586,7 @@ namespace NugzzMenu.Services
             catch { }
         }
 
-        private void ApplyBodyColorTune(LandVehicle vehicle, VehicleTuneBaseline baseline, VehicleTuneSettings tune)
+        private void ApplyBodyColorTune(LandVehicle vehicle, VehicleTuneBaseline baseline, VehicleTuneSettings tune, bool broadcast)
         {
             if (!tune.BodyColorEnabled)
                 return;
@@ -2338,8 +2595,15 @@ namespace NugzzMenu.Services
             {
                 if (!tune.HasAppliedBodyColor || tune.LastAppliedBodyColor != tune.BodyColor)
                 {
-                    try { vehicle.SendOwnedColor(tune.BodyColor); }
-                    catch { vehicle.ApplyColor(tune.BodyColor); }
+                    if (broadcast)
+                    {
+                        try { vehicle.SendOwnedColor(tune.BodyColor); }
+                        catch { vehicle.ApplyColor(tune.BodyColor); }
+                    }
+                    else
+                    {
+                        vehicle.ApplyColor(tune.BodyColor);
+                    }
 
                     tune.LastAppliedBodyColor = tune.BodyColor;
                     tune.HasAppliedBodyColor = true;

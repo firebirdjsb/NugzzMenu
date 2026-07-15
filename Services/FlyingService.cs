@@ -1,6 +1,8 @@
 using System;
+using Il2CppScheduleOne.Vehicles;
 using Il2CppScheduleOne.PlayerScripts;
 using UnityEngine;
+using static UnityEngine.Object;
 
 namespace NugzzMenu.Services
 {
@@ -23,12 +25,18 @@ namespace NugzzMenu.Services
         private Camera _cachedCamera;
         private Vector3 _lastFlyPosition;
         private bool _hasFlyPosition;
+        private bool _vehicleFlyEnabled;
+        private bool _vehicleFlyActive;
+        private Rigidbody _vehicleFlyBody;
+        private bool _vehicleFlyBodyHadGravity;
         private float _lastSpaceTapTime = -10f;
         private float _lastSpaceToggleTime = -10f;
         private const float DoubleSpaceWindowSeconds = 0.32f;
         private const float SpaceToggleCooldownSeconds = 0.45f;
 
         public bool Enabled => _enabled;
+        public bool DoubleSpaceHotkeyEnabled { get; private set; } = true;
+        public bool VehicleFlyEnabled => _vehicleFlyEnabled;
         public float Speed
         {
             get => _speed;
@@ -55,6 +63,7 @@ namespace NugzzMenu.Services
             }
             else
             {
+                RestoreVehicleFlyPhysics();
                 RestoreControllerAfterFly();
                 RestoreGravity();
                 _cachedPlayer = null;
@@ -69,9 +78,23 @@ namespace NugzzMenu.Services
             Speed = speed;
         }
 
+        public void SetDoubleSpaceHotkeyEnabled(bool enabled)
+        {
+            DoubleSpaceHotkeyEnabled = enabled;
+            if (!enabled)
+                ResetSpaceTap();
+        }
+
+        public void SetVehicleFlyEnabled(bool enabled)
+        {
+            _vehicleFlyEnabled = enabled;
+            if (!enabled)
+                RestoreVehicleFlyPhysics();
+        }
+
         public void UpdateHotkeys(bool menuOpen)
         {
-            if (menuOpen)
+            if (menuOpen || !DoubleSpaceHotkeyEnabled)
             {
                 ResetSpaceTap();
                 return;
@@ -112,6 +135,10 @@ namespace NugzzMenu.Services
                 var player = GetPlayer();
                 if (player == null) return;
 
+                if (_vehicleFlyEnabled && TryApplyVehicleFlyMovement())
+                    return;
+
+                RestoreVehicleFlyPhysics();
                 if (!_controllerDisabledForFly)
                     DisableControllerForFly();
 
@@ -171,6 +198,9 @@ namespace NugzzMenu.Services
 
         public void ApplyPostMovementLock()
         {
+            if (_vehicleFlyActive)
+                return;
+
             if (!_enabled || !_hasFlyPosition)
                 return;
 
@@ -191,6 +221,138 @@ namespace NugzzMenu.Services
             player.transform.position += delta;
             _lastFlyPosition = player.transform.position;
             _hasFlyPosition = true;
+        }
+
+        private bool TryApplyVehicleFlyMovement()
+        {
+            LandVehicle vehicle = GetDrivenVehicle();
+            if (vehicle == null)
+            {
+                RestoreVehicleFlyPhysics();
+                return false;
+            }
+
+            Camera camera = GetCamera();
+            if (camera == null)
+                return false;
+
+            Vector3 delta = BuildFlyDelta(camera);
+            Rigidbody body = GetVehicleBody(vehicle);
+            CaptureVehicleFlyBody(body);
+
+            if (body != null)
+            {
+                try
+                {
+                    body.useGravity = false;
+                    body.velocity = Vector3.zero;
+                    body.angularVelocity = Vector3.zero;
+                    if (delta != Vector3.zero)
+                        body.MovePosition(body.position + delta);
+                }
+                catch
+                {
+                    if (delta != Vector3.zero)
+                        vehicle.transform.position += delta;
+                }
+            }
+            else if (delta != Vector3.zero)
+            {
+                vehicle.transform.position += delta;
+            }
+
+            _vehicleFlyActive = true;
+            _hasFlyPosition = false;
+            return true;
+        }
+
+        private Vector3 BuildFlyDelta(Camera camera)
+        {
+            float moveAmount = _speed * Time.unscaledDeltaTime;
+            Vector3 forward = camera.transform.forward;
+            Vector3 right = camera.transform.right;
+            Vector3 delta = Vector3.zero;
+
+            if (UnityEngine.Input.GetKey(KeyCode.W)) delta += forward * moveAmount;
+            if (UnityEngine.Input.GetKey(KeyCode.S)) delta -= forward * moveAmount;
+            if (UnityEngine.Input.GetKey(KeyCode.A)) delta -= right * moveAmount;
+            if (UnityEngine.Input.GetKey(KeyCode.D)) delta += right * moveAmount;
+            if (UnityEngine.Input.GetKey(KeyCode.Space)) delta += Vector3.up * moveAmount;
+            if (UnityEngine.Input.GetKey(KeyCode.LeftControl)) delta -= Vector3.up * moveAmount;
+
+            return delta;
+        }
+
+        private void CaptureVehicleFlyBody(Rigidbody body)
+        {
+            if (body == null || body == _vehicleFlyBody)
+                return;
+
+            RestoreVehicleFlyPhysics();
+            _vehicleFlyBody = body;
+            try { _vehicleFlyBodyHadGravity = body.useGravity; }
+            catch { _vehicleFlyBodyHadGravity = true; }
+        }
+
+        private void RestoreVehicleFlyPhysics()
+        {
+            try
+            {
+                if (_vehicleFlyBody != null)
+                    _vehicleFlyBody.useGravity = _vehicleFlyBodyHadGravity;
+            }
+            catch { }
+
+            _vehicleFlyBody = null;
+            _vehicleFlyBodyHadGravity = true;
+            _vehicleFlyActive = false;
+        }
+
+        private static Rigidbody GetVehicleBody(LandVehicle vehicle)
+        {
+            if (vehicle == null)
+                return null;
+
+            try
+            {
+                Rigidbody body = vehicle.GetComponent<Rigidbody>();
+                if (body != null)
+                    return body;
+            }
+            catch { }
+
+            try { return vehicle.GetComponentInChildren<Rigidbody>(true); }
+            catch { return null; }
+        }
+
+        private static LandVehicle GetDrivenVehicle()
+        {
+            try
+            {
+                var manager = ManagerCacheService.Instance.VehicleManager ?? FindObjectOfType<VehicleManager>();
+                var vehicles = manager?.AllVehicles;
+                if (vehicles != null)
+                {
+                    for (int i = 0; i < vehicles.Count; i++)
+                    {
+                        LandVehicle vehicle = vehicles[i];
+                        if (vehicle != null && vehicle.LocalPlayerIsDriver)
+                            return vehicle;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                var player = ManagerCacheService.Instance.LocalPlayer;
+                var seat = player?.CurrentVehicleSeat;
+                if (seat != null && seat.isDriverSeat)
+                    return seat.GetComponentInParent<LandVehicle>(true);
+            }
+            catch { }
+
+            return null;
         }
 
         private void ResetSpaceTap()

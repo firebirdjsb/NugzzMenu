@@ -14,9 +14,13 @@ namespace NugzzMenu.UI
         public bool SpeedBoost { get; set; }
         public float SpeedMultiplier { get; set; } = 2f;
         public float PlayerScale { get; set; } = 1f;
+        public float JumpMultiplier { get; set; } = 1f;
+        public float GravityMultiplier { get; set; } = 1f;
         public bool InfiniteAmmo { get; set; }
         public bool FlyEnabled { get; set; }
         public float FlySpeed { get; set; } = 20f;
+        public bool DoubleSpaceFlyHotkey { get; set; } = true;
+        public bool VehicleFly { get; set; }
         public bool ThirdPerson { get; set; }
         public float CameraDistance { get; set; }
         public float CameraHeight { get; set; }
@@ -30,8 +34,10 @@ namespace NugzzMenu.UI
         public static void Draw(ref float y, float w, GUIStyle onStyle, GUIStyle offStyle,
             GUIStyle buttonStyle, GUIStyle boxStyle,
             CheatsState state, Action<float, int> teleportAction, Action onHeal, Action onClearWanted,
-            Action<float> setSpeedMultiplier, Action<float> setPlayerScale,
-            Action<bool> toggleFly, Action<float> setFlySpeed, Action<bool> toggleCamera,
+            Action<float> setSpeedMultiplier, Action<float> setPlayerScale, Action<float> setJumpMultiplier,
+            Action<float> setGravityMultiplier,
+            Action<bool> toggleFly, Action<float> setFlySpeed, Action<bool> setDoubleSpaceFlyHotkey,
+            Action<bool> setVehicleFly, Action<bool> toggleCamera,
             Action<float> setCameraDistance, Action<float> setCameraHeight, Action<float> setCameraShoulder,
             Action onSavePos, Action onLoadPos)
         {
@@ -42,10 +48,13 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUIFit.Panel(new Rect(0f, y, w, 184f), boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 228f), boxStyle);
             float rowY = y + 3f;
 
             DrawToggle(rowY, w, onStyle, offStyle, "God Mode", state.GodMode, value => state.GodMode = value);
+            rowY += 22f;
+
+            DrawToggle(rowY, w, onStyle, offStyle, "Infinite Ammo", state.InfiniteAmmo, value => state.InfiniteAmmo = value);
             rowY += 22f;
 
             DrawToggle(rowY, w, onStyle, offStyle, "Infinite Stamina", state.InfiniteStamina, value => state.InfiniteStamina = value);
@@ -63,14 +72,17 @@ namespace NugzzMenu.UI
             DrawMultiplier(rowY, w, "Player Size (buggy)", state.PlayerScale, setPlayerScale, buttonStyle);
             rowY += 22f;
 
-            DrawToggle(rowY, w, onStyle, offStyle, "Infinite Ammo", state.InfiniteAmmo, value => state.InfiniteAmmo = value);
+            DrawMultiplier(rowY, w, "Jump Height", state.JumpMultiplier, setJumpMultiplier, buttonStyle);
+            rowY += 22f;
+
+            DrawMultiplier(rowY, w, "Gravity", state.GravityMultiplier, setGravityMultiplier, buttonStyle);
             rowY += 22f;
 
             float actionWidth = (w - 18f) * 0.5f;
             if (GUIFit.Button(new Rect(6f, rowY, actionWidth, 20f), "Heal", buttonStyle)) onHeal?.Invoke();
             if (GUIFit.Button(new Rect(12f + actionWidth, rowY, actionWidth, 20f), "Clear Wanted", buttonStyle)) onClearWanted?.Invoke();
 
-            y += 192f;
+            y += 236f;
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "FLY",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
@@ -78,7 +90,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUIFit.Panel(new Rect(0f, y, w, 48f), boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 96f), boxStyle);
             rowY = y + 3f;
             TMPHybridService.Instance.Label(6f, rowY, w * 0.6f, 20f, "Fly (WASD+Space/Ctrl)",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
@@ -111,7 +123,19 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
-            y += 56f;
+            rowY += 24f;
+            DrawToggle(rowY, w, onStyle, offStyle, "Fly Vehicles While Driving", state.VehicleFly, value =>
+            {
+                state.VehicleFly = value;
+                setVehicleFly?.Invoke(value);
+            });
+            rowY += 22f;
+            DrawToggle(rowY, w, onStyle, offStyle, "Double Space Fly", state.DoubleSpaceFlyHotkey, value =>
+            {
+                state.DoubleSpaceFlyHotkey = value;
+                setDoubleSpaceFlyHotkey?.Invoke(value);
+            });
+            y += 104f;
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "CAMERA",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),

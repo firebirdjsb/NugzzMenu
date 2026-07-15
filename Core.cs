@@ -16,7 +16,7 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.9.9";
+        private const string Version = "0.9.9R2";
         private const int WindowId = 98765;
         private const float HeaderHeight = 56f;
         private const float TabStripHeight = 36f;
@@ -31,10 +31,12 @@ namespace NugzzMenu
             Properties,
             Items,
             Lobby,
+            Performance,
+            Quests,
             Settings
         }
 
-        private static readonly string[] TabLabels = { "CHEATS", "MONEY", "TIME", "VEHICLES", "PROPERTIES", "ITEMS", "LOBBY", "SETTINGS" };
+        private static readonly string[] TabLabels = { "CHEATS", "MONEY", "TIME", "VEHICLES", "PROPERTIES", "ITEMS", "LOBBY", "FPS", "QUESTS", "SETTINGS" };
         private static readonly string[] MoneyAmountLabels = { "$500", "$1K", "$5K", "$10K", "$50K", "$100K", "$500K", "$1M" };
         private static readonly float[] MoneyAmounts = { 500f, 1000f, 5000f, 10000f, 50000f, 100000f, 500000f, 1000000f };
         private static readonly int[] ExperienceAmounts = { 100, 500, 1000, 5000, 10000, 50000 };
@@ -54,6 +56,9 @@ namespace NugzzMenu
         private MelonPreferences_Category _preferences;
         private MelonPreferences_Entry<string> _menuKeyPreference;
         private MelonPreferences_Entry<bool> _verboseDebugPreference;
+        private MelonPreferences_Entry<bool> _keybindOverlayPreference;
+        private MelonPreferences_Entry<bool> _doubleSpaceFlyPreference;
+        private MelonPreferences_Entry<bool> _vehicleFlyPreference;
         private HarmonyLib.Harmony _harmony;
         private Delegate _s1LoadCompleteHandler;
         private Delegate _s1PreSceneChangeHandler;
@@ -72,7 +77,14 @@ namespace NugzzMenu
             _preferences = MelonPreferences.CreateCategory("Nugzz", "Nugzz Settings");
             _menuKeyPreference = _preferences.CreateEntry<string>("MenuKeybind", "F8", "Menu Toggle Key", "Key to open/close the Nugzz menu", false, false, null, null);
             _verboseDebugPreference = _preferences.CreateEntry<bool>("VerboseDebugLogging", false, "Verbose Debug Logging", "Write extra Nugzz diagnostic logs", false, false, null, null);
+            _keybindOverlayPreference = _preferences.CreateEntry<bool>("KeybindOverlay", true, "Keybind HUD", "Show compact in-game controls at the top of the screen", false, false, null, null);
+            _doubleSpaceFlyPreference = _preferences.CreateEntry<bool>("DoubleSpaceFlyHotkey", true, "Double Space Fly Hotkey", "Double-tap Space to toggle fly mode", false, false, null, null);
+            _vehicleFlyPreference = _preferences.CreateEntry<bool>("VehicleFly", false, "Vehicle Fly", "Allow fly movement to move the driven vehicle", false, false, null, null);
             DebugLogService.Instance.SetVerbose(_verboseDebugPreference.Value);
+            KeybindOverlayService.Instance.SetEnabled(_keybindOverlayPreference.Value);
+            KeybindOverlayService.Instance.SetMenuKey(_menuKeyPreference.Value);
+            FlyingService.Instance.SetDoubleSpaceHotkeyEnabled(_doubleSpaceFlyPreference.Value);
+            FlyingService.Instance.SetVehicleFlyEnabled(_vehicleFlyPreference.Value);
 
             if (!Enum.TryParse(_menuKeyPreference.Value, true, out _menuKey))
                 _menuKey = KeyCode.F8;
@@ -83,10 +95,11 @@ namespace NugzzMenu
             SubscribeS1ApiEvents();
             try
             {
-                _harmony = new HarmonyLib.Harmony("com.xunfairx.nugzzmenu.thirdperson");
-                _harmony.PatchAll(typeof(Core).Assembly);
+                // MelonLoader installs attribute-based Harmony patches before initialization.
+                // This instance is only for compatibility patches resolved at runtime.
+                _harmony = new HarmonyLib.Harmony("com.xunfairx.nugzzmenu.runtime");
                 CompatibilityService.Instance.ApplyRuntimeCompatibilityFixes(_harmony);
-                LoggerInstance.Msg("[Nugzz] Harmony patches applied successfully");
+                LoggerInstance.Msg("[Nugzz] Runtime compatibility patches applied successfully");
             }
             catch (System.Exception ex)
             {
@@ -150,8 +163,6 @@ namespace NugzzMenu
 
         public override void OnUpdate()
         {
-            if (Input.GetKeyDown(KeyCode.BackQuote))
-                ToggleDevConsole();
             if (Input.GetKeyDown(_menuKey))
                 ToggleMenu();
             if (Input.GetKeyDown(KeyCode.G) && !_isMenuOpen)
@@ -166,7 +177,6 @@ namespace NugzzMenu
             VehicleCollisionService.Instance.Update();
             VehicleMenuCameraService.Instance.Update(_isMenuOpen);
             FlyingService.Instance.UpdateHotkeys(_isMenuOpen);
-            BuildingService.Instance.UpdateOutsideItemPickup(_isMenuOpen);
             // The registry can become available a few frames after scene initialization.
             if (!_itemCacheInitialized && ItemService.Instance.ItemCount == 0)
             {
@@ -198,7 +208,9 @@ namespace NugzzMenu
             var notifications = NotificationService.Instance;
             var text = TMPHybridService.Instance;
 
-            gui.ApplyFontToSkin();
+            if (_isMenuOpen || notifications.HasNotification)
+                gui.ApplyFontToSkin();
+            KeybindOverlayService.Instance.Draw(_isMenuOpen);
 
             if (notifications.HasNotification)
             {
@@ -266,6 +278,8 @@ namespace NugzzMenu
                     break;
                 case MenuTab.Vehicles:
                 case MenuTab.Properties:
+                case MenuTab.Performance:
+                case MenuTab.Quests:
                 case MenuTab.Settings:
                     targetWidth = 860f;
                     break;
@@ -321,9 +335,15 @@ namespace NugzzMenu
                 TextAnchor.MiddleLeft,
                 FontStyle.Normal);
 
+            string hostText = GetHostLabel();
             string rightText = $"v{Version}  |  {_menuKeyPreference.Value}";
-            GUIFit.Panel(new Rect(contentW - 165f, 10f, 160f, 24f), gui.BoxStyle);
-            tmp.Label(contentW - 158f, 13f, 146f, 18f, rightText,
+            GUIFit.Panel(new Rect(contentW - 224f, 10f, 220f, 24f), gui.BoxStyle);
+            tmp.Label(contentW - 216f, 13f, 76f, 18f, hostText,
+                GetHostLabelColor(),
+                10f,
+                TextAnchor.MiddleLeft,
+                FontStyle.Bold);
+            tmp.Label(contentW - 138f, 13f, 126f, 18f, rightText,
                 gui.GetColorForCategory(LabelCategory.Subtitle),
                 gui.GetFontSizeForCategory(LabelCategory.Subtitle),
                 gui.GetAlignmentForCategory(LabelCategory.Subtitle),
@@ -413,6 +433,12 @@ namespace NugzzMenu
                         case MenuTab.Lobby:
                             DrawLobbyTab(ref localY, viewW);
                             break;
+                        case MenuTab.Performance:
+                            DrawPerformanceTab(ref localY, viewW);
+                            break;
+                        case MenuTab.Quests:
+                            DrawQuestsTab(ref localY, viewW);
+                            break;
                         case MenuTab.Settings:
                             DrawSettingsTab(ref localY, viewW);
                             break;
@@ -476,6 +502,36 @@ namespace NugzzMenu
                 GUI.DrawTexture(thumb, gui.AccentTexture);
         }
 
+        private string GetHostLabel()
+        {
+            try
+            {
+                bool inLobby = LobbyService.Instance.IsInLobby();
+                bool isHost = LobbyService.Instance.IsHost();
+                return !inLobby ? "SOLO/HOST" : isHost ? "HOST" : "NON-HOST";
+            }
+            catch
+            {
+                return "SOLO/HOST";
+            }
+        }
+
+        private Color GetHostLabelColor()
+        {
+            try
+            {
+                bool inLobby = LobbyService.Instance.IsInLobby();
+                bool isHost = LobbyService.Instance.IsHost();
+                return !inLobby || isHost
+                    ? new Color(0.55f, 1f, 0.25f)
+                    : new Color(1f, 0.22f, 0.18f);
+            }
+            catch
+            {
+                return new Color(0.55f, 1f, 0.25f);
+            }
+        }
+
         private void DrawTabs(ref float y, float w)
         {
             float tabWidth = (w - 12f) / TabLabels.Length;
@@ -511,19 +567,26 @@ namespace NugzzMenu
             try
             {
                 bool keepNativeCursor = !_isMenuOpen && ShouldKeepNativeCursor();
+                bool gameplayFocus = !_isMenuOpen && !keepNativeCursor;
                 Cursor.visible = _isMenuOpen || keepNativeCursor;
                 Cursor.lockState = (_isMenuOpen || keepNativeCursor)
                     ? CursorLockMode.None
                     : CursorLockMode.Locked;
+
+                if (gameplayFocus)
+                {
+                    GUIUtility.hotControl = 0;
+                    GUIUtility.keyboardControl = 0;
+                }
 
                 var camera = PlayerCamera.Instance;
                 if (IsUsingNativeVehicleCamera(camera))
                     return;
 
                 camera?.SetCanLook(
-                    (!_isMenuOpen &&
+                    !_isMenuOpen &&
                     !keepNativeCursor &&
-                    (!CameraService.Instance.ThirdPersonEnabled || IsUsingNativeVehicleCamera(camera))));
+                    !CameraService.Instance.ThirdPersonEnabled);
             }
             catch { }
         }
@@ -600,10 +663,14 @@ namespace NugzzMenu
             state.SpeedBoost = PlayerCheatService.Instance.SpeedBoost;
             state.SpeedMultiplier = PlayerCheatService.Instance.SpeedMultiplier;
             state.PlayerScale = PlayerCheatService.Instance.PlayerScale;
+            state.JumpMultiplier = PlayerCheatService.Instance.JumpMultiplier;
+            state.GravityMultiplier = PlayerCheatService.Instance.GravityMultiplier;
             state.InfiniteAmmo = PlayerCheatService.Instance.InfiniteAmmo;
             state.NeverWanted = PlayerCheatService.Instance.NeverWanted;
             state.FlyEnabled = FlyingService.Instance.Enabled;
             state.FlySpeed = FlyingService.Instance.Speed;
+            state.DoubleSpaceFlyHotkey = FlyingService.Instance.DoubleSpaceHotkeyEnabled;
+            state.VehicleFly = FlyingService.Instance.VehicleFlyEnabled;
             state.ThirdPerson = CameraService.Instance.ThirdPersonEnabled;
             state.CameraDistance = CameraService.Instance.Distance;
             state.CameraHeight = CameraService.Instance.Height;
@@ -613,7 +680,8 @@ namespace NugzzMenu
                 GUISystemService.Instance.OffStyle, GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle, state,
                  TeleportAction, Heal, ClearWanted, SetSpeedMultiplier, SetPlayerScale,
-                 ToggleFly, SetFlySpeed, ToggleCamera,
+                 SetJumpMultiplier, SetGravityMultiplier,
+                 ToggleFly, SetFlySpeed, SetDoubleSpaceFlyHotkey, SetVehicleFly, ToggleCamera,
                  CameraService.Instance.SetDistance, CameraService.Instance.SetHeight, CameraService.Instance.SetShoulderOffset,
                  SavePosition, LoadPosition);
 
@@ -622,6 +690,8 @@ namespace NugzzMenu
             PlayerCheatService.Instance.SpeedBoost = state.SpeedBoost;
             PlayerCheatService.Instance.SpeedMultiplier = state.SpeedMultiplier;
             PlayerCheatService.Instance.PlayerScale = state.PlayerScale;
+            PlayerCheatService.Instance.JumpMultiplier = state.JumpMultiplier;
+            PlayerCheatService.Instance.GravityMultiplier = state.GravityMultiplier;
             PlayerCheatService.Instance.InfiniteAmmo = state.InfiniteAmmo;
             PlayerCheatService.Instance.NeverWanted = state.NeverWanted;
         }
@@ -673,6 +743,22 @@ namespace NugzzMenu
                 quantity => _itemsState.SpawnQuantity = quantity,
                 ItemService.Instance.SetQualityIndex,
                 i => ItemService.Instance.SetFilter(i));
+        }
+
+        private void DrawPerformanceTab(ref float y, float w)
+        {
+            PerformanceTabRenderer.Draw(ref y, w,
+                GUISystemService.Instance.ButtonStyle,
+                GUISystemService.Instance.BoxStyle,
+                PerformanceService.Instance);
+        }
+
+        private void DrawQuestsTab(ref float y, float w)
+        {
+            QuestTabRenderer.Draw(ref y, w,
+                GUISystemService.Instance.ButtonStyle,
+                GUISystemService.Instance.BoxStyle,
+                QuestService.Instance);
         }
 
         private void DrawLobbyTab(ref float y, float w)
@@ -741,14 +827,26 @@ namespace NugzzMenu
             _cheatsState.PlayerScale = PlayerCheatService.Instance.PlayerScale;
         }
 
+        private void SetJumpMultiplier(float multiplier)
+        {
+            PlayerCheatService.Instance.JumpMultiplier = multiplier;
+            _cheatsState.JumpMultiplier = PlayerCheatService.Instance.JumpMultiplier;
+        }
+
+        private void SetGravityMultiplier(float multiplier)
+        {
+            PlayerCheatService.Instance.GravityMultiplier = multiplier;
+            _cheatsState.GravityMultiplier = PlayerCheatService.Instance.GravityMultiplier;
+        }
+
         private void ToggleCamera(bool enabled)
         {
-            if (ManagementClipboardService.Instance.IsActive())
+            if (enabled && !ThirdPersonCameraService.Instance.CanEnable(out string reason))
             {
                 if (CameraService.Instance.ThirdPersonEnabled)
                     CameraService.Instance.ToggleThirdPerson(false, _isMenuOpen);
 
-                Status("3rd person disabled while using clipboard");
+                Status("3rd person unavailable: " + reason);
                 return;
             }
 
@@ -763,12 +861,12 @@ namespace NugzzMenu
             _settingsState.MenuKeybind = _menuKeyPreference.Value;
             _settingsState.UseGameStackLogic = ItemService.Instance.UseGameStackLogic;
             _settingsState.VerboseDebugLogging = DebugLogService.Instance.VerboseEnabled;
-            _settingsState.PlaceAnywhere = BuildingService.Instance.PlaceAnywhere;
+            _settingsState.KeybindOverlay = KeybindOverlayService.Instance.Enabled;
             SettingsTabRenderer.Draw(ref y, w, GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle, _settingsState, LobbyService.Instance.IsHost(),
                 SetKeybind,
                 value => ItemService.Instance.UseGameStackLogic = value, SetVerboseDebugLogging,
-                BuildingService.Instance.SetPlaceAnywhere, SaveManagementService.Instance,
+                SetKeybindOverlay, SaveManagementService.Instance,
                 DebugTestRoomService.Instance);
         }
 
@@ -777,7 +875,34 @@ namespace NugzzMenu
             _menuKeyPreference.Value = key;
             _menuKey = (KeyCode)Enum.Parse(typeof(KeyCode), key, true);
             _preferences.SaveToFile(false);
+            KeybindOverlayService.Instance.SetMenuKey(key);
             Status($"Keybind: {key}");
+        }
+
+        private void SetDoubleSpaceFlyHotkey(bool enabled)
+        {
+            _doubleSpaceFlyPreference.Value = enabled;
+            _preferences.SaveToFile(false);
+            FlyingService.Instance.SetDoubleSpaceHotkeyEnabled(enabled);
+            _cheatsState.DoubleSpaceFlyHotkey = enabled;
+            Status(enabled ? "Double-space fly ON" : "Double-space fly OFF");
+        }
+
+        private void SetVehicleFly(bool enabled)
+        {
+            _vehicleFlyPreference.Value = enabled;
+            _preferences.SaveToFile(false);
+            FlyingService.Instance.SetVehicleFlyEnabled(enabled);
+            _cheatsState.VehicleFly = enabled;
+            Status(enabled ? "Vehicle fly ON" : "Vehicle fly OFF");
+        }
+
+        private void SetKeybindOverlay(bool enabled)
+        {
+            _keybindOverlayPreference.Value = enabled;
+            _preferences.SaveToFile(false);
+            KeybindOverlayService.Instance.SetEnabled(enabled);
+            Status(enabled ? "Keybind HUD ON" : "Keybind HUD OFF");
         }
 
         private void SetVerboseDebugLogging(bool enabled)
@@ -786,21 +911,6 @@ namespace NugzzMenu
             _preferences.SaveToFile(false);
             DebugLogService.Instance.SetVerbose(enabled);
             Status(enabled ? "Debug logs ON" : "Debug logs OFF");
-        }
-
-        private void ToggleDevConsole()
-        {
-            try
-            {
-                var consoleUI = UnityEngine.Object.FindObjectOfType<Il2CppScheduleOne.UI.ConsoleUI>(true);
-                if (consoleUI == null)
-                {
-                    var consoles = UnityEngine.Resources.FindObjectsOfTypeAll<Il2CppScheduleOne.UI.ConsoleUI>();
-                    if (consoles != null && consoles.Length > 0) consoleUI = consoles[0];
-                }
-                if (consoleUI != null) { consoleUI.SetIsOpen(true); Notify("Dev console opened"); }
-            }
-            catch { }
         }
 
         private void Notify(string msg) { NotificationService.Instance.Notify(msg); }
