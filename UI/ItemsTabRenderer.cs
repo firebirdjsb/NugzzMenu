@@ -129,7 +129,8 @@ namespace NugzzMenu.UI
                 try
                 {
                     previousSearch = service.GetSearchText() ?? string.Empty;
-                    newSearch = GUIFit.TextField(new Rect(68f, y + 4f, w - 260f, 22f), previousSearch, 50);
+                    newSearch = GUIFit.TextField(new Rect(68f, y + 4f, w - 260f, 22f),
+                        previousSearch, 50, "items.search");
                 }
                 catch (Exception) { }
 

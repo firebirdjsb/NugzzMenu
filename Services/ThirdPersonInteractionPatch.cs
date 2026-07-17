@@ -179,14 +179,21 @@ namespace NugzzMenu.Services
     [HarmonyPatch(typeof(NPCEvent_StayInBuilding), "_PlayEnterAnimation_b__19_1")]
     internal static class NPCStayInBuildingEnterAnimationWaitSafetyPatch
     {
+        private static bool _reported;
+
         private static Exception Finalizer(Exception __exception, ref bool __result)
         {
             if (__exception == null)
                 return null;
 
-            __result = false;
-            DebugLogService.Instance.VerboseWarning(
-                "Suppressed NPC stay-in-building wait predicate error: " + __exception.Message);
+            // A false result makes WaitUntil retry the same broken predicate every frame.
+            __result = true;
+            if (!_reported)
+            {
+                _reported = true;
+                DebugLogService.Instance.VerboseWarning(
+                    "Released an NPC enter-animation wait after its target became unavailable.");
+            }
             return null;
         }
     }
@@ -308,6 +315,38 @@ namespace NugzzMenu.Services
         private static Exception Finalizer(Equippable_Seed __instance, Exception __exception)
         {
             return GrowToolFallbackService.Instance.HandleToolUpdateException(__instance, __exception);
+        }
+    }
+
+    [HarmonyPatch(typeof(MushroomSpawnEquipped), "Update")]
+    internal static class MushroomSpawnToolFallbackPatch
+    {
+        private static bool Prefix(MushroomSpawnEquipped __instance)
+        {
+            return !GrowToolFallbackService.Instance.RunMushroomSpawnUpdate(__instance);
+        }
+
+        private static Exception Finalizer(MushroomSpawnEquipped __instance, Exception __exception)
+        {
+            return GrowToolFallbackService.Instance.HandleToolUpdateException(__instance, __exception);
+        }
+    }
+
+    [HarmonyPatch(typeof(Equippable_SprayBottle), "Update")]
+    internal static class SprayBottleToolFallbackPatch
+    {
+        private static bool Prefix(Equippable_SprayBottle __instance)
+        {
+            return !GrowToolFallbackService.Instance.RunSprayBottleUpdate(__instance);
+        }
+
+        private static Exception Finalizer(
+            Equippable_SprayBottle __instance,
+            Exception __exception)
+        {
+            return GrowToolFallbackService.Instance.HandleToolUpdateException(
+                __instance,
+                __exception);
         }
     }
 

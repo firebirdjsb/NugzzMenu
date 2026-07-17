@@ -57,6 +57,9 @@
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>net6.0\UnityEngine.IMGUIModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>net6.0\UnityEngine.UIModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>net6.0\UnityEngine.InputLegacyModule.dll</HintPath>
     </Reference>

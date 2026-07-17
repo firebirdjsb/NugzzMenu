@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -8,6 +9,7 @@ namespace NugzzMenu.Services
         private const int DefaultMinFontSize = 7;
         private static readonly Dictionary<GUIStyle, Dictionary<int, GUIStyle>> StyleCache =
             new Dictionary<GUIStyle, Dictionary<int, GUIStyle>>();
+        private static string _activeTextFieldKey;
 
         public static GUIStyle FittedStyle(GUIStyle source, Rect rect, string text, int minFontSize = DefaultMinFontSize, bool wordWrap = false)
         {
@@ -52,10 +54,62 @@ namespace NugzzMenu.Services
                 GUI.DrawTexture(new Rect(rect.x, rect.y, 2f, rect.height), gui.AccentSoftTexture);
         }
 
-        public static string TextField(Rect rect, string text, int maxLength)
+        public static string TextField(Rect rect, string text, int maxLength, string fieldKey = null)
         {
+            string value = text ?? string.Empty;
+            string key = string.IsNullOrEmpty(fieldKey)
+                ? rect.x + ":" + rect.y + ":" + rect.width
+                : fieldKey;
             var style = FittedStyle(GUI.skin.textField, rect, text, 8);
-            return GUI.TextField(rect, text ?? "", maxLength, style);
+            Event current = Event.current;
+            bool active = _activeTextFieldKey == key;
+
+            if (active && current != null && current.type == EventType.MouseDown &&
+                !rect.Contains(current.mousePosition))
+            {
+                _activeTextFieldKey = null;
+                active = false;
+            }
+
+            string display = value;
+            if (active)
+                display += "|";
+            else if (display.Length == 0)
+                display = "Click to type...";
+
+            if (GUI.Button(rect, display, style))
+            {
+                _activeTextFieldKey = key;
+                active = true;
+            }
+
+            if (!active || current == null || current.type != EventType.KeyDown)
+                return value;
+
+            if (current.keyCode == KeyCode.Escape || current.keyCode == KeyCode.Return ||
+                current.keyCode == KeyCode.KeypadEnter)
+            {
+                _activeTextFieldKey = null;
+                current.Use();
+                return value;
+            }
+
+            if (current.keyCode == KeyCode.Backspace)
+            {
+                if (value.Length > 0)
+                    value = value.Substring(0, value.Length - 1);
+                current.Use();
+                return value;
+            }
+
+            char typed = current.character;
+            if (typed != '\0' && !char.IsControl(typed) && value.Length < maxLength)
+            {
+                value += typed;
+                current.Use();
+            }
+
+            return value;
         }
 
         public static void EnsureFont(GUIStyle style)

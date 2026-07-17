@@ -1,26 +1,52 @@
 # NugzzMenu
 
-NugzzMenu is a MelonLoader IL2CPP mod menu for Schedule I. It integrates with
-S1API and provides player, inventory, vehicle, world, and camera utilities.
+NugzzMenu is an in-game control suite for Schedule I, built for MelonLoader
+IL2CPP and S1API. It combines quality-of-life tools, accessibility controls,
+world and inventory utilities, multiplayer-aware vehicle features, quest and
+save recovery, performance tuning, and developer-friendly diagnostics in one
+menu.
 
-Current release: [v0.9.9R2](RELEASE_NOTES_v0.9.9R2.md)
+Current release: [v0.9.9R3](RELEASE_NOTES_v0.9.9R3.md)
+
+## Features
+
+- Player cheats, movement tuning, fly mode, and an adjustable third-person
+  camera.
+- Quality-aware item spawning, grow helpers, money/XP tools, teleports, time,
+  weather, property, business, and achievement controls.
+- Vehicle spawning, tuning, police sirens, vehicle flight, and multiplayer-aware
+  synchronization where the game exposes a suitable network path.
+- Quest inspection and recovery controls, RV story safeguards, and a
+  main-menu-only save manager with recoverable deletion and backups.
+- NPC and customer relationship editing, including unlocks, addiction, product
+  affinity, recommendations, and deal offers.
+- FPS controls for frame pacing, decorative lights, reflections, LOD, shadows,
+  scene diagnostics, and low-impact menu operation.
+- Compatibility and logging guards designed to preserve vanilla gameplay calls
+  while filtering repetitive known errors.
 
 ## Latest Changes
 
-### v0.9.9R2
+### v0.9.9R3
 
-- Completely removed Build Anywhere and its synthetic placement grids so
-  vanilla building owns placement, snapping, validation, and networking.
-- Reworked third-person, first-person viewmodels, skateboard transitions, and
-  vehicle-menu camera handling around separate state/visibility services.
-- Added FPS and quest-control tabs, a low-cost keybind HUD, jump/gravity tuning,
-  optional double-space fly, and driven-vehicle flight.
-- Restored native quest variable calls, added targeted Welcome quest recovery,
-  and repaired consumed-item trash and trash-bag interactions used by quests.
-- Added multiplayer vehicle-tune messages for Nugzz clients and retained native
-  vehicle color replication.
+- Added a complete NPC/client Relations tab with relationship, unlock,
+  addiction, product-affinity, recommendation, and deal-offer controls.
+- Expanded the FPS tab with decorative-light budgets, reflection throttling,
+  LOD and shadow controls, on-demand scene diagnostics, and safe restore tools.
+- Added clear left-click prompts and reliable interactions for mushroom spawn,
+  substrate, spray bottles, watering, soil, seeds, additives, and harvesting.
+- Fixed spray bottles so misting a dry mushroom bed fills and synchronizes its
+  moisture while consuming bottle water.
+- Synchronized police sirens/lightbars from the vehicle's networked headlight
+  state for other Nugzz clients and cleaned up the vehicle HUD after exiting.
+- Improved trash-container detection and repetitive IL2CPP log filtering without
+  replacing the underlying vanilla gameplay methods.
+- Replaced the incompatible Unity text editor with an IL2CPP-safe search field
+  used by the Items and Relations tabs.
 
-Full transparent diff notes: [RELEASE_NOTES_v0.9.9R2.md](RELEASE_NOTES_v0.9.9R2.md)
+Full transparent diff notes: [RELEASE_NOTES_v0.9.9R3.md](RELEASE_NOTES_v0.9.9R3.md)
+
+Release history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Requirements
 

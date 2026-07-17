@@ -16,7 +16,7 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.9.9R2";
+        private const string Version = "0.9.9R3";
         private const int WindowId = 98765;
         private const float HeaderHeight = 56f;
         private const float TabStripHeight = 36f;
@@ -32,11 +32,12 @@ namespace NugzzMenu
             Items,
             Lobby,
             Performance,
+            Relationships,
             Quests,
             Settings
         }
 
-        private static readonly string[] TabLabels = { "CHEATS", "MONEY", "TIME", "VEHICLES", "PROPERTIES", "ITEMS", "LOBBY", "FPS", "QUESTS", "SETTINGS" };
+        private static readonly string[] TabLabels = { "CHEATS", "MONEY", "TIME", "VEHICLES", "PROPERTIES", "ITEMS", "LOBBY", "FPS", "RELATIONS", "QUESTS", "SETTINGS" };
         private static readonly string[] MoneyAmountLabels = { "$500", "$1K", "$5K", "$10K", "$50K", "$100K", "$500K", "$1M" };
         private static readonly float[] MoneyAmounts = { 500f, 1000f, 5000f, 10000f, 50000f, 100000f, 500000f, 1000000f };
         private static readonly int[] ExperienceAmounts = { 100, 500, 1000, 5000, 10000, 50000 };
@@ -176,6 +177,7 @@ namespace NugzzMenu
             VehicleService.Instance.Update();
             VehicleCollisionService.Instance.Update();
             VehicleMenuCameraService.Instance.Update(_isMenuOpen);
+            PerformanceService.Instance.Update();
             FlyingService.Instance.UpdateHotkeys(_isMenuOpen);
             // The registry can become available a few frames after scene initialization.
             if (!_itemCacheInitialized && ItemService.Instance.ItemCount == 0)
@@ -279,6 +281,7 @@ namespace NugzzMenu
                 case MenuTab.Vehicles:
                 case MenuTab.Properties:
                 case MenuTab.Performance:
+                case MenuTab.Relationships:
                 case MenuTab.Quests:
                 case MenuTab.Settings:
                     targetWidth = 860f;
@@ -435,6 +438,9 @@ namespace NugzzMenu
                             break;
                         case MenuTab.Performance:
                             DrawPerformanceTab(ref localY, viewW);
+                            break;
+                        case MenuTab.Relationships:
+                            DrawRelationshipsTab(ref localY, viewW);
                             break;
                         case MenuTab.Quests:
                             DrawQuestsTab(ref localY, viewW);
@@ -751,6 +757,14 @@ namespace NugzzMenu
                 GUISystemService.Instance.ButtonStyle,
                 GUISystemService.Instance.BoxStyle,
                 PerformanceService.Instance);
+        }
+
+        private void DrawRelationshipsTab(ref float y, float w)
+        {
+            RelationshipsTabRenderer.Draw(ref y, w,
+                GUISystemService.Instance.ButtonStyle,
+                GUISystemService.Instance.BoxStyle,
+                RelationshipService.Instance);
         }
 
         private void DrawQuestsTab(ref float y, float w)

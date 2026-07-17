@@ -22,7 +22,8 @@ behavior. Keep it updated when adding major services, tabs, or patches.
 | `UI/PropertiesTabRenderer.cs` | Worker/property management, RV controls, Benzie Manor access. |
 | `UI/ItemsTabRenderer.cs` | Item browser, search/filter, quality, quantity, item spawn actions. |
 | `UI/LobbyTabRenderer.cs` | Lobby player list, teleport/ragdoll, lobby-visible FX. |
-| `UI/PerformanceTabRenderer.cs` | FPS cap, VSync, smooth-visual and low-impact menu presets. |
+| `UI/PerformanceTabRenderer.cs` | Frame pacing, lights, reflections, LOD, shadows, diagnostics, and performance presets. |
+| `UI/RelationshipsTabRenderer.cs` | Searchable NPC/client list and relationship/customer editing controls. |
 | `UI/QuestTabRenderer.cs` | Cached quest list, objective details, inspection, and manual quest controls. |
 | `UI/SettingsTabRenderer.cs` | Keybinds, item spawner mode, debug/HUD toggles, and main-menu save manager. |
 
@@ -37,12 +38,13 @@ service.
 | `Services/NotificationService.cs` | User-facing notifications and status chips. |
 | `Services/DebugLogService.cs` | Verbose debug logging toggle and helpers. |
 | `Services/GUISystemService.cs` | Menu textures, colors, fonts, styles, and theme. |
-| `Services/GUIFit.cs` | Text-fitting wrappers for IMGUI controls. |
+| `Services/GUIFit.cs` | Text-fitting wrappers and IL2CPP-safe keyboard input for IMGUI controls. |
 | `Services/TMPHybridService.cs` | Text drawing bridge used by the custom UI. |
 | `Services/ManagerCacheService.cs` | Cached access to frequently used game managers and local player references. |
 | `Services/CompatibilityService.cs` | Runtime compatibility patches and log-spam filters for game/S1API differences. |
 | `Services/KeybindOverlayService.cs` | Cached, low-cost in-game keybind HUD. |
-| `Services/PerformanceService.cs` | FPS/VSync controls and conservative graphics presets. |
+| `Services/PerformanceService.cs` | FPS/VSync, decorative lights, reflections, LOD, shadows, diagnostics, and conservative presets. |
+| `Services/RelationshipService.cs` | Cached NPC/client discovery and host-guarded relationship/customer mutations. |
 
 ## Gameplay Services
 
@@ -91,6 +93,9 @@ reintroduces a host-authoritative placement system.
 | `Services/WelcomeQuestProgressionPatch.cs` | Targeted recovery for the post-Benzies-note Welcome quest transition. |
 | `Services/VanillaQuestVariablePatch.cs` | Restores expected native player/inventory variables and Dan's persistent greeting flag. |
 | `Services/TrashBagInteractionPatch.cs` | Safe trash-container hover lookup while preserving native bagging behavior. |
+| `Services/PerformanceRuntimePatch.cs` | Routes reflection-probe refreshes through the optional performance throttle. |
+| `Services/PoliceSirenSyncPatch.cs` | Maps native synchronized vehicle headlight state to police lightbars and siren audio. |
+| `Services/VehicleHudLifecyclePatch.cs` | Clears stale vanilla vehicle HUD state after the local player exits. |
 | `Services/BuildingPatch.cs` | Grow widget safety and buildable-hover null-safety; it does not alter placement. |
 | `Services/VehicleCollisionService.cs` | Vehicle/player collision patches. |
 | `Services/PlayerCheatService.cs` | Health/stamina/networked value patches. |

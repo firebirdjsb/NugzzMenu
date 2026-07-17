@@ -59,9 +59,6 @@ namespace NugzzMenu.Services
         private float _nextVehicleCacheRetryTime;
         private bool _reportedMissingVehicleManager;
         private bool _reportedPoliceSirenFailure;
-        private bool _reportedPoliceSirenMissingLightbar;
-        private bool _policeSirenOn;
-        private LandVehicle _lastPoliceSirenVehicle;
         private int _spawnAttemptId;
         private readonly Dictionary<string, VehicleTuneSettings> _vehicleTunes = new Dictionary<string, VehicleTuneSettings>();
         private readonly Dictionary<string, VehicleTuneBaseline> _vehicleTuneBaselines = new Dictionary<string, VehicleTuneBaseline>();
@@ -255,10 +252,6 @@ namespace NugzzMenu.Services
 
         public void Update()
         {
-            if (Input.GetKeyDown(KeyCode.H))
-                TogglePoliceSirenForCurrentVehicle();
-
-            MaintainPoliceSirenState();
             if (_vehicleTunes.Count > 0 && Time.unscaledTime >= _nextVehicleTuneMaintenanceTime)
             {
                 _nextVehicleTuneMaintenanceTime = Time.unscaledTime + 1.5f;
@@ -1702,98 +1695,6 @@ namespace NugzzMenu.Services
             }
         }
 
-        private void TogglePoliceSirenForCurrentVehicle()
-        {
-            LandVehicle vehicle = GetLocalDrivenVehicle();
-            if (vehicle == null)
-                return;
-
-            try
-            {
-                List<PoliceLight> policeLights = FindPoliceLights(vehicle);
-                if (policeLights.Count == 0)
-                {
-                    ReportMissingPoliceLightbar(vehicle);
-                    return;
-                }
-
-                _policeSirenOn = !IsAnyPoliceLightOn(policeLights);
-                _lastPoliceSirenVehicle = vehicle;
-
-                int changed = 0;
-                for (int i = 0; i < policeLights.Count; i++)
-                {
-                    PoliceLight policeLight = policeLights[i];
-                    if (policeLight == null)
-                        continue;
-
-                    try
-                    {
-                        EnsureHierarchyActive(policeLight.transform, vehicle.transform);
-                        policeLight.enabled = true;
-                        if (policeLight.IsOn != _policeSirenOn)
-                        {
-                            policeLight.SetIsOn(_policeSirenOn);
-                            changed++;
-                        }
-
-                        ApplyPoliceSirenAudio(policeLight, _policeSirenOn);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogPoliceSirenFailureOnce("Police siren toggle failed on " +
-                            SafeVehicleName(vehicle) + ": " + ex.Message);
-                    }
-                }
-
-                SuppressPoliceHeadlights(vehicle);
-
-                if (changed > 0)
-                {
-                    NotificationService.Instance.Status("Police siren: " + (_policeSirenOn ? "On" : "Off"));
-                    DebugLogService.Instance.Verbose(
-                        "Police siren " + (_policeSirenOn ? "enabled" : "disabled") +
-                        " on " + SafeVehicleName(vehicle) +
-                        " lights=" + policeLights.Count);
-                }
-            }
-            catch (Exception ex)
-            {
-                LogPoliceSirenFailureOnce("Police siren toggle failed: " + ex.Message);
-            }
-        }
-
-        private void MaintainPoliceSirenState()
-        {
-            if (_lastPoliceSirenVehicle == null)
-                return;
-
-            try
-            {
-                List<PoliceLight> policeLights = FindPoliceLights(_lastPoliceSirenVehicle);
-                if (policeLights.Count == 0)
-                    return;
-
-                for (int i = 0; i < policeLights.Count; i++)
-                {
-                    PoliceLight policeLight = policeLights[i];
-                    if (policeLight == null)
-                        continue;
-
-                    try
-                    {
-                        if (policeLight.IsOn != _policeSirenOn)
-                            policeLight.SetIsOn(_policeSirenOn);
-                        ApplyPoliceSirenAudio(policeLight, _policeSirenOn);
-                    }
-                    catch { }
-                }
-
-                SuppressPoliceHeadlights(_lastPoliceSirenVehicle);
-            }
-            catch { }
-        }
-
         private LandVehicle GetLocalDrivenVehicle()
         {
             try
@@ -2688,24 +2589,6 @@ namespace NugzzMenu.Services
             list.Add(policeLight);
         }
 
-        private static bool IsAnyPoliceLightOn(List<PoliceLight> policeLights)
-        {
-            if (policeLights == null)
-                return false;
-
-            for (int i = 0; i < policeLights.Count; i++)
-            {
-                try
-                {
-                    if (policeLights[i] != null && policeLights[i].IsOn)
-                        return true;
-                }
-                catch { }
-            }
-
-            return false;
-        }
-
         private void ApplyPoliceSirenAudio(PoliceLight policeLight, bool on)
         {
             if (policeLight == null)
@@ -2737,31 +2620,44 @@ namespace NugzzMenu.Services
             }
         }
 
-        private void ReportMissingPoliceLightbar(LandVehicle vehicle)
+        internal bool ApplyPoliceSirenState(VehicleLights vehicleLights)
         {
-            if (_reportedPoliceSirenMissingLightbar)
-                return;
-
-            _reportedPoliceSirenMissingLightbar = true;
-            UnityEngine.Debug.LogWarning(
-                "[Nugzz] Police siren requested but no PoliceLight component was found under " +
-                SafeVehicleName(vehicle) + ". This vehicle may use a different lightbar component.");
-            NotificationService.Instance.Warning("No police lightbar component found on this vehicle");
-        }
-
-        private void SuppressPoliceHeadlights(LandVehicle vehicle)
-        {
-            if (vehicle == null)
-                return;
+            if (vehicleLights == null)
+                return false;
 
             try
             {
-                VehicleLights vehicleLights = vehicle.GetComponentInChildren<VehicleLights>(true);
+                LandVehicle vehicle = vehicleLights.vehicle;
+                if (vehicle == null)
+                    vehicle = vehicleLights.GetComponentInParent<LandVehicle>(true);
+                if (vehicle == null)
+                    return false;
+
+                List<PoliceLight> policeLights = FindPoliceLights(vehicle);
+                if (policeLights.Count == 0)
+                    return false;
+
+                bool on = vehicleLights.HeadlightsOn;
+                for (int i = 0; i < policeLights.Count; i++)
+                {
+                    PoliceLight policeLight = policeLights[i];
+                    if (policeLight == null)
+                        continue;
+
+                    EnsureHierarchyActive(policeLight.transform, vehicle.transform);
+                    policeLight.enabled = true;
+                    if (policeLight.IsOn != on)
+                        policeLight.SetIsOn(on);
+                    ApplyPoliceSirenAudio(policeLight, on);
+                }
+
                 SuppressPoliceHeadlights(vehicleLights);
+                return true;
             }
             catch (Exception ex)
             {
-                LogPoliceSirenFailureOnce("Failed to suppress police headlights: " + ex.Message);
+                LogPoliceSirenFailureOnce("Police siren synchronization failed: " + ex.Message);
+                return false;
             }
         }
 
@@ -2769,8 +2665,6 @@ namespace NugzzMenu.Services
         {
             if (vehicleLights == null)
                 return;
-
-            try { vehicleLights.HeadlightsOn = false; } catch { }
 
             try
             {

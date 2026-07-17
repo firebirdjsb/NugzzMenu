@@ -47,6 +47,32 @@ namespace NugzzMenu.Services
                     nameof(UnityLogAnyArgumentPrefix),
                     BindingFlags.Static | BindingFlags.NonPublic);
 
+                MethodInfo il2CppContextPrefix = typeof(CompatibilityService).GetMethod(
+                    nameof(UnityIl2CppLogSecondArgumentPrefix),
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                MethodInfo loggerContextLog = typeof(UnityEngine.Logger).GetMethod(
+                    "Log",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    new[]
+                    {
+                        typeof(LogType),
+                        typeof(Il2CppSystem.Object),
+                        typeof(UnityEngine.Object)
+                    },
+                    null);
+
+                if (loggerContextLog != null && il2CppContextPrefix != null)
+                {
+                    try
+                    {
+                        harmony.Patch(
+                            loggerContextLog,
+                            prefix: new HarmonyMethod(il2CppContextPrefix));
+                    }
+                    catch { }
+                }
+
                 PatchUnityLogMethods(harmony, typeof(UnityEngine.Logger), firstArgumentPrefix, secondArgumentPrefix, anyArgumentPrefix);
                 PatchUnityLogMethods(harmony, typeof(UnityEngine.Debug), firstArgumentPrefix, secondArgumentPrefix, anyArgumentPrefix);
 
@@ -124,17 +150,32 @@ namespace NugzzMenu.Services
                     string.Equals(name, "msg", StringComparison.OrdinalIgnoreCase))
                 {
                     return i == 0 ? firstArgumentPrefix :
-                        i == 1 ? secondArgumentPrefix : null;
+                        i == 1 ? SelectSecondArgumentPrefix(
+                            parameters[i], secondArgumentPrefix) : null;
                 }
             }
 
             if (parameters[0].ParameterType == typeof(LogType) ||
                 parameters[0].ParameterType == typeof(string))
             {
-                return parameters.Length > 1 ? secondArgumentPrefix : null;
+                return parameters.Length > 1 ? SelectSecondArgumentPrefix(
+                    parameters[1], secondArgumentPrefix) : null;
             }
 
             return firstArgumentPrefix;
+        }
+
+        private static MethodInfo SelectSecondArgumentPrefix(
+            ParameterInfo parameter,
+            MethodInfo managedPrefix)
+        {
+            string typeName = parameter?.ParameterType?.FullName ?? string.Empty;
+            if (typeName != "Il2CppSystem.Object")
+                return managedPrefix;
+
+            return typeof(CompatibilityService).GetMethod(
+                nameof(UnityIl2CppLogSecondArgumentPrefix),
+                BindingFlags.Static | BindingFlags.NonPublic);
         }
 
         private static bool UnityLogFirstArgumentPrefix(object __0)
@@ -145,6 +186,18 @@ namespace NugzzMenu.Services
         private static bool UnityLogSecondArgumentPrefix(object __1)
         {
             return !ShouldSuppressUnityLog(__1);
+        }
+
+        private static bool UnityIl2CppLogSecondArgumentPrefix(Il2CppSystem.Object __1)
+        {
+            try
+            {
+                return !ShouldSuppressUnityLog(UnityEngine.Logger.GetString(__1));
+            }
+            catch
+            {
+                return !ShouldSuppressUnityLog(__1);
+            }
         }
 
         private static bool UnityLogAnyArgumentPrefix(object[] __args)
@@ -211,8 +264,9 @@ namespace NugzzMenu.Services
         private static bool ShouldSuppressActionListStaggeredLog(object message)
         {
             string text = message?.ToString() ?? string.Empty;
-            return text.IndexOf("Error invoking StaggeredInvoke", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                text.IndexOf("Index was out of range", StringComparison.OrdinalIgnoreCase) >= 0;
+            return text.IndexOf(
+                "Error invoking StaggeredInvoke",
+                StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool ShouldSuppressNavMeshAgentLog(object message)

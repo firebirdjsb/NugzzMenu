@@ -2,12 +2,15 @@ using System;
 using System.Reflection;
 using Il2CppScheduleOne.Equipping;
 using Il2CppScheduleOne.Growing;
+using Il2CppScheduleOne.Interaction;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.ObjectScripts;
 using Il2CppScheduleOne.ObjectScripts.Soil;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.PlayerTasks;
+using Il2CppScheduleOne.PlayerTasks.Tasks;
 using Il2CppScheduleOne.Trash;
+using Il2CppScheduleOne.UI;
 using UnityEngine;
 
 namespace NugzzMenu.Services
@@ -15,7 +18,7 @@ namespace NugzzMenu.Services
     public sealed class GrowToolFallbackService
     {
         private const float InteractionRange = 3f;
-        private const float InteractionRadius = 0.08f;
+        private const float InteractionRadius = 0.18f;
         private const float FullContainerThreshold = 0.995f;
         private const float EmptyContainerThreshold = 0.001f;
 
@@ -24,10 +27,20 @@ namespace NugzzMenu.Services
 
         private static FieldInfo _equippableItemInstanceField;
         private static bool _equippableItemInstanceFieldSearched;
+        private static MethodInfo _sprayBottleCanSprayMethod;
+        private static FieldInfo _sprayBottleWaterField;
+        private static FieldInfo _sprayBottlePrefabField;
         private float _nextTrimmerDiagnosticTime;
         private float _nextPourableDiagnosticTime;
         private float _nextSeedDiagnosticTime;
+        private float _nextMushroomSpawnDiagnosticTime;
         private float _nextActionStatusTime;
+        private float _nextPromptScanTime;
+        private Equippable _promptTool;
+        private GrowContainer _promptContainer;
+        private RaycastHit _promptHit;
+        private bool _hasPromptTarget;
+        private bool _promptFailureReported;
 
         private GrowToolFallbackService() { }
 
@@ -37,7 +50,10 @@ namespace NugzzMenu.Services
                 return false;
 
             if (!Input.GetMouseButtonDown(0))
+            {
+                ShowTrimmerPrompt(trimmers);
                 return true;
+            }
 
             if (IsTaskActive())
                 return true;
@@ -110,7 +126,10 @@ namespace NugzzMenu.Services
                 return false;
 
             if (!Input.GetMouseButtonDown(0))
+            {
+                ShowSeedPrompt(seedTool);
                 return true;
+            }
 
             if (IsTaskActive())
                 return true;
@@ -165,10 +184,371 @@ namespace NugzzMenu.Services
             return true;
         }
 
+        public bool RunMushroomSpawnUpdate(MushroomSpawnEquipped spawnTool)
+        {
+            if (spawnTool == null || !IsUsableToolObject(spawnTool))
+                return false;
+
+            if (!Input.GetMouseButtonDown(0))
+            {
+                ShowMushroomSpawnPrompt(spawnTool);
+                return true;
+            }
+            if (IsTaskActive())
+                return true;
+
+            try
+            {
+                if (!TryGetHoveredGrowContainer(out GrowContainer container, out _))
+                {
+                    StatusThrottled("No mushroom bed target");
+                    return true;
+                }
+
+                MushroomBed bed = TryCastComponent<MushroomBed>(container);
+                if (bed == null)
+                {
+                    StatusThrottled("Shroom spawn needs a mushroom bed");
+                    return true;
+                }
+
+                string reason;
+                if (!spawnTool.CanApplyToMushroomBed(bed, out reason))
+                {
+                    StatusThrottled(string.IsNullOrEmpty(reason) ?
+                        "Mushroom bed cannot accept spawn" : reason);
+                    return true;
+                }
+
+                // The native task owns animation, inventory use, and network state.
+                spawnTool.StartTask(bed);
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseException("Shroom spawn fallback failed", ex);
+            }
+
+            return true;
+        }
+
+        public bool RunSprayBottleUpdate(Equippable_SprayBottle sprayBottle)
+        {
+            if (sprayBottle == null || !IsUsableToolObject(sprayBottle))
+                return false;
+
+            if (!Input.GetMouseButtonDown(0))
+            {
+                ShowSprayBottlePrompt(sprayBottle);
+                return true;
+            }
+
+            if (IsTaskActive())
+                return true;
+
+            try
+            {
+                if (!TryGetHoveredGrowContainer(out GrowContainer container, out _))
+                {
+                    StatusThrottled("No mushroom bed target");
+                    return true;
+                }
+
+                MushroomBed bed = TryCastComponent<MushroomBed>(container);
+                if (bed == null)
+                {
+                    StatusThrottled("Spray bottle needs a mushroom bed");
+                    return true;
+                }
+
+                WaterContainerInstance water = GetSprayBottleWater(sprayBottle);
+                if (water == null || water.CurrentFillAmount <= EmptyContainerThreshold)
+                {
+                    StatusThrottled("Spray bottle empty");
+                    return true;
+                }
+
+                string reason;
+                if (!CanSpray(sprayBottle, bed, out reason))
+                {
+                    StatusThrottled(string.IsNullOrEmpty(reason) ?
+                        "Mushroom bed cannot be misted" : reason);
+                    return true;
+                }
+
+                float capacity = bed.MoistureCapacity;
+                if (capacity <= 0f)
+                    capacity = 1f;
+
+                float missingMoisture = Mathf.Clamp01(
+                    1f - GetNormalizedMoistureAmount(bed));
+                if (missingMoisture <= 1f - FullContainerThreshold)
+                {
+                    StatusThrottled("Mushroom bed is already moist");
+                    return true;
+                }
+
+                float waterUse = capacity * Mathf.Clamp(missingMoisture, 0.05f, 0.2f);
+                if (!TrySpendWater(water, waterUse))
+                {
+                    StatusThrottled("Spray bottle empty");
+                    return true;
+                }
+
+                bed.SetMoistureAmount(capacity);
+                try { bed.SyncMoistureData(); } catch { }
+
+                NotificationService.Instance.Status("Misted mushroom bed");
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseException("Spray bottle fallback failed", ex);
+            }
+
+            return true;
+        }
+
+        private void ShowTrimmerPrompt(Equippable_Trimmers trimmers)
+        {
+            try
+            {
+                if (IsTaskActive() ||
+                    !TryGetPromptTarget(trimmers, out GrowContainer container, out RaycastHit hit))
+                {
+                    return;
+                }
+
+                string reason;
+                Pot pot = TryCastComponent<Pot>(container);
+                if (pot != null && pot.IsReadyForHarvest(out reason))
+                {
+                    ShowLeftClickPrompt(hit, "Harvest plant");
+                    return;
+                }
+
+                MushroomBed bed = TryCastComponent<MushroomBed>(container);
+                if (bed != null && bed.IsReadyForHarvest(out reason))
+                    ShowLeftClickPrompt(hit, "Harvest mushrooms");
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        private void ShowWateringPrompt(Equippable_Pourable pourable)
+        {
+            try
+            {
+                if (IsTaskActive() ||
+                    !TryGetPromptTarget(pourable, out GrowContainer container, out RaycastHit hit) ||
+                    GetNormalizedMoistureAmount(container) >= FullContainerThreshold ||
+                    !HasWater(pourable))
+                {
+                    return;
+                }
+
+                ShowLeftClickPrompt(hit, "Water");
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        private void ShowSoilPrompt(Equippable_Pourable pourable)
+        {
+            try
+            {
+                if (IsTaskActive() ||
+                    !TryGetPromptTarget(pourable, out GrowContainer container, out RaycastHit hit))
+                {
+                    return;
+                }
+
+                SoilDefinition soil = ResolveSoilDefinition(pourable) ??
+                    ResolveBestSoilDefinition(container);
+                string reason;
+                if (soil == null ||
+                    !CanAcceptSoil(container, soil, out reason) ||
+                    !CanSpendEquippedStack(soil, pourable))
+                {
+                    return;
+                }
+
+                ShowLeftClickPrompt(
+                    hit,
+                    IsMushroomSubstrateTool(pourable) ? "Add substrate" : "Add soil");
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        private void ShowAdditivePrompt(Equippable_Pourable pourable)
+        {
+            try
+            {
+                // The additive's native task state can report busy while the direct
+                // fallback remains usable. Keep this display-only gate to targeting;
+                // the click path below still performs every authoritative check.
+                if (!TryGetPromptTarget(pourable, out _, out RaycastHit hit))
+                    return;
+
+                ShowLeftClickPrompt(hit, "Apply additive");
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        private void ShowSeedPrompt(Equippable_Seed seedTool)
+        {
+            try
+            {
+                if (IsTaskActive() ||
+                    !TryGetPromptTarget(seedTool, out GrowContainer container, out RaycastHit hit))
+                {
+                    return;
+                }
+
+                Pot pot = TryCastComponent<Pot>(container);
+                SeedDefinition seed = seedTool.Seed ?? ResolveSeedDefinition(seedTool);
+                string reason;
+                if (pot == null ||
+                    seed == null ||
+                    !pot.CanAcceptSeed(out reason) ||
+                    !CanSpendEquippedStack(seed, seedTool))
+                {
+                    return;
+                }
+
+                ShowLeftClickPrompt(hit, "Plant seed");
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        private void ShowMushroomSpawnPrompt(MushroomSpawnEquipped spawnTool)
+        {
+            try
+            {
+                if (IsTaskActive() ||
+                    !TryGetPromptTarget(spawnTool, out GrowContainer container, out RaycastHit hit))
+                {
+                    return;
+                }
+
+                MushroomBed bed = TryCastComponent<MushroomBed>(container);
+                string reason;
+                if (bed != null && spawnTool.CanApplyToMushroomBed(bed, out reason))
+                    ShowLeftClickPrompt(hit, "Add shroom spawn");
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        private void ShowSprayBottlePrompt(Equippable_SprayBottle sprayBottle)
+        {
+            try
+            {
+                if (IsTaskActive() ||
+                    !TryGetPromptTarget(sprayBottle, out GrowContainer container, out RaycastHit hit))
+                {
+                    return;
+                }
+
+                MushroomBed bed = TryCastComponent<MushroomBed>(container);
+                WaterContainerInstance water = GetSprayBottleWater(sprayBottle);
+                string reason;
+                if (bed != null &&
+                    water != null &&
+                    water.CurrentFillAmount > EmptyContainerThreshold &&
+                    CanSpray(sprayBottle, bed, out reason))
+                {
+                    ShowLeftClickPrompt(hit, "Mist mushroom bed");
+                }
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        private bool TryGetPromptTarget(
+            Equippable tool,
+            out GrowContainer container,
+            out RaycastHit hit)
+        {
+            float now = Time.realtimeSinceStartup;
+            if (_promptTool != tool || now >= _nextPromptScanTime)
+            {
+                _promptTool = tool;
+                _nextPromptScanTime = now + 0.05f;
+                _hasPromptTarget = TryGetHoveredGrowContainer(
+                    out _promptContainer,
+                    out _promptHit);
+            }
+
+            container = _promptContainer;
+            hit = _promptHit;
+            return _hasPromptTarget && container != null;
+        }
+
+        private void ShowLeftClickPrompt(RaycastHit hit, string message)
+        {
+            try
+            {
+                InteractionCanvas canvas = InteractionCanvas.Instance;
+                if (canvas == null)
+                    return;
+
+                Sprite icon = canvas.LeftMouseIcon;
+                if (icon == null && InteractionManager.Instance != null)
+                    icon = InteractionManager.Instance.icon_LeftMouse;
+                if (icon == null)
+                    return;
+
+                Vector3 position = hit.point;
+                if (hit.collider != null && hit.distance <= 0.001f)
+                    position = hit.collider.bounds.center;
+
+                canvas.EnableInteractionDisplay(
+                    position,
+                    icon,
+                    string.Empty,
+                    message,
+                    canvas.DefaultMessageColor,
+                    canvas.DefaultIconColor);
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        private void ReportPromptFailure(Exception exception)
+        {
+            if (_promptFailureReported || exception == null)
+                return;
+
+            _promptFailureReported = true;
+            DebugLogService.Instance.VerboseWarning(
+                "Grow interaction prompt failed: " + exception.Message);
+        }
+
         private bool RunWateringCanUpdate(Equippable_Pourable pourable)
         {
             if (!Input.GetMouseButtonDown(0))
+            {
+                ShowWateringPrompt(pourable);
                 return true;
+            }
 
             try
             {
@@ -212,7 +592,10 @@ namespace NugzzMenu.Services
         private bool RunSoilUpdate(Equippable_Pourable pourable)
         {
             if (!Input.GetMouseButtonDown(0))
+            {
+                ShowSoilPrompt(pourable);
                 return true;
+            }
 
             try
             {
@@ -266,7 +649,10 @@ namespace NugzzMenu.Services
         private bool RunAdditiveUpdate(Equippable_Pourable pourable)
         {
             if (!Input.GetMouseButtonDown(0))
+            {
+                ShowAdditivePrompt(pourable);
                 return true;
+            }
 
             try
             {
@@ -447,15 +833,19 @@ namespace NugzzMenu.Services
 
             bool pourable = tool is Equippable_Pourable;
             bool seed = tool is Equippable_Seed;
+            bool mushroomSpawn = tool is MushroomSpawnEquipped;
             float now = Time.realtimeSinceStartup;
-            if ((!pourable && !seed && now >= _nextTrimmerDiagnosticTime) ||
+            if ((!pourable && !seed && !mushroomSpawn && now >= _nextTrimmerDiagnosticTime) ||
                 (pourable && now >= _nextPourableDiagnosticTime) ||
-                (seed && now >= _nextSeedDiagnosticTime))
+                (seed && now >= _nextSeedDiagnosticTime) ||
+                (mushroomSpawn && now >= _nextMushroomSpawnDiagnosticTime))
             {
                 if (pourable)
                     _nextPourableDiagnosticTime = now + 5f;
                 else if (seed)
                     _nextSeedDiagnosticTime = now + 5f;
+                else if (mushroomSpawn)
+                    _nextMushroomSpawnDiagnosticTime = now + 5f;
                 else
                     _nextTrimmerDiagnosticTime = now + 5f;
 
@@ -497,8 +887,7 @@ namespace NugzzMenu.Services
                     continue;
                 }
 
-                GrowContainer growContainer =
-                    candidate.collider.GetComponentInParent<GrowContainer>();
+                GrowContainer growContainer = ResolveGrowContainer(candidate.collider);
                 if (growContainer == null || candidate.distance >= bestDistance)
                     continue;
 
@@ -508,6 +897,48 @@ namespace NugzzMenu.Services
             }
 
             return container != null;
+        }
+
+        private static GrowContainer ResolveGrowContainer(Collider collider)
+        {
+            if (collider == null)
+                return null;
+
+            try
+            {
+                GrowContainer direct = collider.GetComponentInParent<GrowContainer>();
+                if (direct != null)
+                    return direct;
+            }
+            catch { }
+
+            try
+            {
+                MushroomBedInteraction interaction =
+                    collider.GetComponentInParent<MushroomBedInteraction>();
+                if (interaction != null && interaction._bed != null)
+                    return interaction._bed;
+            }
+            catch { }
+
+            try
+            {
+                GrowContainer child = collider.GetComponentInChildren<GrowContainer>(true);
+                if (child != null)
+                    return child;
+            }
+            catch { }
+
+            try
+            {
+                MushroomBedInteraction interaction =
+                    collider.GetComponentInChildren<MushroomBedInteraction>(true);
+                return interaction?._bed;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static Camera GetCamera()
@@ -545,12 +976,39 @@ namespace NugzzMenu.Services
             if (pourable == null)
                 return false;
 
+            if (IsMushroomSubstrateTool(pourable))
+                return true;
+
             string toolName = SafeName(pourable);
             string typeName = pourable.GetType().Name;
             return toolName.IndexOf("Soil", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 toolName.IndexOf("Substrate", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 typeName.IndexOf("Substrate", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 typeName.IndexOf("Soil", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsMushroomSubstrateTool(Equippable_Pourable pourable)
+        {
+            if (pourable == null)
+                return false;
+
+            string key = NormalizeKey(SafeName(pourable));
+            if (key.StartsWith("msequippable", StringComparison.Ordinal) ||
+                key.Contains("mushroomsubstrate"))
+            {
+                return true;
+            }
+
+            try
+            {
+                string prefabKey = NormalizeKey(SafeName(pourable.PourablePrefab));
+                return prefabKey.Contains("mushroomsubstrate") ||
+                    prefabKey.StartsWith("mspourable", StringComparison.Ordinal);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool IsAdditiveTool(Equippable_Pourable pourable)
@@ -602,6 +1060,100 @@ namespace NugzzMenu.Services
             }
         }
 
+        private static bool HasWater(Equippable_Pourable pourable)
+        {
+            try
+            {
+                WaterContainerInstance water =
+                    TryCastItemInstance<WaterContainerInstance>(GetHeldItemInstance(pourable));
+                if (water == null)
+                    water = TryCastItemInstance<WaterContainerInstance>(GetItemInstance(pourable));
+
+                return water != null && water.CurrentFillAmount > 0.001f;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static WaterContainerInstance GetSprayBottleWater(
+            Equippable_SprayBottle sprayBottle)
+        {
+            WaterContainerInstance water = TryCastItemInstance<WaterContainerInstance>(
+                GetHeldItemInstance(sprayBottle));
+            if (water == null)
+                water = TryCastItemInstance<WaterContainerInstance>(GetItemInstance(sprayBottle));
+
+            try
+            {
+                if (_sprayBottleWaterField == null)
+                {
+                    _sprayBottleWaterField = typeof(Equippable_SprayBottle).GetField(
+                        "_waterContainerInstance",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                }
+
+                if (water == null)
+                    water = _sprayBottleWaterField?.GetValue(sprayBottle) as WaterContainerInstance;
+                else
+                    _sprayBottleWaterField?.SetValue(sprayBottle, water);
+            }
+            catch { }
+
+            return water;
+        }
+
+        private static GameObject GetSprayBottlePrefab(Equippable_SprayBottle sprayBottle)
+        {
+            try
+            {
+                if (_sprayBottlePrefabField == null)
+                {
+                    _sprayBottlePrefabField = typeof(Equippable_SprayBottle).GetField(
+                        "_sprayablePrefab",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                }
+
+                return _sprayBottlePrefabField?.GetValue(sprayBottle) as GameObject;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool CanSpray(
+            Equippable_SprayBottle sprayBottle,
+            MushroomBed bed,
+            out string reason)
+        {
+            reason = string.Empty;
+            try
+            {
+                if (_sprayBottleCanSprayMethod == null)
+                {
+                    _sprayBottleCanSprayMethod = typeof(Equippable_SprayBottle).GetMethod(
+                        "CanSpray",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                }
+
+                if (_sprayBottleCanSprayMethod == null)
+                    return bed != null;
+
+                object[] arguments = { bed, null };
+                bool canSpray = (bool)_sprayBottleCanSprayMethod.Invoke(
+                    sprayBottle,
+                    arguments);
+                reason = arguments[1] as string ?? string.Empty;
+                return canSpray;
+            }
+            catch
+            {
+                return bed != null;
+            }
+        }
+
         private static bool TrySpendWater(Equippable_Pourable pourable, float amount)
         {
             try
@@ -611,6 +1163,27 @@ namespace NugzzMenu.Services
                 if (water == null)
                     water = TryCastItemInstance<WaterContainerInstance>(GetItemInstance(pourable));
                 if (water == null || water.CurrentFillAmount <= 0.001f)
+                    return false;
+
+                float spend = Mathf.Max(0.05f, amount);
+                if (water.CurrentFillAmount < spend)
+                    spend = water.CurrentFillAmount;
+
+                water.ChangeFillAmount(-spend);
+                ReplicateEquippedSlot();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TrySpendWater(WaterContainerInstance water, float amount)
+        {
+            try
+            {
+                if (water == null || water.CurrentFillAmount <= EmptyContainerThreshold)
                     return false;
 
                 float spend = Mathf.Max(0.05f, amount);
@@ -669,7 +1242,7 @@ namespace NugzzMenu.Services
                 return fromItem;
 
             string key = NormalizeKey(SafeName(pourable));
-            if (key.Contains("substrate"))
+            if (IsMushroomSubstrateTool(pourable) || key.Contains("substrate"))
                 return ResolveDefinition<SoilDefinition>(
                     "mushroomsubstrate",
                     "substrate",
