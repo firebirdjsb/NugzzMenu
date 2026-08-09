@@ -4,24 +4,6 @@ using Il2CppScheduleOne.Vehicles;
 
 namespace NugzzMenu.Services
 {
-    [HarmonyPatch(typeof(LandVehicle), "UpdateThrottle")]
-    internal static class VehicleMenuThrottleLockPatch
-    {
-        private static void Prefix(LandVehicle __instance)
-        {
-            VehicleMenuCameraService.Instance.MaintainDrivingLock(__instance);
-        }
-    }
-
-    [HarmonyPatch(typeof(LandVehicle), "UpdateSteerAngle")]
-    internal static class VehicleMenuSteeringLockPatch
-    {
-        private static void Prefix(LandVehicle __instance)
-        {
-            VehicleMenuCameraService.Instance.MaintainDrivingLock(__instance);
-        }
-    }
-
     [HarmonyPatch(typeof(Player), nameof(Player.EnterVehicle))]
     internal static class PlayerVehicleEntryThirdPersonGuardPatch
     {

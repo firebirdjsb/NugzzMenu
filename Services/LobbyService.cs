@@ -91,12 +91,10 @@ namespace NugzzMenu.Services
 
                 if (enabled)
                 {
-                    TryCallNetworkedPassOut(player);
                     ForceLocalRagdollState(player, true);
                 }
                 else
                 {
-                    TryCallNetworkedPassOutRecovery(player);
                     ForceLocalRagdollState(player, false);
                 }
 
@@ -108,24 +106,6 @@ namespace NugzzMenu.Services
                 NotificationService.Instance.Error($"Ragdoll failed: {ex.Message}");
                 Debug.LogError($"[Nugzz] Failed to set ragdoll: {ex.Message}");
             }
-        }
-
-        private static void TryCallNetworkedPassOut(Player player)
-        {
-            try { player.SendPassOut(); }
-            catch (Exception ex) { Debug.LogWarning("[Nugzz] SendPassOut failed: " + ex.Message); }
-
-            try { player.PassOut(); }
-            catch { }
-        }
-
-        private static void TryCallNetworkedPassOutRecovery(Player player)
-        {
-            try { player.SendPassOutRecovery(); }
-            catch (Exception ex) { Debug.LogWarning("[Nugzz] SendPassOutRecovery failed: " + ex.Message); }
-
-            try { player.PassOutRecovery(); }
-            catch { }
         }
 
         private static void ForceLocalRagdollState(Player player, bool enabled)

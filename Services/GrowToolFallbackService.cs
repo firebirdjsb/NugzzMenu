@@ -520,11 +520,14 @@ namespace NugzzMenu.Services
 
                 canvas.EnableInteractionDisplay(
                     position,
-                    icon,
-                    string.Empty,
                     message,
                     canvas.DefaultMessageColor,
-                    canvas.DefaultIconColor);
+                    icon,
+                    canvas.DefaultIconColor,
+                    string.Empty,
+                    1f,
+                    new Vector2(32f, 32f),
+                    true);
             }
             catch (Exception ex)
             {
@@ -1051,8 +1054,8 @@ namespace NugzzMenu.Services
             {
                 TaskManager manager = TaskManager.Instance;
                 return manager != null &&
-                    manager.currentTask != null &&
-                    manager.currentTask.TaskActive;
+                    manager.CurrentTask != null &&
+                    manager.CurrentTask.TaskActive;
             }
             catch
             {

@@ -32,6 +32,11 @@ namespace NugzzMenu.Services
         private float _nextLightRefresh;
         private int _lightSceneHandle = -1;
         private string _diagnostics = "Scene diagnostics have not been scanned.";
+        private long _nugzzUpdateStarted;
+        private double _nugzzUpdateTotalMs;
+        private int _nugzzUpdateSamples;
+        private float _nextTimingPublish;
+        private float _nugzzUpdateAverageMs;
 
         private PerformanceService()
         {
@@ -44,11 +49,44 @@ namespace NugzzMenu.Services
 
         public int TargetFps => Application.targetFrameRate <= 0 ? 0 : Application.targetFrameRate;
         public bool VSyncEnabled => QualitySettings.vSyncCount > 0;
+        public int GameTargetFps => TryReadDisplaySettings(out DisplaySettings display)
+            ? (display.TargetFPS <= 0 ? 0 : display.TargetFPS)
+            : TargetFps;
+        public bool GameVSyncEnabled => TryReadDisplaySettings(out DisplaySettings display)
+            ? display.VSync
+            : VSyncEnabled;
+        public float NugzzUpdateAverageMs => _nugzzUpdateAverageMs;
         public float LightRangeScale => _lightRangeScale;
         public float ReflectionInterval => _reflectionInterval;
         public float LodBias => QualitySettings.lodBias;
         public float ShadowDistance => QualitySettings.shadowDistance;
         public string Diagnostics => _diagnostics;
+
+        public void BeginNugzzUpdate()
+        {
+            _nugzzUpdateStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        public void EndNugzzUpdate()
+        {
+            if (_nugzzUpdateStarted == 0)
+                return;
+
+            long elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - _nugzzUpdateStarted;
+            _nugzzUpdateStarted = 0;
+            _nugzzUpdateTotalMs += elapsed * 1000d /
+                System.Diagnostics.Stopwatch.Frequency;
+            _nugzzUpdateSamples++;
+
+            if (Time.unscaledTime < _nextTimingPublish)
+                return;
+
+            if (_nugzzUpdateSamples > 0)
+                _nugzzUpdateAverageMs = (float)(_nugzzUpdateTotalMs / _nugzzUpdateSamples);
+            _nugzzUpdateTotalMs = 0d;
+            _nugzzUpdateSamples = 0;
+            _nextTimingPublish = Time.unscaledTime + 1f;
+        }
 
         public void Update()
         {
@@ -74,25 +112,28 @@ namespace NugzzMenu.Services
         {
             float fps = Time.smoothDeltaTime > 0.0001f ? 1f / Time.smoothDeltaTime : 0f;
             string cap = TargetFps <= 0 ? "Unlimited" : TargetFps.ToString();
-            return "FPS " + fps.ToString("0") + " | Cap " + cap + " | VSync " +
-                (VSyncEnabled ? "ON" : "OFF") + " | LOD " + LodBias.ToString("0.00") + "x";
+            string gameCap = GameTargetFps <= 0 ? "Unlimited" : GameTargetFps.ToString();
+            int refreshRate = 0;
+            try { refreshRate = Screen.currentResolution.refreshRate; } catch { }
+            return "FPS " + fps.ToString("0") + " | Cap E/G " + cap + "/" + gameCap +
+                " | Sync E/G " + (VSyncEnabled ? "ON" : "OFF") + "/" +
+                (GameVSyncEnabled ? "ON" : "OFF") + " | " + refreshRate + " Hz | Nugzz " +
+                _nugzzUpdateAverageMs.ToString("0.00") + " ms";
         }
 
         public void SetTargetFps(int fps)
         {
             int target = fps <= 0 ? -1 : Mathf.Clamp(fps, 30, 500);
+            ApplyNativeDisplaySettings(target, false);
             Application.targetFrameRate = target;
-            if (fps > 0)
-                SetVSync(false);
-
-            TrySetGameSetting("DisplaySettings", "TargetFPS", target);
+            QualitySettings.vSyncCount = 0;
             NotificationService.Instance.Status(fps <= 0 ? "FPS cap: Unlimited" : "FPS cap: " + fps);
         }
 
         public void SetVSync(bool enabled)
         {
+            ApplyNativeDisplaySettings(null, enabled);
             QualitySettings.vSyncCount = enabled ? 1 : 0;
-            TrySetGameSetting("DisplaySettings", "VSync", enabled);
             NotificationService.Instance.Status(enabled ? "VSync ON" : "VSync OFF");
         }
 
@@ -116,6 +157,14 @@ namespace NugzzMenu.Services
         {
             _reflectionInterval = Mathf.Clamp(seconds, 0f, 2f);
             _lastProbeUpdates.Clear();
+            bool installed = ReflectionProbeUpdateThrottlePatch.SetInstalled(
+                _reflectionInterval > 0f);
+            if (_reflectionInterval > 0f && !installed)
+            {
+                _reflectionInterval = 0f;
+                NotificationService.Instance.Warning("Reflection limiter unavailable; native mode kept");
+                return;
+            }
             NotificationService.Instance.Status(_reflectionInterval <= 0f
                 ? "Reflection updates: Native"
                 : "Reflection updates limited to every " + _reflectionInterval.ToString("0.0") + "s");
@@ -292,6 +341,50 @@ namespace NugzzMenu.Services
             object instance = GetSingletonInstance(type);
             return TrySetMember(type, instance, memberName, value) ||
                 TrySetMember(type, null, memberName, value);
+        }
+
+        private static bool TryReadDisplaySettings(out DisplaySettings display)
+        {
+            display = default;
+            try
+            {
+                Settings settings = Settings.Instance;
+                if (settings == null)
+                    return false;
+                display = settings.DisplaySettings;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool ApplyNativeDisplaySettings(int? targetFps, bool? vSync)
+        {
+            try
+            {
+                Settings settings = Settings.Instance;
+                if (settings == null)
+                    return false;
+
+                DisplaySettings display = settings.DisplaySettings;
+                if (targetFps.HasValue)
+                    display.TargetFPS = targetFps.Value;
+                if (vSync.HasValue)
+                    display.VSync = vSync.Value;
+
+                settings.UnappliedDisplaySettings = display;
+                settings.ApplyDisplaySettings(display);
+                settings.WriteDisplaySettings(display);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning(
+                    "Native display setting apply failed: " + ex.Message);
+                return false;
+            }
         }
 
         private static bool TrySetEnumSetting(string typeShortName, string memberName, string enumName, int fallbackValue)

@@ -21,7 +21,8 @@ namespace NugzzMenu.UI
             Action<string> setKeybind,
             Action<bool> setGameStackLogic, Action<bool> setVerboseDebugLogging,
             Action<bool> setKeybindOverlay,
-            SaveManagementService saveService, DebugTestRoomService testRoomService)
+            SaveManagementService saveService, DebugTestRoomService testRoomService,
+            Action onResetAll)
         {
             GUIFit.Panel(new Rect(0f, y, w, 100f), boxStyle);
             float rowY = y + 16f;
@@ -137,6 +138,14 @@ namespace NugzzMenu.UI
             y += 38f;
 
             DrawDebugTestRoom(ref y, w, buttonStyle, boxStyle, testRoomService);
+
+            DrawHeader(4f, y, w, "RUNTIME RESET");
+            y += 20f;
+            GUIFit.Panel(new Rect(0f, y, w, 32f), boxStyle);
+            if (GUIFit.Button(new Rect(6f, y + 5f, w - 12f, 20f),
+                    "Reset All Cheats and Runtime Changes", buttonStyle))
+                onResetAll?.Invoke();
+            y += 38f;
 
             DrawHeader(4f, y, w, "ACHIEVEMENTS");
             y += 20f;

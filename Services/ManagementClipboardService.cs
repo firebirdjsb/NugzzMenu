@@ -17,7 +17,6 @@ namespace NugzzMenu.Services
         private bool _warnedCanvasUpdate;
         private IConfigurable _outlinedConfigurable;
         private BuildableItem _outlinedObject;
-        private NPC _outlinedNpc;
         private ITransitEntity _outlinedTransit;
         private int _lastConsumedClickFrame = -1;
 
@@ -86,30 +85,6 @@ namespace NugzzMenu.Services
             {
                 DebugLogService.Instance.VerboseWarning(
                     "Management object selector fallback failed: " + ex.Message);
-                return false;
-            }
-        }
-
-        public bool RunNpcSelectorUpdate(NPCSelector selector)
-        {
-            if (!IsNpcSelectorActive(selector))
-                return false;
-
-            try
-            {
-                TryGetHoveredNpc(selector, out NPC hovered);
-                selector.hoveredNPC = hovered;
-                SetNpcOutline(selector, hovered);
-
-                if (Input.GetMouseButtonDown(0) && hovered != null && TryConsumeClick())
-                    selector.NPCClicked(hovered);
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                DebugLogService.Instance.VerboseWarning(
-                    "Management NPC selector fallback failed: " + ex.Message);
                 return false;
             }
         }
@@ -258,34 +233,6 @@ namespace NugzzMenu.Services
             catch { }
 
             return item != null;
-        }
-
-        private static bool TryGetHoveredNpc(NPCSelector selector, out NPC npc)
-        {
-            npc = null;
-
-            try
-            {
-                RaycastHit[] hits = GetHits(selector.DetectionMask, NPCSelector.SELECTION_RANGE);
-                float nearest = float.MaxValue;
-
-                for (int i = 0; i < hits.Length; i++)
-                {
-                    RaycastHit hit = hits[i];
-                    if (hit.collider == null || hit.distance >= nearest)
-                        continue;
-
-                    NPC candidate = hit.collider.GetComponentInParent<NPC>();
-                    if (!IsNpcSelectable(selector, candidate))
-                        continue;
-
-                    nearest = hit.distance;
-                    npc = candidate;
-                }
-            }
-            catch { }
-
-            return npc != null;
         }
 
         private static bool TryGetHoveredTransit(
@@ -450,15 +397,6 @@ namespace NugzzMenu.Services
             }
         }
 
-        private static bool IsNpcSelectable(NPCSelector selector, NPC npc)
-        {
-            if (selector == null || npc == null)
-                return false;
-
-            try { return selector.IsNPCTypeValid(npc); }
-            catch { return false; }
-        }
-
         private static bool IsTransitSelectable(
             TransitEntitySelector selector,
             ITransitEntity entity)
@@ -517,16 +455,6 @@ namespace NugzzMenu.Services
             catch { }
         }
 
-        private void SetNpcOutline(NPCSelector selector, NPC hovered)
-        {
-            if (_outlinedNpc == hovered)
-                return;
-
-            try { _outlinedNpc?.HideOutline(); } catch { }
-            _outlinedNpc = hovered;
-            try { hovered?.ShowOutline(selector.HoverOutlineColor); } catch { }
-        }
-
         private void SetTransitOutline(
             TransitEntitySelector selector,
             ITransitEntity hovered)
@@ -569,25 +497,6 @@ namespace NugzzMenu.Services
             }
         }
 
-        private static bool IsNpcSelectorActive(NPCSelector selector)
-        {
-            if (selector == null || !IsOpen(selector))
-                return false;
-
-            if (!IsGameObjectActive(selector))
-                return false;
-
-            try
-            {
-                ManagementInterface management = ManagementInterface.Instance;
-                return management == null || management.NPCSelector == selector;
-            }
-            catch
-            {
-                return true;
-            }
-        }
-
         private static bool IsTransitSelectorActive(TransitEntitySelector selector)
         {
             if (selector == null || !IsOpen(selector))
@@ -622,11 +531,6 @@ namespace NugzzMenu.Services
         }
 
         private static bool IsOpen(ObjectSelector selector)
-        {
-            try { return selector.IsOpen; } catch { return false; }
-        }
-
-        private static bool IsOpen(NPCSelector selector)
         {
             try { return selector.IsOpen; } catch { return false; }
         }

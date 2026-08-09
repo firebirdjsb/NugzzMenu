@@ -4,8 +4,6 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Il2CppScheduleOne.PlayerScripts;
-using Il2CppScheduleOne.Trash;
-using Il2CppScheduleOne.Vehicles;
 using MelonLoader;
 using UnityEngine;
 
@@ -21,12 +19,14 @@ namespace NugzzMenu.Services
         private bool _temperatureDisplayPatched;
         [ThreadStatic]
         private static bool _temperatureDisplayUpdateActive;
+        private static Camera _temperatureCamera;
+        private static int _temperatureCameraFrame = -1;
 
         private CompatibilityService() { }
 
         public void ApplyRuntimeCompatibilityFixes(HarmonyLib.Harmony harmony)
         {
-            ApplyUnityLogFilter(harmony);
+            ApplyActionListStaggeredPatch(harmony);
             ApplyTemperatureDisplayPatch(harmony);
         }
 
@@ -37,16 +37,6 @@ namespace NugzzMenu.Services
 
             try
             {
-                MethodInfo firstArgumentPrefix = typeof(CompatibilityService).GetMethod(
-                    nameof(UnityLogFirstArgumentPrefix),
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                MethodInfo secondArgumentPrefix = typeof(CompatibilityService).GetMethod(
-                    nameof(UnityLogSecondArgumentPrefix),
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                MethodInfo anyArgumentPrefix = typeof(CompatibilityService).GetMethod(
-                    nameof(UnityLogAnyArgumentPrefix),
-                    BindingFlags.Static | BindingFlags.NonPublic);
-
                 MethodInfo il2CppContextPrefix = typeof(CompatibilityService).GetMethod(
                     nameof(UnityIl2CppLogSecondArgumentPrefix),
                     BindingFlags.Static | BindingFlags.NonPublic);
@@ -73,119 +63,12 @@ namespace NugzzMenu.Services
                     catch { }
                 }
 
-                PatchUnityLogMethods(harmony, typeof(UnityEngine.Logger), firstArgumentPrefix, secondArgumentPrefix, anyArgumentPrefix);
-                PatchUnityLogMethods(harmony, typeof(UnityEngine.Debug), firstArgumentPrefix, secondArgumentPrefix, anyArgumentPrefix);
-
                 _unityLogFilterPatched = true;
             }
             catch
             {
                 _unityLogFilterPatched = true;
             }
-        }
-
-        private static void PatchUnityLogMethods(
-            HarmonyLib.Harmony harmony,
-            Type type,
-            MethodInfo firstArgumentPrefix,
-            MethodInfo secondArgumentPrefix,
-            MethodInfo anyArgumentPrefix)
-        {
-            if (harmony == null || type == null)
-                return;
-
-            MethodInfo[] methods = type.GetMethods(
-                BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public);
-            for (int i = 0; i < methods.Length; i++)
-            {
-                MethodInfo method = methods[i];
-                if (!ShouldPatchUnityLogMethod(method))
-                    continue;
-
-                MethodInfo prefix = SelectUnityLogPrefix(
-                    method,
-                    firstArgumentPrefix,
-                    secondArgumentPrefix) ?? anyArgumentPrefix;
-                if (prefix == null)
-                    continue;
-
-                try
-                {
-                    harmony.Patch(method, prefix: new HarmonyMethod(prefix));
-                }
-                catch
-                {
-                    if (anyArgumentPrefix == null || prefix == anyArgumentPrefix)
-                        continue;
-
-                    try { harmony.Patch(method, prefix: new HarmonyMethod(anyArgumentPrefix)); }
-                    catch { }
-                }
-            }
-        }
-
-        private static bool ShouldPatchUnityLogMethod(MethodInfo method)
-        {
-            if (method == null)
-                return false;
-
-            return method.Name == "Log" ||
-                method.Name == "LogWarning" ||
-                method.Name == "LogError";
-        }
-
-        private static MethodInfo SelectUnityLogPrefix(
-            MethodInfo method,
-            MethodInfo firstArgumentPrefix,
-            MethodInfo secondArgumentPrefix)
-        {
-            ParameterInfo[] parameters = method?.GetParameters();
-            if (parameters == null || parameters.Length == 0)
-                return null;
-
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                string name = parameters[i]?.Name ?? string.Empty;
-                if (string.Equals(name, "message", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(name, "msg", StringComparison.OrdinalIgnoreCase))
-                {
-                    return i == 0 ? firstArgumentPrefix :
-                        i == 1 ? SelectSecondArgumentPrefix(
-                            parameters[i], secondArgumentPrefix) : null;
-                }
-            }
-
-            if (parameters[0].ParameterType == typeof(LogType) ||
-                parameters[0].ParameterType == typeof(string))
-            {
-                return parameters.Length > 1 ? SelectSecondArgumentPrefix(
-                    parameters[1], secondArgumentPrefix) : null;
-            }
-
-            return firstArgumentPrefix;
-        }
-
-        private static MethodInfo SelectSecondArgumentPrefix(
-            ParameterInfo parameter,
-            MethodInfo managedPrefix)
-        {
-            string typeName = parameter?.ParameterType?.FullName ?? string.Empty;
-            if (typeName != "Il2CppSystem.Object")
-                return managedPrefix;
-
-            return typeof(CompatibilityService).GetMethod(
-                nameof(UnityIl2CppLogSecondArgumentPrefix),
-                BindingFlags.Static | BindingFlags.NonPublic);
-        }
-
-        private static bool UnityLogFirstArgumentPrefix(object __0)
-        {
-            return !ShouldSuppressUnityLog(__0);
-        }
-
-        private static bool UnityLogSecondArgumentPrefix(object __1)
-        {
-            return !ShouldSuppressUnityLog(__1);
         }
 
         private static bool UnityIl2CppLogSecondArgumentPrefix(Il2CppSystem.Object __1)
@@ -198,20 +81,6 @@ namespace NugzzMenu.Services
             {
                 return !ShouldSuppressUnityLog(__1);
             }
-        }
-
-        private static bool UnityLogAnyArgumentPrefix(object[] __args)
-        {
-            if (__args == null)
-                return true;
-
-            for (int i = 0; i < __args.Length; i++)
-            {
-                if (ShouldSuppressUnityLog(__args[i]))
-                    return false;
-            }
-
-            return true;
         }
 
         internal static bool ShouldSuppressUnityLog(object message)
@@ -282,7 +151,7 @@ namespace NugzzMenu.Services
                 text.IndexOf("Searched all reachable nodes, but could not find target", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private void ApplyActionListStaggeredPatch(HarmonyLib.Harmony harmony)
+private void ApplyActionListStaggeredPatch(HarmonyLib.Harmony harmony)
         {
             if (_actionListStaggeredPatched || harmony == null)
                 return;
@@ -303,7 +172,14 @@ namespace NugzzMenu.Services
                 if (target != null && prefix != null)
                     harmony.Patch(target, prefix: new HarmonyMethod(prefix));
             }
-            catch { }
+            catch (System.NotSupportedException ex)
+            {
+                DebugLogService.Instance.Verbose("ActionList.InvokeAllStaggered patch skipped (method stripped): " + ex.Message);
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning("ActionList.InvokeAllStaggered patch failed: " + ex.Message);
+            }
 
             _actionListStaggeredPatched = true;
         }
@@ -336,6 +212,10 @@ namespace NugzzMenu.Services
                     DebugLogService.Instance.Verbose("Patched TemperatureDisplay.UpdateCanvas zero-vector guard");
                 }
             }
+            catch (System.NotSupportedException ex)
+            {
+                DebugLogService.Instance.Verbose("TemperatureDisplay.UpdateCanvas patch skipped (method stripped): " + ex.Message);
+            }
             catch (Exception ex)
             {
                 DebugLogService.Instance.VerboseWarning(
@@ -367,7 +247,7 @@ namespace NugzzMenu.Services
         {
             try
             {
-                Camera camera = Camera.main;
+                Camera camera = GetTemperatureCamera();
                 if (camera == null || camera.transform == null)
                     return true;
 
@@ -381,32 +261,27 @@ namespace NugzzMenu.Services
 
                 if (IsZeroLookVector(cameraPosition, component.transform.position))
                     return true;
-
-                RectTransform[] rects = component.GetComponentsInChildren<RectTransform>(true);
-                if (rects != null)
-                {
-                    for (int i = 0; i < rects.Length; i++)
-                    {
-                        RectTransform rect = rects[i];
-                        if (rect != null && IsZeroLookVector(cameraPosition, rect.position))
-                            return true;
-                    }
-                }
-
-                Transform[] transforms = component.GetComponentsInChildren<Transform>(true);
-                if (transforms != null)
-                {
-                    for (int i = 0; i < transforms.Length; i++)
-                    {
-                        Transform child = transforms[i];
-                        if (child != null && IsZeroLookVector(cameraPosition, child.position))
-                            return true;
-                    }
-                }
             }
             catch { }
 
             return false;
+        }
+
+        private static Camera GetTemperatureCamera()
+        {
+            int frame = Time.frameCount;
+            if (_temperatureCameraFrame == frame && _temperatureCamera != null)
+                return _temperatureCamera;
+
+            _temperatureCameraFrame = frame;
+            try { _temperatureCamera = PlayerCamera.Instance?.Camera; }
+            catch { _temperatureCamera = null; }
+            if (_temperatureCamera == null)
+            {
+                try { _temperatureCamera = Camera.main; }
+                catch { }
+            }
+            return _temperatureCamera;
         }
 
         private static bool IsZeroLookVector(Vector3 cameraPosition, Vector3 displayPosition)
@@ -494,16 +369,35 @@ namespace NugzzMenu.Services
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             object rawList = getter?.Invoke(actionList, null);
             IEnumerable enumerable = rawList as IEnumerable;
-            if (enumerable == null)
+            var callbacks = new List<object>();
+            if (enumerable != null)
+            {
+                foreach (object callback in enumerable)
+                {
+                    if (callback != null)
+                        callbacks.Add(callback);
+                }
+                return callbacks.ToArray();
+            }
+
+            if (rawList == null)
                 return null;
 
-            var callbacks = new List<object>();
-            foreach (object callback in enumerable)
+            Type listType = rawList.GetType();
+            PropertyInfo countProperty = listType.GetProperty("Count");
+            PropertyInfo itemProperty = listType.GetProperty("Item");
+            MethodInfo itemGetter = itemProperty?.GetGetMethod() ??
+                listType.GetMethod("get_Item");
+            if (countProperty == null || itemGetter == null)
+                return null;
+
+            int count = Convert.ToInt32(countProperty.GetValue(rawList));
+            for (int i = 0; i < count; i++)
             {
+                object callback = itemGetter.Invoke(rawList, new object[] { i });
                 if (callback != null)
                     callbacks.Add(callback);
             }
-
             return callbacks.ToArray();
         }
 
@@ -585,106 +479,4 @@ namespace NugzzMenu.Services
         }
     }
 
-    [HarmonyPatch(typeof(TrashItem), "MinPass")]
-    internal static class TrashItemMinPassSafetyPatch
-    {
-        private static int _suppressedCount;
-        private static int _skippedVehicleTrashCount;
-        private static float _nextVerboseLogTime;
-        private static bool _reportedVehicleTrashSkip;
-        private static bool _reportedSuppressedException;
-
-        private static bool Prefix(TrashItem __instance)
-        {
-            if (!IsAttachedToVehicle(__instance))
-                return true;
-
-            _skippedVehicleTrashCount++;
-            if (!_reportedVehicleTrashSkip)
-            {
-                _reportedVehicleTrashSkip = true;
-                UnityEngine.Debug.LogWarning(
-                    "[Nugzz] Skipping vehicle-attached TrashItem.MinPass to prevent police/NPC vehicle crash spam");
-            }
-
-            if (DebugLogService.Instance.VerboseEnabled &&
-                Time.unscaledTime >= _nextVerboseLogTime)
-            {
-                _nextVerboseLogTime = Time.unscaledTime + 30f;
-                DebugLogService.Instance.VerboseWarning(
-                    "Skipped vehicle-attached TrashItem.MinPass x" +
-                    _skippedVehicleTrashCount + " on " + SafeObjectName(__instance));
-            }
-
-            return false;
-        }
-
-        private static Exception Finalizer(TrashItem __instance, Exception __exception)
-        {
-            if (__exception == null)
-                return null;
-
-            if (!ShouldSuppressTrashMinPassException(__exception))
-                return __exception;
-
-            _suppressedCount++;
-            if (!_reportedSuppressedException)
-            {
-                _reportedSuppressedException = true;
-                UnityEngine.Debug.LogWarning(
-                    "[Nugzz] Suppressed TrashItem.MinPass null-ref spam from an invalid trash item");
-            }
-
-            if (DebugLogService.Instance.VerboseEnabled &&
-                Time.unscaledTime >= _nextVerboseLogTime)
-            {
-                _nextVerboseLogTime = Time.unscaledTime + 30f;
-                DebugLogService.Instance.VerboseWarning(
-                    "Suppressed TrashItem.MinPass exception x" + _suppressedCount +
-                    " on " + SafeObjectName(__instance) + ": " + __exception.Message);
-            }
-
-            return null;
-        }
-
-        private static bool ShouldSuppressTrashMinPassException(Exception exception)
-        {
-            if (exception == null)
-                return false;
-
-            if (exception is NullReferenceException)
-                return true;
-
-            string text = exception.ToString();
-            return text.IndexOf("TrashItem.MinPass", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                text.IndexOf("NullReferenceException", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static bool IsAttachedToVehicle(TrashItem item)
-        {
-            if (item == null)
-                return false;
-
-            try
-            {
-                return item.GetComponentInParent<LandVehicle>(true) != null;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static string SafeObjectName(TrashItem item)
-        {
-            try
-            {
-                return item != null ? item.name : "null";
-            }
-            catch
-            {
-                return "unknown";
-            }
-        }
-    }
 }

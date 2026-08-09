@@ -8,6 +8,7 @@ using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.Product;
 using Il2CppScheduleOne.Product.Packaging;
+using Il2CppScheduleOne.StationFramework;
 using Il2CppScheduleOne.Storage;
 using UnityEngine;
 
@@ -30,15 +31,62 @@ namespace NugzzMenu.Services
         private int _itemsPerPage = 15;
         private string _searchText = "";
         private int _qualityIndex = 2;
+        private int _clothingColorIndex;
+        private int _mixtureTypeFilter;
+        private ProductManager _trackedProductManager;
+        private int _trackedCreatedProductCount = -1;
+        private float _nextMixtureRefreshTime;
+        private string _selectedMixtureId = "";
+        private readonly Dictionary<string, MixtureMetadata> _createdMixtures =
+            new Dictionary<string, MixtureMetadata>(StringComparer.OrdinalIgnoreCase);
         private readonly Queue<SpawnRequest> _pendingSpawns = new Queue<SpawnRequest>();
         public bool UseGameStackLogic { get; set; } = true;
+
+        private struct MixtureMetadata
+        {
+            public string Type;
+            public string Effects;
+            public string[] EffectNames;
+        }
 
         private struct SpawnRequest
         {
             public string ItemId;
             public int Quantity;
             public int QualityIndex;
+            public EClothingColor ClothingColor;
         }
+
+        private static readonly EClothingColor[] ClothingColors =
+        {
+            EClothingColor.White,
+            EClothingColor.LightGrey,
+            EClothingColor.DarkGrey,
+            EClothingColor.Charcoal,
+            EClothingColor.Black,
+            EClothingColor.LightRed,
+            EClothingColor.Red,
+            EClothingColor.Crimson,
+            EClothingColor.Orange,
+            EClothingColor.Tan,
+            EClothingColor.Brown,
+            EClothingColor.Coral,
+            EClothingColor.Beige,
+            EClothingColor.Yellow,
+            EClothingColor.Lime,
+            EClothingColor.LightGreen,
+            EClothingColor.DarkGreen,
+            EClothingColor.Cyan,
+            EClothingColor.SkyBlue,
+            EClothingColor.Blue,
+            EClothingColor.DeepBlue,
+            EClothingColor.Navy,
+            EClothingColor.DeepPurple,
+            EClothingColor.Purple,
+            EClothingColor.Magenta,
+            EClothingColor.BrightPink,
+            EClothingColor.HotPink
+        };
 
         private struct SlotSnapshot
         {
@@ -75,6 +123,7 @@ namespace NugzzMenu.Services
         {
             "All",
             "Drugs",
+            "Mixtures",
             "Seeds",
             "Mixers",
             "Grow",
@@ -89,6 +138,15 @@ namespace NugzzMenu.Services
             "Clothes",
             "Decor",
             "Misc",
+        };
+
+        private static readonly string[] MixtureTypes =
+        {
+            "All",
+            "Weed",
+            "Meth",
+            "Cocaine",
+            "Shrooms"
         };
 
         private static readonly string[] WeaponKeys =
@@ -243,7 +301,8 @@ namespace NugzzMenu.Services
                     return;
                 }
 
-                var products = ManagerCacheService.Instance.ProductManager?.AllProducts;
+                ProductManager productManager = ManagerCacheService.Instance.ProductManager;
+                var products = productManager?.AllProducts;
                 int productCount = products != null ? products.Count : 0;
                 int knownCount = KnownCatalogItems != null ? KnownCatalogItems.Length : 0;
                 int count = allItems.Count + productCount + knownCount;
@@ -285,6 +344,7 @@ namespace NugzzMenu.Services
                 }
 
                 AddKnownCatalogItems(seen);
+                SyncCreatedMixtures(productManager, true);
 
                 SortItemCache();
                 _isCached = true;
@@ -355,6 +415,210 @@ namespace NugzzMenu.Services
             _itemCategories[_itemCount] = GetCatalogCategory(id, definition);
             _itemDefinitions[_itemCount] = definition;
             _itemCount++;
+        }
+
+        private bool SyncCreatedMixtures(ProductManager manager, bool reset)
+        {
+            if (reset)
+                _createdMixtures.Clear();
+
+            _trackedProductManager = manager;
+            var products = manager?.createdProducts;
+            _trackedCreatedProductCount = products?.Count ?? 0;
+            if (products == null)
+                return false;
+
+            bool changed = false;
+            var liveKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < products.Count; i++)
+            {
+                ProductDefinition product = products[i];
+                string id = product?.name;
+                if (string.IsNullOrEmpty(id) || IsBlockedCatalogItem(id))
+                    continue;
+
+                string key = NormalizeAliasKey(id);
+                liveKeys.Add(key);
+                var metadata = new MixtureMetadata
+                {
+                    Type = GetMixtureType(product),
+                    EffectNames = GetMixtureEffectNames(product)
+                };
+                metadata.Effects = metadata.EffectNames.Length > 0
+                    ? string.Join(", ", metadata.EffectNames)
+                    : "None";
+
+                if (!_createdMixtures.TryGetValue(key, out MixtureMetadata previous) ||
+                    previous.Type != metadata.Type || previous.Effects != metadata.Effects)
+                {
+                    _createdMixtures[key] = metadata;
+                    changed = true;
+                }
+
+                int catalogIndex = FindCatalogIndex(key);
+                if (catalogIndex >= 0)
+                {
+                    string displayName = GetDisplayName(id, product);
+                    if (_itemNames[catalogIndex] != displayName ||
+                        _itemCategories[catalogIndex] != "Mixtures" ||
+                        _itemDefinitions[catalogIndex] != product)
+                    {
+                        _itemNames[catalogIndex] = displayName;
+                        _itemCategories[catalogIndex] = "Mixtures";
+                        _itemDefinitions[catalogIndex] = product;
+                        changed = true;
+                    }
+                    continue;
+                }
+
+                EnsureCatalogCapacity(_itemCount + 1);
+                _itemIds[_itemCount] = id;
+                _itemNames[_itemCount] = GetDisplayName(id, product);
+                _itemCategories[_itemCount] = "Mixtures";
+                _itemDefinitions[_itemCount] = product;
+                _itemCount++;
+                changed = true;
+            }
+
+            if (!reset)
+            {
+                var staleKeys = new List<string>();
+                foreach (string key in _createdMixtures.Keys)
+                {
+                    if (!liveKeys.Contains(key))
+                        staleKeys.Add(key);
+                }
+                for (int i = 0; i < staleKeys.Count; i++)
+                    _createdMixtures.Remove(staleKeys[i]);
+
+                for (int i = _itemCount - 1; i >= 0; i--)
+                {
+                    if (_itemCategories[i] == "Mixtures" &&
+                        !liveKeys.Contains(NormalizeAliasKey(_itemIds[i])))
+                    {
+                        RemoveCatalogItemAt(i);
+                        changed = true;
+                    }
+                }
+            }
+
+            return changed;
+        }
+
+        private void RemoveCatalogItemAt(int index)
+        {
+            if (index < 0 || index >= _itemCount)
+                return;
+
+            int moveCount = _itemCount - index - 1;
+            if (moveCount > 0)
+            {
+                Array.Copy(_itemIds, index + 1, _itemIds, index, moveCount);
+                Array.Copy(_itemNames, index + 1, _itemNames, index, moveCount);
+                Array.Copy(_itemCategories, index + 1, _itemCategories, index, moveCount);
+                Array.Copy(_itemDefinitions, index + 1, _itemDefinitions, index, moveCount);
+            }
+
+            _itemCount--;
+            _itemIds[_itemCount] = null;
+            _itemNames[_itemCount] = null;
+            _itemCategories[_itemCount] = null;
+            _itemDefinitions[_itemCount] = null;
+        }
+
+        private void RefreshCreatedMixtures()
+        {
+            if (!_isCached || Time.unscaledTime < _nextMixtureRefreshTime)
+                return;
+
+            _nextMixtureRefreshTime = Time.unscaledTime + 2f;
+            ProductManager manager = ManagerCacheService.Instance.ProductManager;
+            if (manager == null)
+                return;
+
+            if (_trackedProductManager == null ||
+                _trackedProductManager.Pointer != manager.Pointer)
+            {
+                ClearCache();
+                InitializeCache();
+                return;
+            }
+
+            int count;
+            try { count = manager.createdProducts?.Count ?? 0; }
+            catch { return; }
+            if (count == _trackedCreatedProductCount)
+                return;
+
+            if (SyncCreatedMixtures(manager, false))
+            {
+                SortItemCache();
+                ApplyFilter();
+                NotificationService.Instance.Status("Created mixtures updated");
+            }
+        }
+
+        private int FindCatalogIndex(string normalizedId)
+        {
+            for (int i = 0; i < _itemCount; i++)
+            {
+                if (NormalizeAliasKey(_itemIds[i]) == normalizedId)
+                    return i;
+            }
+            return -1;
+        }
+
+        private void EnsureCatalogCapacity(int required)
+        {
+            if (_itemIds.Length >= required)
+                return;
+
+            int capacity = Math.Max(required, Math.Max(32, _itemIds.Length * 2));
+            Array.Resize(ref _itemIds, capacity);
+            Array.Resize(ref _itemNames, capacity);
+            Array.Resize(ref _itemCategories, capacity);
+            Array.Resize(ref _itemDefinitions, capacity);
+        }
+
+        private static string GetMixtureType(ProductDefinition product)
+        {
+            try
+            {
+                switch (product.DrugType)
+                {
+                    case EDrugType.Methamphetamine: return "Meth";
+                    case EDrugType.Cocaine: return "Cocaine";
+                    case EDrugType.Shrooms: return "Shrooms";
+                    default: return "Weed";
+                }
+            }
+            catch
+            {
+                if (TryCastDefinition<MethDefinition>(product) != null) return "Meth";
+                if (TryCastDefinition<CocaineDefinition>(product) != null) return "Cocaine";
+                if (TryCastDefinition<ShroomDefinition>(product) != null) return "Shrooms";
+                return "Weed";
+            }
+        }
+
+        private static string[] GetMixtureEffectNames(ProductDefinition product)
+        {
+            try
+            {
+                var properties = product?.Properties;
+                if (properties == null || properties.Count == 0)
+                    return new string[0];
+
+                var names = new List<string>(properties.Count);
+                for (int i = 0; i < properties.Count; i++)
+                {
+                    string name = properties[i]?.Name;
+                    if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
+                        names.Add(name);
+                }
+                return names.ToArray();
+            }
+            catch { return new[] { "Unknown" }; }
         }
 
         private static bool CanCatalogDefinitionSpawn(ItemDefinition definition)
@@ -431,6 +695,217 @@ namespace NugzzMenu.Services
 
         public int GetQualityIndex() => _qualityIndex;
 
+        public string GetClothingColorLabel()
+        {
+            return HumanizeItemId(ClothingColors[_clothingColorIndex].ToString());
+        }
+
+        public bool IsMixtureFilterSelected =>
+            string.Equals(GetCategoryLabel(_currentFilter), "Mixtures", StringComparison.Ordinal);
+
+        public static int MixtureTypeCount => MixtureTypes.Length;
+
+        public static string GetMixtureTypeLabel(int index)
+        {
+            return index >= 0 && index < MixtureTypes.Length ? MixtureTypes[index] : "All";
+        }
+
+        public int GetMixtureTypeFilter() => _mixtureTypeFilter;
+
+        public void SetMixtureTypeFilter(int index)
+        {
+            if (index < 0 || index >= MixtureTypes.Length)
+                index = 0;
+            if (_mixtureTypeFilter == index)
+                return;
+            _mixtureTypeFilter = index;
+            ApplyFilter();
+        }
+
+        public bool HasSelectedMixture =>
+            !string.IsNullOrEmpty(_selectedMixtureId) &&
+            _createdMixtures.ContainsKey(NormalizeAliasKey(_selectedMixtureId));
+
+        public string SelectedMixtureId => HasSelectedMixture ? _selectedMixtureId : string.Empty;
+
+        public void SelectMixture(string itemId)
+        {
+            if (!string.IsNullOrEmpty(itemId) &&
+                _createdMixtures.ContainsKey(NormalizeAliasKey(itemId)))
+            {
+                _selectedMixtureId = itemId;
+            }
+        }
+
+        public bool IsMixtureSelected(string itemId)
+        {
+            return HasSelectedMixture &&
+                NormalizeAliasKey(itemId) == NormalizeAliasKey(_selectedMixtureId);
+        }
+
+        public string GetSelectedMixtureName()
+        {
+            int index = FindCatalogIndex(NormalizeAliasKey(SelectedMixtureId));
+            return index >= 0 ? _itemNames[index] : string.Empty;
+        }
+
+        public string GetSelectedMixtureType()
+        {
+            return _createdMixtures.TryGetValue(
+                NormalizeAliasKey(SelectedMixtureId), out MixtureMetadata metadata)
+                ? metadata.Type
+                : string.Empty;
+        }
+
+        public int GetSelectedMixtureEffectCount()
+        {
+            return _createdMixtures.TryGetValue(
+                NormalizeAliasKey(SelectedMixtureId), out MixtureMetadata metadata)
+                ? metadata.EffectNames?.Length ?? 0
+                : 0;
+        }
+
+        public string GetSelectedMixtureEffectAt(int index)
+        {
+            if (!_createdMixtures.TryGetValue(
+                    NormalizeAliasKey(SelectedMixtureId), out MixtureMetadata metadata) ||
+                metadata.EffectNames == null || index < 0 || index >= metadata.EffectNames.Length)
+            {
+                return string.Empty;
+            }
+            return metadata.EffectNames[index];
+        }
+
+        public bool DeleteSelectedMixture(out string message)
+        {
+            message = "Select a created mixture first";
+            string selectedId = SelectedMixtureId;
+            if (string.IsNullOrEmpty(selectedId))
+                return false;
+
+            if (LobbyService.Instance.IsInLobby() && !LobbyService.Instance.IsHost())
+            {
+                message = "Only the host can delete created mixtures";
+                return false;
+            }
+
+            ProductManager manager = ManagerCacheService.Instance.ProductManager;
+            ProductDefinition product = FindCreatedProduct(manager, selectedId);
+            if (manager == null || product == null)
+            {
+                message = "Created mixture is no longer available";
+                return false;
+            }
+
+            string displayName = GetSelectedMixtureName();
+            try
+            {
+                RemoveProductFromList(manager.createdProducts, product);
+                RemoveProductFromList(manager.AllProducts, product);
+                RemoveProductFromList(ProductManager.DiscoveredProducts, product);
+                RemoveProductFromList(ProductManager.ListedProducts, product);
+                RemoveProductFromList(ProductManager.FavouritedProducts, product);
+                RemoveProductRecipes(manager.mixRecipes, product);
+                RemoveProductName(manager.ProductNames, product.Name);
+                try { manager.ProductPrices?.Remove(product); } catch { }
+                try { ManagerCacheService.Instance.Registry?.RemoveFromRegistry(product); } catch { }
+
+                string key = NormalizeAliasKey(selectedId);
+                _createdMixtures.Remove(key);
+                int catalogIndex = FindCatalogIndex(key);
+                if (catalogIndex >= 0)
+                    RemoveCatalogItemAt(catalogIndex);
+
+                _selectedMixtureId = "";
+                _trackedCreatedProductCount = manager.createdProducts?.Count ?? 0;
+                SortItemCache();
+                ApplyFilter();
+                message = "Deleted mixture: " +
+                    (string.IsNullOrEmpty(displayName) ? selectedId : displayName);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.Verbose("Created mixture delete failed: " + ex);
+                message = "Mixture delete failed";
+                return false;
+            }
+        }
+
+        private static ProductDefinition FindCreatedProduct(ProductManager manager, string itemId)
+        {
+            var products = manager?.createdProducts;
+            if (products == null)
+                return null;
+
+            string wanted = NormalizeAliasKey(itemId);
+            for (int i = 0; i < products.Count; i++)
+            {
+                ProductDefinition product = products[i];
+                if (product != null && NormalizeAliasKey(product.name) == wanted)
+                    return product;
+            }
+            return null;
+        }
+
+        private static void RemoveProductFromList(
+            Il2CppSystem.Collections.Generic.List<ProductDefinition> products,
+            ProductDefinition product)
+        {
+            if (products == null || product == null)
+                return;
+
+            for (int i = products.Count - 1; i >= 0; i--)
+            {
+                ProductDefinition candidate = products[i];
+                if (candidate != null && candidate.Pointer == product.Pointer)
+                    products.RemoveAt(i);
+            }
+        }
+
+        private static void RemoveProductRecipes(
+            Il2CppSystem.Collections.Generic.List<StationRecipe> recipes,
+            ProductDefinition product)
+        {
+            if (recipes == null || product == null)
+                return;
+
+            string productId = NormalizeAliasKey(product.name);
+            for (int i = recipes.Count - 1; i >= 0; i--)
+            {
+                ItemDefinition output = null;
+                try { output = recipes[i]?.Product?.Item; } catch { }
+                if (output != null && (output.Pointer == product.Pointer ||
+                    NormalizeAliasKey(output.name) == productId))
+                {
+                    recipes.RemoveAt(i);
+                }
+            }
+        }
+
+        private static void RemoveProductName(
+            Il2CppSystem.Collections.Generic.List<string> names, string productName)
+        {
+            if (names == null || string.IsNullOrEmpty(productName))
+                return;
+
+            for (int i = names.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(names[i], productName, StringComparison.OrdinalIgnoreCase))
+                    names.RemoveAt(i);
+            }
+        }
+
+        public void CycleClothingColor(int direction)
+        {
+            if (ClothingColors.Length == 0)
+                return;
+
+            _clothingColorIndex = (_clothingColorIndex + direction) % ClothingColors.Length;
+            if (_clothingColorIndex < 0)
+                _clothingColorIndex += ClothingColors.Length;
+        }
+
         public void ApplyFilter()
         {
             if (!_isCached) return;
@@ -462,6 +937,7 @@ namespace NugzzMenu.Services
             }
 
             string selectedCategory = GetCategoryLabel(_currentFilter);
+            string selectedMixtureType = GetMixtureTypeLabel(_mixtureTypeFilter);
 
             for (int i = 0; i < _itemCount; i++)
             {
@@ -473,6 +949,16 @@ namespace NugzzMenu.Services
 
                 if (!string.Equals(_itemCategories[i], selectedCategory, StringComparison.OrdinalIgnoreCase))
                     continue;
+
+                if (selectedCategory == "Mixtures" && selectedMixtureType != "All")
+                {
+                    string key = NormalizeAliasKey(_itemIds[i]);
+                    if (!_createdMixtures.TryGetValue(key, out MixtureMetadata mixture) ||
+                        mixture.Type != selectedMixtureType)
+                    {
+                        continue;
+                    }
+                }
 
                 if (hasSearch)
                 {
@@ -515,6 +1001,8 @@ namespace NugzzMenu.Services
             if (qualityIndex < 0 || qualityIndex > 4)
                 qualityIndex = _qualityIndex;
 
+            EClothingColor clothingColor = ClothingColors[_clothingColorIndex];
+
             if (UseGameStackLogic && quantity > 1)
             {
                 for (int i = 0; i < quantity; i++)
@@ -523,7 +1011,8 @@ namespace NugzzMenu.Services
                     {
                         ItemId = itemId,
                         Quantity = 1,
-                        QualityIndex = qualityIndex
+                        QualityIndex = qualityIndex,
+                        ClothingColor = clothingColor
                     });
                 }
 
@@ -535,25 +1024,32 @@ namespace NugzzMenu.Services
             {
                 ItemId = itemId,
                 Quantity = quantity,
-                QualityIndex = qualityIndex
+                QualityIndex = qualityIndex,
+                ClothingColor = clothingColor
             });
             DebugLogService.Instance.Verbose("Queued item spawn " + quantity + "x " + itemId + " quality=" + GetQuality(qualityIndex) + " mode=" + (UseGameStackLogic ? "game" : "stackmod"));
         }
 
         public void ProcessPendingSpawns()
         {
+            RefreshCreatedMixtures();
+
             const int maxPerFrame = 4;
             int processed = 0;
 
             while (_pendingSpawns.Count > 0 && processed < maxPerFrame)
             {
                 SpawnRequest request = _pendingSpawns.Dequeue();
-                SpawnItemImmediate(request.ItemId, request.Quantity, request.QualityIndex);
+                SpawnItemImmediate(request.ItemId, request.Quantity, request.QualityIndex, request.ClothingColor);
                 processed++;
             }
         }
 
-        private void SpawnItemImmediate(string itemId, int quantity, int qualityIndex = 2)
+        private void SpawnItemImmediate(
+            string itemId,
+            int quantity,
+            int qualityIndex,
+            EClothingColor clothingColor)
         {
             if (string.IsNullOrEmpty(itemId) || quantity <= 0)
                 return;
@@ -595,7 +1091,8 @@ namespace NugzzMenu.Services
 
                 SlotSnapshot[] beforeSlots = CaptureSlotSnapshot(playerInventory);
 
-                ItemInstance instance = CreateItemInstance(itemDefinition, itemId, quantity, qualityIndex);
+                ItemInstance instance = CreateItemInstance(
+                    itemDefinition, itemId, quantity, qualityIndex, clothingColor);
                 if (instance == null)
                 {
                     UnityEngine.Debug.LogError("[Nugzz] Failed to create item instance for '" + itemId + "'");
@@ -889,6 +1386,13 @@ namespace NugzzMenu.Services
                 known = GetKnownDisplayName(NormalizeAliasKey(definitionName));
                 if (!string.IsNullOrEmpty(known))
                     return known;
+            }
+            catch { }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(definition?.Name))
+                    return definition.Name;
             }
             catch { }
 
@@ -1269,7 +1773,12 @@ namespace NugzzMenu.Services
             return cleared;
         }
 
-        private ItemInstance CreateItemInstance(ItemDefinition definition, string itemId, int quantity, int qualityIndex)
+        private ItemInstance CreateItemInstance(
+            ItemDefinition definition,
+            string itemId,
+            int quantity,
+            int qualityIndex,
+            EClothingColor clothingColor)
         {
             if (definition == null || quantity <= 0)
                 return null;
@@ -1279,13 +1788,25 @@ namespace NugzzMenu.Services
             {
                 EQuality requestedQuality = GetQuality(qualityIndex);
 
+                ClothingDefinition clothingDefinition = TryCastDefinition<ClothingDefinition>(definition);
+                if (clothingDefinition != null)
+                {
+                    EClothingColor resolvedColor = clothingDefinition.Colorable
+                        ? clothingColor
+                        : clothingDefinition.DefaultColor;
+                    instance = new ClothingInstance(clothingDefinition, quantity, resolvedColor);
+                    DebugLogService.Instance.Verbose(
+                        "Created clothing instance: " + itemId + " color=" + resolvedColor);
+                }
+
                 // Product and quality item constructors in the assembly dump accept EQuality.
                 // Build with selected quality up front instead of creating Standard defaults and
                 // trying to mutate quality afterward.
                 try
                 {
-                    instance = CreateQualityAwareInstance(definition, quantity, requestedQuality);
-                    if (instance != null)
+                    if (instance == null)
+                        instance = CreateQualityAwareInstance(definition, quantity, requestedQuality);
+                    if (instance != null && clothingDefinition == null)
                     {
                         DebugLogService.Instance.Verbose($"Created selected-quality instance: {requestedQuality} for {itemId}");
                     }
@@ -1615,6 +2136,11 @@ namespace NugzzMenu.Services
             _filteredIndices = new int[0];
             _filteredCount = 0;
             _searchText = "";
+            _createdMixtures.Clear();
+            _selectedMixtureId = "";
+            _trackedProductManager = null;
+            _trackedCreatedProductCount = -1;
+            _nextMixtureRefreshTime = 0f;
         }
     }
 }

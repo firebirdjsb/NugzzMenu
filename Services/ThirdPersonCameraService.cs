@@ -54,6 +54,9 @@ namespace NugzzMenu.Services
             PlayerCamera playerCamera = PlayerCamera.Instance;
             Player player = ManagerCacheService.Instance.LocalPlayer;
 
+            if (GameplayStateGateService.Instance.IsModControlBlocked(out reason))
+                return false;
+
             if (ManagementClipboardService.Instance.IsActive())
             {
                 reason = "clipboard";
@@ -111,6 +114,7 @@ namespace NugzzMenu.Services
             }
 
             Player player = ManagerCacheService.Instance.LocalPlayer;
+            ThirdPersonRaycastPatchController.SetInstalled(true);
             _enabled = true;
             _anglesReady = false;
             ViewModelVisibilityService.Instance.EnterThirdPerson(player);
@@ -121,6 +125,17 @@ namespace NugzzMenu.Services
         public void Maintain(bool menuOpen)
         {
             _menuOpen = menuOpen;
+
+            // Native first person needs no camera polling. Skateboard, avatar-view and
+            // vehicle transitions are handled by their event patches, while this repair
+            // helper is a no-op once its short restore window has elapsed.
+            if (!_enabled && !_overrideActive &&
+                !ViewModelVisibilityService.Instance.IsCustomMode)
+            {
+                ViewModelVisibilityService.Instance.MaintainFirstPersonRepair();
+                return;
+            }
+
             PlayerCamera playerCamera = PlayerCamera.Instance;
             Player player = ManagerCacheService.Instance.LocalPlayer;
 
@@ -307,6 +322,7 @@ namespace NugzzMenu.Services
 
         public void Disable(bool menuOpen)
         {
+            ThirdPersonRaycastPatchController.SetInstalled(false);
             _enabled = false;
             _overrideActive = false;
             _anglesReady = false;
@@ -354,6 +370,7 @@ namespace NugzzMenu.Services
 
         private void DisableForNativeCamera(bool menuOpen, bool keepPawnVisible)
         {
+            ThirdPersonRaycastPatchController.SetInstalled(false);
             _enabled = false;
             _overrideActive = false;
             _anglesReady = false;
@@ -367,6 +384,7 @@ namespace NugzzMenu.Services
 
         private void DisableForSkateboard(bool menuOpen)
         {
+            ThirdPersonRaycastPatchController.SetInstalled(false);
             _enabled = false;
             _overrideActive = false;
             _anglesReady = false;
@@ -521,7 +539,7 @@ namespace NugzzMenu.Services
 
             try
             {
-                Equippable equipped = PlayerInventory.Instance?.equippable;
+                Equippable equipped = PlayerInventory.Instance?.Equippable;
                 return equipped is Equippable_BuildableItem ||
                     equipped is Equippable_SurfaceItem;
             }
@@ -583,7 +601,7 @@ namespace NugzzMenu.Services
         {
             try
             {
-                Equippable tool = PlayerInventory.Instance?.equippable;
+                Equippable tool = PlayerInventory.Instance?.Equippable;
                 return tool is Equippable_Trimmers || tool is Equippable_Pourable;
             }
             catch { }

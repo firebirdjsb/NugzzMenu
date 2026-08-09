@@ -9,15 +9,17 @@ namespace NugzzMenu.Services
         private static readonly KeybindOverlayService _instance = new KeybindOverlayService();
         public static KeybindOverlayService Instance => _instance;
 
-        private const float RefreshInterval = 1.5f;
+        private const long RefreshIntervalMs = 1500L;
+        private const long ExceptionLogIntervalMs = 2000L;
 
         private readonly StringBuilder _builder = new StringBuilder(160);
-        private readonly GUIContent _content = new GUIContent();
         private bool _enabled = true;
         private string _menuKey = "F8";
         private string _cachedText = string.Empty;
-        private float _nextRefreshTime;
+        private long _nextRefreshAtMs;
         private GUIStyle _labelStyle;
+        private long _nextExceptionLogAtMs;
+        private bool _runtimeSupported = true;
 
         public bool Enabled => _enabled;
 
@@ -36,11 +38,34 @@ namespace NugzzMenu.Services
 
         public void Draw(bool menuOpen)
         {
-            if (menuOpen || !_enabled || ManagerCacheService.Instance.LocalPlayer == null)
+            if (!_runtimeSupported)
                 return;
 
-            Event current = Event.current;
-            if (current != null && current.type != EventType.Repaint)
+            try
+            {
+                DrawInternal(menuOpen);
+            }
+            catch (System.NotSupportedException ex)
+            {
+                _runtimeSupported = false;
+                MelonLoader.MelonLogger.Warning(
+                    "[Nugzz] Keybind overlay disabled for this session after game update: " + ex.Message);
+            }
+            catch (Exception ex)
+            {
+                long now = Environment.TickCount64;
+                if (now >= _nextExceptionLogAtMs)
+                {
+                    _nextExceptionLogAtMs = now + ExceptionLogIntervalMs;
+                    MelonLoader.MelonLogger.Warning("[Nugzz] KeybindOverlay.Draw failed: " + ex);
+                }
+            }
+        }
+
+        private void DrawInternal(bool menuOpen)
+        {
+            if (menuOpen || !_enabled || ManagerCacheService.Instance.LocalPlayer == null ||
+                GameplayStateGateService.Instance.IsModControlBlocked(out _))
                 return;
 
             string text = GetCachedText();
@@ -50,30 +75,27 @@ namespace NugzzMenu.Services
             GUISystemService gui = GUISystemService.Instance;
             EnsureStyle(gui);
 
-            float width = Mathf.Clamp(text.Length * 6f + 20f, 280f, 440f);
-            float x = Mathf.Clamp(Screen.width - width - 16f, 8f, Screen.width - width - 8f);
-            float y = Mathf.Clamp(Screen.height - 138f, 44f, Screen.height - 40f);
+            float width = Clamp(text.Length * 6f + 20f, 280f, 440f);
+            float x = Clamp(Screen.width - width - 16f, 8f, Screen.width - width - 8f);
+            float y = Clamp(Screen.height - 138f, 44f, Screen.height - 40f);
             Rect rect = new Rect(x, y, width, 24f);
 
             if (gui.NotificationTexture != null)
-                GUI.DrawTexture(rect, gui.NotificationTexture);
-            else
-                GUI.Box(rect, GUIContent.none);
+                GUIFit.Texture(rect, gui.NotificationTexture);
 
             if (gui.AccentTexture != null)
-                GUI.DrawTexture(new Rect(rect.x, rect.y, 3f, rect.height), gui.AccentTexture);
+                GUIFit.Texture(new Rect(rect.x, rect.y, 3f, rect.height), gui.AccentTexture);
 
-            _content.text = text;
-            GUI.Label(new Rect(rect.x + 8f, rect.y + 3f, rect.width - 16f, 18f), _content, _labelStyle);
+            GUI.Label(new Rect(rect.x + 8f, rect.y + 3f, rect.width - 16f, 18f), text, _labelStyle);
         }
 
         private string GetCachedText()
         {
-            float now = Time.unscaledTime;
-            if (now >= _nextRefreshTime || string.IsNullOrEmpty(_cachedText))
+            long now = Environment.TickCount64;
+            if (now >= _nextRefreshAtMs || string.IsNullOrEmpty(_cachedText))
             {
                 _cachedText = BuildText();
-                _nextRefreshTime = now + RefreshInterval;
+                _nextRefreshAtMs = now + RefreshIntervalMs;
             }
 
             return _cachedText;
@@ -84,7 +106,7 @@ namespace NugzzMenu.Services
             if (_labelStyle != null)
                 return;
 
-            _labelStyle = new GUIStyle(GUI.skin.label)
+            _labelStyle = new GUIStyle
             {
                 alignment = TextAnchor.MiddleLeft,
                 fontSize = 10,
@@ -94,6 +116,13 @@ namespace NugzzMenu.Services
             _labelStyle.normal.textColor = gui.GetColorForCategory(LabelCategory.Notif);
             if (gui.UIFont != null)
                 _labelStyle.font = gui.UIFont;
+        }
+
+        private static float Clamp(float value, float min, float max)
+        {
+            if (value < min)
+                return min;
+            return value > max ? max : value;
         }
 
         private string BuildText()

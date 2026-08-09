@@ -6,7 +6,7 @@ world and inventory utilities, multiplayer-aware vehicle features, quest and
 save recovery, performance tuning, and developer-friendly diagnostics in one
 menu.
 
-Current release: [v0.9.9R3](RELEASE_NOTES_v0.9.9R3.md)
+Current release: [v0.9.9R4](RELEASE_NOTES_v0.9.9R4.md)
 
 ## Features
 
@@ -24,27 +24,34 @@ Current release: [v0.9.9R3](RELEASE_NOTES_v0.9.9R3.md)
   scene diagnostics, and low-impact menu operation.
 - Compatibility and logging guards designed to preserve vanilla gameplay calls
   while filtering repetitive known errors.
+- Host-controlled multiplayer access for matching NugzzMenu clients, native
+  console command suggestions, per-board skateboard tuning, and interactive
+  static or physics-enabled 3D shapes.
+- Clothing color selection, remembered custom mixtures, production automation,
+  and selected-seed grow helpers.
 
 ## Latest Changes
 
-### v0.9.9R3
+### v0.9.9R4
 
-- Added a complete NPC/client Relations tab with relationship, unlock,
-  addiction, product-affinity, recommendation, and deal-offer controls.
-- Expanded the FPS tab with decorative-light budgets, reflection throttling,
-  LOD and shadow controls, on-demand scene diagnostics, and safe restore tools.
-- Added clear left-click prompts and reliable interactions for mushroom spawn,
-  substrate, spray bottles, watering, soil, seeds, additives, and harvesting.
-- Fixed spray bottles so misting a dry mushroom bed fills and synchronizes its
-  moisture while consuming bottle water.
-- Synchronized police sirens/lightbars from the vehicle's networked headlight
-  state for other Nugzz clients and cleaned up the vehicle HUD after exiting.
-- Improved trash-container detection and repetitive IL2CPP log filtering without
-  replacing the underlying vanilla gameplay methods.
-- Replaced the incompatible Unity text editor with an IL2CPP-safe search field
-  used by the Items and Relations tabs.
+- Updated NugzzMenu for the current Schedule I IL2CPP assemblies and S1API,
+  including safer GUI rendering and preserved patch targets.
+- Added host-controlled Nugzz access for matching multiplayer clients, with
+  live allow and deny controls in the Lobby tab.
+- Added native console auto-complete, interactive 3D shapes, per-skateboard
+  tuning, clothing colors, and remembered custom drug mixtures.
+- Added selected-seed auto planting plus one-click completion for meth cooks,
+  ovens, mixing stations, cauldrons, and mushroom grow cycles.
+- Added stricter pause, phone, console, TV, jukebox, casino, workstation,
+  vehicle, skateboard, and character-creation input protection.
+- Reduced repeated frame work in vehicle collision, camera, player, overlay,
+  relationship, and menu systems while keeping the gameplay tools available.
+- Reworked first-person view restoration, player scale synchronization, shape
+  interaction, vehicle HUD cleanup, and menu availability in live saves.
+- Removed the remaining legacy building patch source so vanilla placement owns
+  building behavior.
 
-Full transparent diff notes: [RELEASE_NOTES_v0.9.9R3.md](RELEASE_NOTES_v0.9.9R3.md)
+Full transparent diff notes: [RELEASE_NOTES_v0.9.9R4.md](RELEASE_NOTES_v0.9.9R4.md)
 
 Release history: [CHANGELOG.md](CHANGELOG.md)
 

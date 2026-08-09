@@ -54,7 +54,7 @@ namespace NugzzMenu.Services
                 Debug.LogError($"[Nugzz] Failed to set time speed: {ex.Message}");
             }
         }
-        public void SetTimeOfDay(int minuteOfDay)
+        public void SetTimeOfDay(int clockTime)
         {
             var lobbyService = LobbyService.Instance;
             if (lobbyService.IsInLobby() && !lobbyService.IsHost())
@@ -73,10 +73,10 @@ namespace NugzzMenu.Services
                     return;
                 }
 
-                int minuteValue = Mathf.Clamp(minuteOfDay, 0, 1439);
-                timeManager.SetTimeAndSync(minuteValue);
-                int hour = minuteValue / 60;
-                int minute = minuteValue % 60;
+                int hour = Mathf.Clamp(clockTime / 100, 0, 23);
+                int minute = Mathf.Clamp(clockTime % 100, 0, 59);
+                int timeValue = hour * 100 + minute;
+                timeManager.SetTimeAndSync(timeValue);
                 NotificationService.Instance.Status($"Time set: {hour:D2}:{minute:D2}");
                 Debug.Log($"[Nugzz] Set time to {hour:D2}:{minute:D2}");
             }

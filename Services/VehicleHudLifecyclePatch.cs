@@ -7,6 +7,26 @@ namespace NugzzMenu.Services
 {
     internal static class VehicleHudLifecycle
     {
+        private static float _nextRecoveryCheck;
+
+        internal static void Update()
+        {
+            if (Time.unscaledTime < _nextRecoveryCheck)
+                return;
+
+            _nextRecoveryCheck = Time.unscaledTime + 0.25f;
+            Player player = ManagerCacheService.Instance.LocalPlayer;
+            VehicleCanvas canvas = VehicleCanvas.Instance;
+            if (player == null || canvas == null || player.IsInVehicle || player.CurrentVehicleSeat != null)
+                return;
+
+            bool canvasVisible = canvas.Canvas != null &&
+                                 canvas.Canvas.enabled &&
+                                 canvas.Canvas.gameObject.activeInHierarchy;
+            if (canvasVisible)
+                ClearAfterLocalExit(player);
+        }
+
         internal static void ClearAfterLocalExit(Player player)
         {
             if (player == null || player != ManagerCacheService.Instance.LocalPlayer)
@@ -21,24 +41,8 @@ namespace NugzzMenu.Services
             if (canvas == null)
                 return;
 
-            if (canvas.currentVehicle != null)
-            {
-                try
-                {
-                    canvas.VehicleExited(canvas.currentVehicle, player.transform);
-                }
-                catch
-                {
-                    // The explicit state cleanup below is the fallback for a broken
-                    // or missed vanilla vehicle-exit callback.
-                }
-            }
-
-            canvas.currentVehicle = null;
             if (canvas.Canvas != null)
                 canvas.Canvas.enabled = false;
-            if (canvas.DriverPromptsContainer != null)
-                canvas.DriverPromptsContainer.SetActive(false);
         }
     }
 
@@ -51,23 +55,4 @@ namespace NugzzMenu.Services
         }
     }
 
-    [HarmonyPatch(typeof(VehicleCanvas), nameof(VehicleCanvas.Update))]
-    internal static class VehicleHudExitRecoveryPatch
-    {
-        private static void Postfix()
-        {
-            Player player = ManagerCacheService.Instance.LocalPlayer;
-            VehicleCanvas canvas = VehicleCanvas.Instance;
-            if (player == null || canvas == null || player.IsInVehicle || player.CurrentVehicleSeat != null)
-                return;
-
-            bool canvasVisible = canvas.Canvas != null &&
-                                 canvas.Canvas.enabled &&
-                                 canvas.Canvas.gameObject.activeInHierarchy;
-            bool promptsVisible = canvas.DriverPromptsContainer != null &&
-                                  canvas.DriverPromptsContainer.activeInHierarchy;
-            if (canvas.currentVehicle != null || canvasVisible || promptsVisible)
-                VehicleHudLifecycle.ClearAfterLocalExit(player);
-        }
-    }
 }

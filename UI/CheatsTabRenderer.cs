@@ -17,10 +17,10 @@ namespace NugzzMenu.UI
         public float JumpMultiplier { get; set; } = 1f;
         public float GravityMultiplier { get; set; } = 1f;
         public bool InfiniteAmmo { get; set; }
+        public bool BottomlessTrashGrabber { get; set; }
         public bool FlyEnabled { get; set; }
         public float FlySpeed { get; set; } = 20f;
         public bool DoubleSpaceFlyHotkey { get; set; } = true;
-        public bool VehicleFly { get; set; }
         public bool ThirdPerson { get; set; }
         public float CameraDistance { get; set; }
         public float CameraHeight { get; set; }
@@ -37,7 +37,7 @@ namespace NugzzMenu.UI
             Action<float> setSpeedMultiplier, Action<float> setPlayerScale, Action<float> setJumpMultiplier,
             Action<float> setGravityMultiplier,
             Action<bool> toggleFly, Action<float> setFlySpeed, Action<bool> setDoubleSpaceFlyHotkey,
-            Action<bool> setVehicleFly, Action<bool> toggleCamera,
+            Action<bool> toggleCamera,
             Action<float> setCameraDistance, Action<float> setCameraHeight, Action<float> setCameraShoulder,
             Action onSavePos, Action onLoadPos)
         {
@@ -48,7 +48,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
-            GUIFit.Panel(new Rect(0f, y, w, 228f), boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 250f), boxStyle);
             float rowY = y + 3f;
 
             DrawToggle(rowY, w, onStyle, offStyle, "God Mode", state.GodMode, value => state.GodMode = value);
@@ -61,6 +61,10 @@ namespace NugzzMenu.UI
             rowY += 22f;
 
             DrawToggle(rowY, w, onStyle, offStyle, "Never Wanted", state.NeverWanted, value => state.NeverWanted = value);
+            rowY += 22f;
+
+            DrawToggle(rowY, w, onStyle, offStyle, "Bottomless Garbage Picker",
+                state.BottomlessTrashGrabber, value => state.BottomlessTrashGrabber = value);
             rowY += 22f;
 
             DrawToggle(rowY, w, onStyle, offStyle, "Speed Boost", state.SpeedBoost, value => state.SpeedBoost = value);
@@ -82,7 +86,7 @@ namespace NugzzMenu.UI
             if (GUIFit.Button(new Rect(6f, rowY, actionWidth, 20f), "Heal", buttonStyle)) onHeal?.Invoke();
             if (GUIFit.Button(new Rect(12f + actionWidth, rowY, actionWidth, 20f), "Clear Wanted", buttonStyle)) onClearWanted?.Invoke();
 
-            y += 236f;
+            y += 258f;
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "FLY",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
@@ -90,7 +94,7 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
-            GUIFit.Panel(new Rect(0f, y, w, 96f), boxStyle);
+            GUIFit.Panel(new Rect(0f, y, w, 74f), boxStyle);
             rowY = y + 3f;
             TMPHybridService.Instance.Label(6f, rowY, w * 0.6f, 20f, "Fly (WASD+Space/Ctrl)",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
@@ -124,18 +128,12 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
             rowY += 24f;
-            DrawToggle(rowY, w, onStyle, offStyle, "Fly Vehicles While Driving", state.VehicleFly, value =>
-            {
-                state.VehicleFly = value;
-                setVehicleFly?.Invoke(value);
-            });
-            rowY += 22f;
             DrawToggle(rowY, w, onStyle, offStyle, "Double Space Fly", state.DoubleSpaceFlyHotkey, value =>
             {
                 state.DoubleSpaceFlyHotkey = value;
                 setDoubleSpaceFlyHotkey?.Invoke(value);
             });
-            y += 104f;
+            y += 82f;
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "CAMERA",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),

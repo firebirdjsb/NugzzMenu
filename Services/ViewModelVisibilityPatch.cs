@@ -9,16 +9,16 @@ namespace NugzzMenu.Services
     {
         private static void Postfix()
         {
-            ViewModelVisibilityService.Instance.EnsureFirstPersonViewmodelVisible();
+            ViewModelVisibilityService.Instance.EnsureFirstPersonState();
         }
     }
 
     [HarmonyPatch(typeof(PunchController), "Punch")]
     internal static class FirstPersonPunchVisibilityPatch
     {
-        private static void Prefix()
+        private static void Prefix(PunchController __instance)
         {
-            ViewModelVisibilityService.Instance.EnsureFirstPersonViewmodelVisible();
+            ViewModelVisibilityService.Instance.PreparePunchViewmodel(__instance);
         }
     }
 

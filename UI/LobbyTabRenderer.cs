@@ -49,6 +49,8 @@ namespace NugzzMenu.UI
                 {
                     Player player = players[i];
                     string text = PlayerLabel(player);
+                    if (LobbyService.Instance.IsHost())
+                        text += AuthoritySuffix(player);
                     if (GUIFit.Button(new Rect(4f, rowY, w - 8f, 18f), text, i == state.SelectedPlayerIndex ? onStyle : buttonStyle))
                     {
                         state.SelectedPlayerIndex = i;
@@ -64,7 +66,7 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
-                GUIFit.Panel(new Rect(0f, y, w, 72f), boxStyle);
+                GUIFit.Panel(new Rect(0f, y, w, 118f), boxStyle);
                 TMPHybridService.Instance.Label(6f, y + 4f, w - 12f, 18f, PlayerLabel(selectedPlayer),
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
@@ -80,7 +82,40 @@ namespace NugzzMenu.UI
                 {
                     tpToPlayer?.Invoke(selectedPlayer);
                 }
-                y += 76f;
+
+                if (LobbyService.Instance.IsHost())
+                {
+                    SessionAuthorityService.ClientStatus authority =
+                        SessionAuthorityService.Instance.GetClientStatus(selectedPlayer);
+                    string authorityText = selectedPlayer != null && selectedPlayer.IsLocalPlayer
+                        ? "Nugzz host build " + authority.BuildLabel + " - always allowed"
+                        : !authority.Detected
+                            ? "Nugzz: not detected"
+                            : !authority.VersionMatches
+                                ? "Nugzz: different build - access unavailable"
+                                : "Nugzz " + authority.BuildLabel + " - " +
+                                    (authority.Approved ? "ALLOWED" : "DENIED");
+                    TMPHybridService.Instance.Label(6f, y + 50f, w - 12f, 18f, authorityText,
+                        authority.Approved ? new Color(0.45f, 1f, 0.45f) : new Color(1f, 0.45f, 0.4f),
+                        GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                        GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                        GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+
+                    if (selectedPlayer != null && !selectedPlayer.IsLocalPlayer)
+                    {
+                        if (GUIFit.Button(new Rect(6f, y + 74f, actionButtonWidth, 18f),
+                            "Allow Nugzz", authority.Approved ? onStyle : buttonStyle))
+                        {
+                            SessionAuthorityService.Instance.SetClientApproval(selectedPlayer, true);
+                        }
+                        if (GUIFit.Button(new Rect(12f + actionButtonWidth, y + 74f, actionButtonWidth, 18f),
+                            "Deny Nugzz", !authority.Approved ? onStyle : buttonStyle))
+                        {
+                            SessionAuthorityService.Instance.SetClientApproval(selectedPlayer, false);
+                        }
+                    }
+                }
+                y += 122f;
             }
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "LOCAL EFFECT",
@@ -114,6 +149,17 @@ namespace NugzzMenu.UI
             }
 
             y += localBoxH + 4f;
+        }
+
+        private static string AuthoritySuffix(Player player)
+        {
+            SessionAuthorityService.ClientStatus status =
+                SessionAuthorityService.Instance.GetClientStatus(player);
+            if (!status.Detected)
+                return " | Nugzz: no";
+            if (!status.VersionMatches)
+                return " | Nugzz: mismatch";
+            return status.Approved ? " | Nugzz: allowed" : " | Nugzz: denied";
         }
 
         private static string PlayerLabel(Player player)

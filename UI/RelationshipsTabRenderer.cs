@@ -13,6 +13,19 @@ namespace NugzzMenu.UI
             DrawHeader(4f, y, w, "NPC / CLIENT RELATIONSHIPS");
             y += 20f;
             GUIFit.Panel(new Rect(0f, y, w, 66f), boxStyle);
+            float regionWidth = (w - 32f) / 7f;
+            for (int i = 0; i < 7; i++)
+            {
+                if (GUIFit.Button(new Rect(4f + i * (regionWidth + 4f), y + 5f,
+                        regionWidth, 24f), service.GetRegionFilterLabel(i), buttonStyle))
+                    service.SetRegionFilter(i);
+            }
+            if (GUIFit.Button(new Rect(4f, y + 35f, w - 8f, 24f),
+                    service.GetSelectedRegionUnlockLabel(), buttonStyle))
+                service.UnlockSelectedRegion();
+            y += 72f;
+
+            GUIFit.Panel(new Rect(0f, y, w, 66f), boxStyle);
             DrawLabel(8f, y + 7f, 58f, 18f, "Search", LabelCategory.Label);
             string search = GUIFit.TextField(new Rect(66f, y + 5f, w - 274f, 22f),
                 service.SearchText, 48, "relationships.search");

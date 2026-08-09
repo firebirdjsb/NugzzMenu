@@ -42,5 +42,15 @@ namespace NugzzMenu.Services
             Debug.LogWarning("[Nugzz:Debug] " + context + ": " + ex);
         }
 
+        public void Session(string message)
+        {
+            Debug.Log("[Nugzz:Session] " + (message ?? ""));
+        }
+
+        public void SessionWarning(string message)
+        {
+            Debug.LogWarning("[Nugzz:Session] " + (message ?? ""));
+        }
+
     }
 }

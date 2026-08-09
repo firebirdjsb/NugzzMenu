@@ -22,7 +22,6 @@ namespace NugzzMenu.Services
         private Transform _mimicCamera;
         private Vector3 _mimicCameraPosition;
         private Quaternion _mimicCameraRotation;
-        private float _fieldOfView;
 
         private CameraStateRestoreService() { }
 
@@ -50,9 +49,6 @@ namespace NugzzMenu.Services
                     _cameraLocalPosition = _cameraTransform.localPosition;
                     _cameraLocalRotation = _cameraTransform.localRotation;
                 }
-
-                if (playerCamera.Camera != null)
-                    _fieldOfView = playerCamera.Camera.fieldOfView;
 
                 CapturePlayerCameraState();
                 _captured = true;
@@ -100,13 +96,6 @@ namespace NugzzMenu.Services
                     _cameraTransform.localPosition = _cameraLocalPosition;
                     _cameraTransform.localRotation = _cameraLocalRotation;
                 }
-            }
-            catch { }
-
-            try
-            {
-                if (_captured && playerCamera?.Camera != null && _fieldOfView > 1f)
-                    playerCamera.Camera.fieldOfView = _fieldOfView;
             }
             catch { }
 

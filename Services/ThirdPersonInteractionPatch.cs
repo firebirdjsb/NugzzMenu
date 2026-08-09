@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using HarmonyLib;
 using Il2CppScheduleOne.AvatarFramework;
 using Il2CppScheduleOne.Combat;
@@ -8,10 +9,10 @@ using Il2CppScheduleOne.NPCs.Schedules;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.UI.Management;
 using UnityEngine;
+using ScheduleAvatar = Il2CppScheduleOne.AvatarFramework.Avatar;
 
 namespace NugzzMenu.Services
 {
-    [HarmonyPatch(typeof(PlayerCamera), nameof(PlayerCamera.LookRaycast))]
     internal static class ThirdPersonLookRaycastPatch
     {
         private static bool Prefix(float range, ref RaycastHit hit, LayerMask layerMask, bool includeTriggers, float radius, ref bool __result)
@@ -39,7 +40,6 @@ namespace NugzzMenu.Services
 
     }
 
-    [HarmonyPatch(typeof(PlayerCamera), nameof(PlayerCamera.LookSpherecast))]
     internal static class ThirdPersonLookSpherecastPatch
     {
         private static bool Prefix(float range, float radius, ref RaycastHit hit, LayerMask layerMask, ref bool __result)
@@ -65,6 +65,59 @@ namespace NugzzMenu.Services
             }
         }
 
+    }
+
+internal static class ThirdPersonRaycastPatchController
+    {
+        private const string HarmonyId = "com.xunfairx.nugzzmenu.thirdperson-raycasts";
+        private static HarmonyLib.Harmony _harmony;
+
+        internal static void SetInstalled(bool installed)
+        {
+            if (installed == (_harmony != null))
+                return;
+
+            try
+            {
+                if (!installed)
+                {
+                    _harmony.UnpatchSelf();
+                    _harmony = null;
+                    return;
+                }
+
+                MethodBase raycast = AccessTools.Method(
+                    typeof(PlayerCamera), nameof(PlayerCamera.LookRaycast));
+                MethodBase spherecast = AccessTools.Method(
+                    typeof(PlayerCamera), nameof(PlayerCamera.LookSpherecast));
+                MethodInfo raycastPrefix = AccessTools.Method(
+                    typeof(ThirdPersonLookRaycastPatch), "Prefix");
+                MethodInfo spherecastPrefix = AccessTools.Method(
+                    typeof(ThirdPersonLookSpherecastPatch), "Prefix");
+                if (raycast == null || spherecast == null ||
+                    raycastPrefix == null || spherecastPrefix == null)
+                {
+                    return;
+                }
+
+                _harmony = new HarmonyLib.Harmony(HarmonyId);
+                _harmony.Patch(raycast, prefix: new HarmonyMethod(raycastPrefix));
+                _harmony.Patch(spherecast, prefix: new HarmonyMethod(spherecastPrefix));
+            }
+            catch (System.NotSupportedException ex)
+            {
+                DebugLogService.Instance.Verbose("PlayerCamera.LookRaycast/LookSpherecast patch skipped (method stripped): " + ex.Message);
+                try { _harmony?.UnpatchSelf(); } catch { }
+                _harmony = null;
+            }
+            catch (Exception ex)
+            {
+                try { _harmony?.UnpatchSelf(); } catch { }
+                _harmony = null;
+                DebugLogService.Instance.VerboseWarning(
+                    "Third-person raycast patch switch failed: " + ex.Message);
+            }
+        }
     }
 
     [HarmonyPatch(typeof(PunchController), "ExecuteHit")]
@@ -125,7 +178,7 @@ namespace NugzzMenu.Services
         }
     }
 
-    [HarmonyPatch(typeof(Avatar), nameof(Avatar.ApplyAccessorySettings))]
+    [HarmonyPatch(typeof(ScheduleAvatar), nameof(ScheduleAvatar.ApplyAccessorySettings))]
     internal static class AvatarApplyAccessorySettingsSafetyPatch
     {
         private static System.Exception Finalizer(System.Exception __exception)
@@ -212,16 +265,6 @@ namespace NugzzMenu.Services
         }
     }
 
-    [HarmonyPatch(typeof(PlayerCamera), "LateUpdate")]
-    internal static class ThirdPersonCameraLateUpdatePatch
-    {
-        private static void Postfix()
-        {
-            if (CameraService.Instance.ThirdPersonEnabled)
-                CameraService.Instance.ApplyThirdPersonCameraLate();
-        }
-    }
-
     [HarmonyPatch(typeof(ManagementWorldspaceCanvas), "Update")]
     internal static class ManagementCanvasVanillaUpdateSafetyPatch
     {
@@ -246,18 +289,6 @@ namespace NugzzMenu.Services
         private static bool Prefix(ObjectSelector __instance)
         {
             if (ManagementClipboardService.Instance.RunObjectSelectorUpdate(__instance))
-                return false;
-
-            return true;
-        }
-    }
-
-    [HarmonyPatch(typeof(NPCSelector), "Update")]
-    internal static class ManagementNpcSelectorFallbackPatch
-    {
-        private static bool Prefix(NPCSelector __instance)
-        {
-            if (ManagementClipboardService.Instance.RunNpcSelectorUpdate(__instance))
                 return false;
 
             return true;

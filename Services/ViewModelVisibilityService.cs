@@ -1,4 +1,4 @@
-using Il2CppScheduleOne.DevUtilities;
+using Il2CppScheduleOne.Combat;
 using Il2CppScheduleOne.PlayerScripts;
 using UnityEngine;
 
@@ -6,7 +6,8 @@ namespace NugzzMenu.Services
 {
     public sealed class ViewModelVisibilityService
     {
-        private static readonly ViewModelVisibilityService _instance = new ViewModelVisibilityService();
+        private static readonly ViewModelVisibilityService _instance =
+            new ViewModelVisibilityService();
         public static ViewModelVisibilityService Instance => _instance;
 
         private enum VisibilityMode
@@ -30,13 +31,14 @@ namespace NugzzMenu.Services
 
         public void EnterThirdPerson(Player player)
         {
-            if (_mode != VisibilityMode.ThirdPerson ||
-                _lastPawnPlayer != player ||
-                _lastPawnVisible != true)
+            bool transition = _mode != VisibilityMode.ThirdPerson;
+            _mode = VisibilityMode.ThirdPerson;
+            _firstPersonRepairUntilFrame = 0;
+
+            if (transition)
             {
                 SetPawnVisible(player, true, true);
                 SetViewmodelVisible(false);
-                _mode = VisibilityMode.ThirdPerson;
                 _nextHiddenRefreshFrame = Time.frameCount + 12;
                 return;
             }
@@ -46,54 +48,46 @@ namespace NugzzMenu.Services
 
         public void EnterNativeAvatarView(Player player)
         {
-            if (_mode == VisibilityMode.NativeAvatarView &&
-                _lastPawnPlayer == player &&
-                _lastPawnVisible == true)
+            if (_mode == VisibilityMode.NativeAvatarView)
                 return;
 
+            _mode = VisibilityMode.NativeAvatarView;
+            _firstPersonRepairUntilFrame = 0;
             SetPawnVisible(player, true, true);
             SetViewmodelVisible(false);
-            _mode = VisibilityMode.NativeAvatarView;
         }
 
         public void EnterNativeSkateboard(Player player)
         {
-            if (_mode == VisibilityMode.NativeSkateboard &&
-                _lastPawnPlayer == player &&
-                _lastPawnVisible == true)
-                return;
-
-            SetPawnVisible(player, true, true);
-            SetViewmodelVisible(false);
             _mode = VisibilityMode.NativeSkateboard;
+            _firstPersonRepairUntilFrame = 0;
+
+            // Mounting owns its camera, pawn, and viewmodel state. Nugzz only
+            // resumes control after vanilla has completed the dismount.
+            _lastPawnPlayer = null;
+            _lastPawnVisible = null;
         }
 
         public void HidePawnForVehicle(Player player)
         {
-            if (_mode == VisibilityMode.HiddenInVehicle &&
-                _lastPawnPlayer == player &&
-                _lastPawnVisible == false)
-                return;
-
-            SetPawnVisible(player, false, true);
-            SetViewmodelVisible(true);
             _mode = VisibilityMode.HiddenInVehicle;
+            _firstPersonRepairUntilFrame = 0;
+            SetPawnVisible(player, false, true);
+            SetViewmodelVisible(false);
         }
 
         public void RestoreFirstPerson(Player player)
         {
-            bool startRepairWindow = _mode != VisibilityMode.VanillaFirstPerson ||
-                _lastPawnPlayer != player ||
-                _lastPawnVisible != false;
-            if (!startRepairWindow && Time.frameCount > _firstPersonRepairUntilFrame)
-                return;
-
-            SetPawnVisible(player, false, true);
-            SetViewmodelVisible(true);
+            bool transition = _mode != VisibilityMode.VanillaFirstPerson;
             _mode = VisibilityMode.VanillaFirstPerson;
 
-            if (startRepairWindow)
-                _firstPersonRepairUntilFrame = Time.frameCount + 30;
+            if (transition)
+            {
+                SetPawnVisible(player, false, true);
+                _firstPersonRepairUntilFrame = Time.frameCount + 2;
+            }
+
+            SetViewmodelVisible(true);
         }
 
         public void ReleaseToVanilla(Player player)
@@ -101,10 +95,27 @@ namespace NugzzMenu.Services
             RestoreFirstPerson(player);
         }
 
+        public void EnsureFirstPersonState()
+        {
+            if (_mode != VisibilityMode.VanillaFirstPerson)
+                return;
+
+            SetPawnVisible(ManagerCacheService.Instance.LocalPlayer, false, true);
+            SetViewmodelVisible(true);
+        }
+
         public void EnsureFirstPersonViewmodelVisible()
         {
-            if (_mode == VisibilityMode.VanillaFirstPerson)
-                SetViewmodelVisible(true);
+            EnsureFirstPersonState();
+        }
+
+        public void PreparePunchViewmodel(PunchController punchController)
+        {
+            if (_mode != VisibilityMode.VanillaFirstPerson)
+                return;
+
+            // PunchController owns the bare-hands animator and offsets.
+            SetViewmodelVisible(true);
         }
 
         public void MaintainFirstPersonRepair()
@@ -113,18 +124,16 @@ namespace NugzzMenu.Services
                 Time.frameCount > _firstPersonRepairUntilFrame)
                 return;
 
-            SetPawnVisible(ManagerCacheService.Instance.LocalPlayer, false, true);
             SetViewmodelVisible(true);
         }
 
         private void RefreshHiddenViewmodel()
         {
-            int frame = Time.frameCount;
-            if (frame < _nextHiddenRefreshFrame)
+            if (Time.frameCount < _nextHiddenRefreshFrame)
                 return;
 
-            _nextHiddenRefreshFrame = frame + 12;
             SetViewmodelVisible(false);
+            _nextHiddenRefreshFrame = Time.frameCount + 12;
         }
 
         private static void SetViewmodelVisible(bool visible)
@@ -134,14 +143,6 @@ namespace NugzzMenu.Services
                 PlayerInventory inventory = PlayerInventory.Instance;
                 if (inventory != null)
                     inventory.SetViewmodelVisible(visible);
-            }
-            catch { }
-
-            try
-            {
-                ViewmodelAvatar viewmodelAvatar = Singleton<ViewmodelAvatar>.Instance;
-                if (viewmodelAvatar != null)
-                    viewmodelAvatar.SetVisibility(visible);
             }
             catch { }
         }
@@ -156,13 +157,6 @@ namespace NugzzMenu.Services
 
             try { player.SetThirdPersonMeshesVisibility(visible); } catch { }
             try { player.SetVisibleToLocalPlayer(visible); } catch { }
-            try
-            {
-                if (player.Avatar != null)
-                    player.Avatar.SetVisible(visible);
-            }
-            catch { }
-
             _lastPawnPlayer = player;
             _lastPawnVisible = visible;
         }

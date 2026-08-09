@@ -694,15 +694,15 @@ namespace NugzzMenu.Services
 
             try
             {
-                if (!string.IsNullOrEmpty(npc.fullName))
-                    return npc.fullName;
+                if (!string.IsNullOrEmpty(npc.FullName))
+                    return npc.FullName;
             }
             catch { }
 
             try
             {
                 string first = npc.FirstName ?? string.Empty;
-                string last = npc.hasLastName ? npc.LastName ?? string.Empty : string.Empty;
+                string last = npc.LastName ?? string.Empty;
                 string full = (first + " " + last).Trim();
                 if (!string.IsNullOrEmpty(full))
                     return full;

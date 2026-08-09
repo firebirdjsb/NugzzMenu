@@ -2,7 +2,7 @@ using System;
 using System.Reflection;
 using Il2CppScheduleOne.Audio;
 using Il2CppScheduleOne.Money;
-using Il2CppScheduleOne.UI.ATM;
+using Il2CppScheduleOne.UI;
 
 namespace NugzzMenu.Services
 {

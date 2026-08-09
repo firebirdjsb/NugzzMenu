@@ -56,12 +56,19 @@ namespace NugzzMenu.Services
 
         public void Update(bool menuOpen)
         {
-            LandVehicle vehicle = GetLocalDrivenVehicle();
-            _blockCameraInput = menuOpen && vehicle != null;
-            if (vehicle != null)
-                ThirdPersonCameraService.Instance.ForceDisableForVehicle(menuOpen);
+            if (!menuOpen)
+            {
+                _blockCameraInput = false;
+                RestoreVehicleControls();
+                return;
+            }
 
-            if (menuOpen && vehicle != null)
+            LandVehicle vehicle = GetLocalDrivenVehicle();
+            _blockCameraInput = vehicle != null;
+            if (vehicle != null)
+                ThirdPersonCameraService.Instance.ForceDisableForVehicle(true);
+
+            if (vehicle != null)
             {
                 CaptureAndNeutralizeVehicleControls(vehicle);
                 return;

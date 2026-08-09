@@ -16,20 +16,14 @@ namespace NugzzMenu.Services
         private static readonly CameraService _instance = new CameraService();
         public static CameraService Instance => _instance;
 
-        private bool _enabled;
+        // Retained only for unreachable legacy helpers; the active camera path is
+        // owned by ThirdPersonCameraService and never writes these values.
+        private bool _enabled = false;
         private bool? _thirdPersonBodyVisible;
         private bool _skateboardVisibilityForced;
         private bool _vehicleVisibilityForced;
         private bool _viewmodelHiddenForExternalView;
-        private bool _anglesReady;
         private bool _overrideActive;
-        private bool _menuOpen;
-        private int _lastInputFrame = -1;
-        private float _yaw;
-        private float _pitch;
-        private float _distance = 1.90f;
-        private float _height = 0.80f;
-        private float _shoulderOffset = 0.20f;
         private float _firstPersonRestoreUntil;
         private int _nativeToolRaycastFrame = -1;
         private bool _nativeToolRaycastActive;
@@ -54,151 +48,22 @@ namespace NugzzMenu.Services
 
         public void ToggleThirdPerson(bool enabled, bool menuOpen = false)
         {
-            _enabled = enabled;
-            _menuOpen = menuOpen;
             ThirdPersonCameraService.Instance.Toggle(enabled, menuOpen);
         }
 
         public void MaintainThirdPersonState(bool menuOpen = false)
         {
-            _enabled = ThirdPersonCameraService.Instance.Enabled;
-            _menuOpen = menuOpen;
             ThirdPersonCameraService.Instance.Maintain(menuOpen);
         }
 
         public void ApplyThirdPersonCamera(bool menuOpen = false)
         {
-            _enabled = ThirdPersonCameraService.Instance.Enabled;
-            _menuOpen = menuOpen;
             ThirdPersonCameraService.Instance.Apply(menuOpen);
         }
 
         public void ApplyThirdPersonCameraLate()
         {
-            _enabled = ThirdPersonCameraService.Instance.Enabled;
             ThirdPersonCameraService.Instance.ApplyLate();
-        }
-
-        private void ApplyThirdPersonCameraInternal()
-        {
-            if (!_enabled)
-                return;
-
-            try
-            {
-                if (ManagementClipboardService.Instance.IsActive())
-                {
-                    ReleaseCameraForManagementClipboard();
-                    return;
-                }
-
-                if (IsNativeBuildRaycastActive())
-                {
-                    ReleaseCameraForNativeBuildable();
-                    return;
-                }
-
-                PlayerCamera playerCamera = PlayerCamera.Instance;
-                var player = ManagerCacheService.Instance.LocalPlayer;
-                if (playerCamera == null || player == null)
-                    return;
-
-                if (IsNativeAvatarView(playerCamera) || player.IsInVehicle)
-                {
-                    if (_overrideActive)
-                        StopCustomOverride(_menuOpen);
-                    if (IsNativeAvatarView(playerCamera))
-                        ForceThirdPersonVisuals(true);
-                    else
-                        MaintainThirdPersonVehicleVisibility();
-                    return;
-                }
-
-                Camera camera = playerCamera.Camera != null ? playerCamera.Camera : Camera.main;
-                if (camera == null)
-                    return;
-
-                Transform cameraTransform = camera.transform;
-                if (!_anglesReady)
-                {
-                    Vector3 angles = cameraTransform.rotation.eulerAngles;
-                    _yaw = player.transform.rotation.eulerAngles.y;
-                    _pitch = NormalizePitch(angles.x);
-                    _anglesReady = true;
-                }
-
-                if (!_menuOpen && !InputLockService.Instance.IsLocked && _lastInputFrame != Time.frameCount)
-                {
-                    _yaw += Input.GetAxisRaw("Mouse X") * 1.6f;
-                    _pitch = Mathf.Clamp(_pitch - Input.GetAxisRaw("Mouse Y") * 1.3f, -35f, 55f);
-                    _lastInputFrame = Time.frameCount;
-                }
-
-                Quaternion cameraRotation = Quaternion.Euler(_pitch, _yaw, 0f);
-                Quaternion yawRotation = Quaternion.Euler(0f, _yaw, 0f);
-                PlayerMovement movement = PlayerMovement.Instance;
-                if (movement != null)
-                    movement.SetPlayerRotation(yawRotation);
-                else
-                    player.transform.rotation = yawRotation;
-
-                Vector3 pivot = player.transform.position + Vector3.up * _height;
-                Vector3 desired = pivot -
-                    (cameraRotation * Vector3.forward * _distance) +
-                    (yawRotation * Vector3.right * _shoulderOffset);
-
-                Vector3 offset = desired - pivot;
-                float length = offset.magnitude;
-                if (length > 0.01f)
-                {
-                    RaycastHit[] hits = Physics.SphereCastAll(
-                        pivot, 0.18f, offset.normalized, length, -5, QueryTriggerInteraction.Ignore);
-                    float nearest = length;
-                    for (int i = 0; i < hits.Length; i++)
-                    {
-                        RaycastHit candidate = hits[i];
-                        if (candidate.collider == null || candidate.distance < 0.6f)
-                            continue;
-                        if (IsLocalPlayerCollider(candidate.collider, player) ||
-                            IsLocalViewmodelOrEquippedCollider(candidate.collider))
-                            continue;
-                        if (candidate.distance < nearest)
-                            nearest = candidate.distance;
-                    }
-
-                    if (nearest < length)
-                        desired = pivot + offset.normalized * Mathf.Max(0.75f, nearest - 0.15f);
-                }
-
-                if (!playerCamera.transformOverriden)
-                    playerCamera.OverrideTransform(desired, cameraRotation, 0f, false);
-
-                _overrideActive = true;
-                playerCamera.SetCanLook(false);
-                if (playerCamera.CameraContainer != null)
-                {
-                    playerCamera.CameraContainer.position = desired;
-                    playerCamera.CameraContainer.rotation = cameraRotation;
-                }
-                cameraTransform.position = desired;
-                cameraTransform.rotation = cameraRotation;
-                try
-                {
-                    player.CameraPosition = pivot;
-                    player.CameraRotation = cameraRotation;
-                    if (player.MimicCamera != null)
-                    {
-                        player.MimicCamera.position = pivot;
-                        player.MimicCamera.rotation = cameraRotation;
-                    }
-                }
-                catch { }
-                ForceThirdPersonVisuals(true);
-            }
-            catch (Exception ex)
-            {
-                DebugLogService.Instance.VerboseException("Third-person camera update failed", ex);
-            }
         }
 
         public bool TryThirdPersonInteractionRaycast(float range, LayerMask layerMask, bool includeTriggers, float radius, out RaycastHit hit)
@@ -520,7 +385,6 @@ namespace NugzzMenu.Services
             catch { }
 
             _overrideActive = false;
-            _anglesReady = false;
         }
 
         private void ReleaseCameraForManagementClipboard()

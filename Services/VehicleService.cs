@@ -46,6 +46,7 @@ namespace NugzzMenu.Services
         private string[] _vehicleCodes = new string[0];
         private string[] _vehicleNames = new string[0];
         private bool[] _vehicleRisky = new bool[0];
+        private bool[] _vehicleWarnings = new bool[0];
         private string[] _vehicleSources = new string[0];
         private string[] _vehicleCategories = new string[0];
         private LandVehicle[] _vehiclePrefabs = new LandVehicle[0];
@@ -56,6 +57,8 @@ namespace NugzzMenu.Services
         private int _selectedIndex = 0;
         private readonly List<VisualRepairRequest> _visualRepairs = new List<VisualRepairRequest>();
         private bool _benzieManorAccessEnabled;
+        private bool _benzieManorAccessApplied;
+        private Manor _cachedBenzieManor;
         private float _nextVehicleCacheRetryTime;
         private bool _reportedMissingVehicleManager;
         private bool _reportedPoliceSirenFailure;
@@ -64,7 +67,7 @@ namespace NugzzMenu.Services
         private readonly Dictionary<string, VehicleTuneBaseline> _vehicleTuneBaselines = new Dictionary<string, VehicleTuneBaseline>();
         private LandVehicle _cachedDrivenVehicle;
         private float _nextDrivenVehicleLookupTime;
-        private float _nextVehicleTuneMaintenanceTime;
+        private int _lastDrivenTuneVehicleId;
         private const string NetworkTuneVariable = "Nugzz.VehicleTune";
         private const float NetworkTuneBroadcastInterval = 0.2f;
         private string _lastNetworkTunePayload = "";
@@ -239,6 +242,7 @@ namespace NugzzMenu.Services
 
                 // Sort vehicles by name
                 SortVehicles();
+                CacheVehicleWarnings();
 
                 _isCached = true;
                 _reportedMissingVehicleManager = false;
@@ -252,14 +256,7 @@ namespace NugzzMenu.Services
 
         public void Update()
         {
-            if (_vehicleTunes.Count > 0 && Time.unscaledTime >= _nextVehicleTuneMaintenanceTime)
-            {
-                _nextVehicleTuneMaintenanceTime = Time.unscaledTime + 1.5f;
-                ApplyVehicleTunes();
-            }
-
-            if (_benzieManorAccessEnabled)
-                EnsureBenzieManorAccess(false);
+            MaintainDrivenVehicleTune();
 
             for (int i = _visualRepairs.Count - 1; i >= 0; i--)
             {
@@ -691,6 +688,7 @@ namespace NugzzMenu.Services
             _vehicleCodes = new string[0];
             _vehicleNames = new string[0];
             _vehicleRisky = new bool[0];
+            _vehicleWarnings = new bool[0];
             _vehicleSources = new string[0];
             _vehicleCategories = new string[0];
             _vehiclePrefabs = new LandVehicle[0];
@@ -699,6 +697,8 @@ namespace NugzzMenu.Services
             _selectedIndex = 0;
             _nextVehicleCacheRetryTime = 0f;
             _reportedMissingVehicleManager = false;
+            _benzieManorAccessApplied = false;
+            _cachedBenzieManor = null;
         }
 
         /// <summary>
@@ -769,7 +769,8 @@ namespace NugzzMenu.Services
 
         public bool ShouldWarnForVehicleAt(int index)
         {
-            return IsVehicleRiskyAt(index) && !IsVehiclePoliceAt(index);
+            return index >= 0 && index < _vehicleCount && index < _vehicleWarnings.Length &&
+                _vehicleWarnings[index];
         }
 
         public string GetVehicleSourceAt(int index)
@@ -1362,48 +1363,30 @@ namespace NugzzMenu.Services
                 return null;
             }
 
-            LandVehicle[] originalPrefabs = null;
-            bool narrowedPrefabs = false;
-            try
-            {
-                LandVehicle stationPrefab = SelectStationPolicePrefab(station, vehicleName, vehicleCode);
-                int stationPrefabCount = 0;
-                try { stationPrefabCount = station.PoliceVehiclePrefabs?.Length ?? 0; } catch { }
-
-                if (stationPrefab != null)
-                {
-                    originalPrefabs = station.PoliceVehiclePrefabs;
-                    station.PoliceVehiclePrefabs = new[] { stationPrefab };
-                    narrowedPrefabs = true;
-                    UnityEngine.Debug.Log(
-                        "[Nugzz] Vehicle spawn #" + attemptId +
-                        " police station prefab pick: selected='" + SafeVehicleName(stationPrefab) +
-                        "' code='" + SafeVehicleCode(stationPrefab) +
-                        "' stationPrefabs=" + stationPrefabCount);
-                }
-                else
-                {
-                    UnityEngine.Debug.Log(
-                        "[Nugzz] Vehicle spawn #" + attemptId +
-                        " police station prefab pick: using vanilla default selection, stationPrefabs=" +
-                        stationPrefabCount);
-                }
-            }
-            catch { }
-
             try
             {
                 UnityEngine.Debug.LogWarning(
                     "[Nugzz] Vehicle spawn #" + attemptId +
-                    " spawning police vehicle through PoliceStation.CreateVehicle: '" +
+                    " spawning police vehicle through PoliceStation deployment: '" +
                     cleanName + "' code='" + vehicleCode + "'");
 
-                LandVehicle vehicle = station.CreateVehicle();
+                LandVehicle vehicle = null;
+                Transform deploymentPoint = station.SpawnPoint;
+                if (deploymentPoint == null && station.VehicleSpawnPoints != null &&
+                    station.VehicleSpawnPoints.Length > 0)
+                {
+                    deploymentPoint = station.VehicleSpawnPoints[0];
+                }
+
+                bool deployed = deploymentPoint != null &&
+                    station.TryDeployVehicle(out vehicle, deploymentPoint);
+                if (!deployed || vehicle == null)
+                    vehicle = station.DeployVehicle();
                 if (vehicle == null)
                 {
                     UnityEngine.Debug.LogWarning(
                         "[Nugzz] Vehicle spawn #" + attemptId +
-                        " PoliceStation.CreateVehicle returned null; falling back to custom prefab spawn");
+                        " PoliceStation deployment returned null; falling back to custom prefab spawn");
                     return null;
                 }
 
@@ -1427,72 +1410,6 @@ namespace NugzzMenu.Services
                 UnityEngine.Debug.LogError(
                     "[Nugzz] Vehicle spawn #" + attemptId +
                     " police station spawn failed: " + ex);
-                return null;
-            }
-            finally
-            {
-                if (narrowedPrefabs)
-                {
-                    try { station.PoliceVehiclePrefabs = originalPrefabs; } catch { }
-                }
-            }
-        }
-
-        private LandVehicle SelectStationPolicePrefab(PoliceStation station, string requestedName, string requestedCode)
-        {
-            try
-            {
-                LandVehicle[] prefabs = station?.PoliceVehiclePrefabs;
-                if (prefabs == null || prefabs.Length == 0)
-                    return null;
-
-                string wanted = ((requestedName ?? "") + " " + (requestedCode ?? "")).ToLowerInvariant();
-                bool wantsSuv = wanted.Contains("suv") || wanted.Contains("truck") || wanted.Contains("van");
-                bool wantsCar = wanted.Contains("car") || wanted.Contains("sedan") || wanted.Contains("cruiser");
-
-                LandVehicle best = null;
-                int bestScore = int.MinValue;
-                for (int i = 0; i < prefabs.Length; i++)
-                {
-                    LandVehicle prefab = prefabs[i];
-                    if (prefab == null)
-                        continue;
-
-                    string code = SafeVehicleCode(prefab);
-                    string name = CleanVehicleName(SafeVehicleName(prefab), code);
-                    string text = (name + " " + code).ToLowerInvariant();
-
-                    int score = 0;
-                    if (!string.IsNullOrEmpty(requestedCode) &&
-                        string.Equals(code, requestedCode, StringComparison.OrdinalIgnoreCase))
-                    {
-                        score += 1000;
-                    }
-
-                    if (!string.IsNullOrEmpty(requestedName) &&
-                        text.Contains(requestedName.ToLowerInvariant()))
-                    {
-                        score += 200;
-                    }
-
-                    if (wantsSuv && (text.Contains("suv") || text.Contains("truck") || text.Contains("van")))
-                        score += 100;
-                    if (wantsCar && (text.Contains("car") || text.Contains("sedan") || text.Contains("cruiser")))
-                        score += 80;
-                    if (text.Contains("police") || text.Contains("sheriff") || text.Contains("patrol"))
-                        score += 20;
-
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        best = prefab;
-                    }
-                }
-
-                return bestScore > 0 ? best : null;
-            }
-            catch
-            {
                 return null;
             }
         }
@@ -1699,63 +1616,16 @@ namespace NugzzMenu.Services
         {
             try
             {
-                var manager = ManagerCacheService.Instance.VehicleManager ?? FindObjectOfType<VehicleManager>();
-                var vehicles = manager?.AllVehicles;
-                if (vehicles != null)
-                {
-                    for (int i = 0; i < vehicles.Count; i++)
-                    {
-                        LandVehicle vehicle = vehicles[i];
-                        if (vehicle == null)
-                            continue;
-
-                        try
-                        {
-                            if (vehicle.LocalPlayerIsDriver)
-                                return vehicle;
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
-
-            try
-            {
-                LandVehicle[] vehicles = FindObjectsOfType<LandVehicle>(true);
-                if (vehicles != null)
-                {
-                    for (int i = 0; i < vehicles.Length; i++)
-                    {
-                        LandVehicle vehicle = vehicles[i];
-                        if (vehicle == null)
-                            continue;
-
-                        try
-                        {
-                            if (vehicle.LocalPlayerIsDriver)
-                                return vehicle;
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
-
-            try
-            {
-                var player = ManagerCacheService.Instance.LocalPlayer;
-                var seat = player?.CurrentVehicleSeat;
+                Player player = ManagerCacheService.Instance.LocalPlayer;
+                VehicleSeat seat = player?.CurrentVehicleSeat;
                 if (seat == null || !seat.isDriverSeat)
                     return null;
 
                 return seat.GetComponentInParent<LandVehicle>(true);
             }
-            catch (Exception ex)
-            {
-                LogPoliceSirenFailureOnce("Failed to read current vehicle for police siren: " + ex.Message);
-                return null;
-            }
+            catch { }
+
+            return null;
         }
 
         private LandVehicle GetDrivenTunableVehicle()
@@ -1770,7 +1640,7 @@ namespace NugzzMenu.Services
             if (!IsDrivenTunableVehicleValid(_cachedDrivenVehicle))
                 _cachedDrivenVehicle = null;
 
-            _nextDrivenVehicleLookupTime = Time.unscaledTime + 0.15f;
+            _nextDrivenVehicleLookupTime = Time.unscaledTime + 0.5f;
             return _cachedDrivenVehicle;
         }
 
@@ -1870,37 +1740,6 @@ namespace NugzzMenu.Services
                 tune.HeadlightBlue = Mathf.Clamp01(lightBaseline.Color.b);
                 return;
             }
-        }
-
-        private void ApplyVehicleTunes()
-        {
-            if (_vehicleTunes.Count == 0)
-                return;
-
-            LandVehicle driven = GetDrivenTunableVehicle();
-            if (driven != null)
-                ApplyVehicleTune(driven, GetOrCreateVehicleTune(driven));
-
-            try
-            {
-                var manager = ManagerCacheService.Instance.VehicleManager ?? FindObjectOfType<VehicleManager>();
-                var vehicles = manager?.AllVehicles;
-                if (vehicles == null)
-                    return;
-
-                for (int i = 0; i < vehicles.Count; i++)
-                {
-                    LandVehicle vehicle = vehicles[i];
-                    if (vehicle == null || vehicle == driven)
-                        continue;
-
-                    string key = GetVehicleTuneKey(vehicle);
-                    VehicleTuneSettings tune;
-                    if (!string.IsNullOrEmpty(key) && _vehicleTunes.TryGetValue(key, out tune))
-                        ApplyVehicleTune(vehicle, tune);
-                }
-            }
-            catch { }
         }
 
         private void ApplyVehicleTune(LandVehicle vehicle, VehicleTuneSettings tune)
@@ -2813,6 +2652,12 @@ namespace NugzzMenu.Services
                 EnsureLocalRiskyVehicleVisible(vehicle, position, rotation);
                 VehicleCollisionService.Instance.ApplyVehicle(vehicle);
                 QueueLocalRiskyVehicleVisualRepair(vehicle);
+                try
+                {
+                    PoliceSirenSyncPatch.Apply(
+                        vehicle.GetComponentInChildren<VehicleLights>(true), true);
+                }
+                catch { }
 
                 UnityEngine.Debug.Log(
                     "[Nugzz] Vehicle spawn #" + attemptId +
@@ -3604,6 +3449,9 @@ namespace NugzzMenu.Services
                     return false;
                 }
 
+                if (_benzieManorAccessApplied && IsBenzieManorReady(manor))
+                    return true;
+
                 try { manor.gameObject.SetActive(true); } catch { }
                 try { manor.SetContentCulled(false); } catch { }
 
@@ -3629,6 +3477,8 @@ namespace NugzzMenu.Services
                 catch { }
 
                 TryRepairManorVisuals(manor);
+                _cachedBenzieManor = manor;
+                _benzieManorAccessApplied = true;
                 return true;
             }
             catch (Exception ex)
@@ -3642,11 +3492,14 @@ namespace NugzzMenu.Services
 
         private Manor FindBenzieManor()
         {
+            if (_cachedBenzieManor != null)
+                return _cachedBenzieManor;
+
             try
             {
                 Manor manor = FindObjectOfType<Manor>(true);
                 if (manor != null)
-                    return manor;
+                    return _cachedBenzieManor = manor;
             }
             catch { }
 
@@ -3659,7 +3512,7 @@ namespace NugzzMenu.Services
                     {
                         Manor manor = properties[i]?.TryCast<Manor>();
                         if (manor != null)
-                            return manor;
+                            return _cachedBenzieManor = manor;
                     }
                 }
             }
@@ -3669,11 +3522,50 @@ namespace NugzzMenu.Services
             {
                 var manors = Resources.FindObjectsOfTypeAll<Manor>();
                 if (manors != null && manors.Length > 0)
-                    return manors[0];
+                    return _cachedBenzieManor = manors[0];
             }
             catch { }
 
             return null;
+        }
+
+        private void MaintainDrivenVehicleTune()
+        {
+            if (_vehicleTunes.Count == 0)
+                return;
+
+            LandVehicle driven = GetDrivenTunableVehicle();
+            int vehicleId = driven != null ? driven.GetInstanceID() : 0;
+            if (vehicleId == _lastDrivenTuneVehicleId)
+                return;
+
+            _lastDrivenTuneVehicleId = vehicleId;
+            if (driven == null)
+                return;
+
+            string key = GetVehicleTuneKey(driven);
+            if (!string.IsNullOrEmpty(key) &&
+                _vehicleTunes.TryGetValue(key, out VehicleTuneSettings tune))
+            {
+                ApplyVehicleTune(driven, tune);
+            }
+        }
+
+        private static bool IsBenzieManorReady(Manor manor)
+        {
+            if (manor == null)
+                return false;
+
+            try
+            {
+                return manor.IsOwned &&
+                    manor.ManorState == Manor.EManorState.Rebuilt &&
+                    manor.TunnelDug;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void TryRepairManorVisuals(Manor manor)
@@ -4111,6 +4003,16 @@ namespace NugzzMenu.Services
                 _vehicleSources[j + 1] = source;
                 _vehicleCategories[j + 1] = category;
                 _vehiclePrefabs[j + 1] = prefab;
+            }
+        }
+
+        private void CacheVehicleWarnings()
+        {
+            _vehicleWarnings = new bool[_vehicleCount];
+            for (int i = 0; i < _vehicleCount; i++)
+            {
+                _vehicleWarnings[i] = _vehicleRisky[i] && !IsPoliceVehicle(
+                    _vehicleNames[i], _vehicleCodes[i], _vehicleCategories[i]);
             }
         }
 

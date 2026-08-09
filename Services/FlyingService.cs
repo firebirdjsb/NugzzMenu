@@ -47,6 +47,9 @@ namespace NugzzMenu.Services
 
         public void SetEnabled(bool enabled)
         {
+            if (enabled && !CanEnable(out _))
+                return;
+
             if (_enabled == enabled)
                 return;
 
@@ -94,6 +97,17 @@ namespace NugzzMenu.Services
 
         public void UpdateHotkeys(bool menuOpen)
         {
+            if (!CanEnable(out string mountedReason))
+            {
+                bool wasEnabled = _enabled;
+                if (wasEnabled)
+                    SetEnabled(false);
+                ResetSpaceTap();
+                if (wasEnabled)
+                    NotificationService.Instance.Status("Fly disabled while " + mountedReason);
+                return;
+            }
+
             if (menuOpen || !DoubleSpaceHotkeyEnabled)
             {
                 ResetSpaceTap();
@@ -132,6 +146,12 @@ namespace NugzzMenu.Services
         {
             try
             {
+                if (!CanEnable(out _))
+                {
+                    SetEnabled(false);
+                    return;
+                }
+
                 var player = GetPlayer();
                 if (player == null) return;
 
@@ -353,6 +373,32 @@ namespace NugzzMenu.Services
             catch { }
 
             return null;
+        }
+
+        public bool CanEnable(out string reason)
+        {
+            reason = null;
+            try
+            {
+                Player player = ManagerCacheService.Instance.LocalPlayer;
+                if (player == null)
+                    return true;
+
+                if (player.IsInVehicle || player.CurrentVehicleSeat != null)
+                {
+                    reason = "in a vehicle";
+                    return false;
+                }
+
+                if (player.IsSkating || player.ActiveSkateboard != null)
+                {
+                    reason = "on a skateboard";
+                    return false;
+                }
+            }
+            catch { }
+
+            return true;
         }
 
         private void ResetSpaceTap()

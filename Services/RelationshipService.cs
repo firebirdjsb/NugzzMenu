@@ -1,21 +1,31 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
+using Il2CppInterop.Runtime;
+using Il2CppScheduleOne.Cartel;
 using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.NPCs;
 using Il2CppScheduleOne.NPCs.Relation;
 using Il2CppScheduleOne.Product;
+using Il2CppScheduleOne.Map;
+using Il2CppScheduleOne.Levelling;
+using Il2CppScheduleOne.Networking;
+using Il2CppScheduleOne.PlayerScripts;
+using Il2CppScheduleOne.Variables;
 using UnityEngine;
 
 namespace NugzzMenu.Services
 {
     public sealed class RelationshipService
     {
+        internal const string RegionUnlockVariable = "Nugzz.Region.Unlock";
         private sealed class Entry
         {
             public NPC Npc;
             public Customer Customer;
             public string Name;
+            public EMapRegion Region;
         }
 
         public const int PageSize = 8;
@@ -30,6 +40,7 @@ namespace NugzzMenu.Services
         private int _selectedIndex = -1;
         private float _nextRefreshAttempt;
         private EDrugType _selectedDrugType = EDrugType.Marijuana;
+        private int _regionFilter;
 
         private RelationshipService()
         {
@@ -45,6 +56,7 @@ namespace NugzzMenu.Services
         public EDrugType SelectedDrugType => _selectedDrugType;
         public bool HasSelection => GetSelected() != null;
         public bool SelectedIsCustomer => GetSelected()?.Customer != null;
+        public int RegionFilter => _regionFilter;
 
         public void EnsureFresh()
         {
@@ -74,6 +86,14 @@ namespace NugzzMenu.Services
                     if (npc == null)
                         continue;
 
+                    try
+                    {
+                        // Cartel goons are temporary combat actors, not contacts.
+                        if (npc.TryCast<CartelGoon>() != null)
+                            continue;
+                    }
+                    catch { }
+
                     string name = GetNpcName(npc);
                     Customer customer = null;
                     try { customers.TryGetValue(npc.GetInstanceID(), out customer); }
@@ -81,14 +101,20 @@ namespace NugzzMenu.Services
                     if (customer == null)
                         customer = GetCustomer(npc);
                     string type = customer != null ? "client" : "npc";
-                    if (!MatchesFilter(name, type))
+                    EMapRegion region = EMapRegion.Northtown;
+                    try { region = npc.Region; } catch { }
+                    if (!MatchesFilter(name, type, region))
                         continue;
 
-                    _entries.Add(new Entry { Npc = npc, Customer = customer, Name = name });
+                    _entries.Add(new Entry { Npc = npc, Customer = customer, Name = name, Region = region });
                 }
 
-                _entries.Sort((a, b) => string.Compare(a.Name, b.Name,
-                    StringComparison.OrdinalIgnoreCase));
+                _entries.Sort((a, b) =>
+                {
+                    int regionOrder = a.Region.CompareTo(b.Region);
+                    return regionOrder != 0 ? regionOrder : string.Compare(a.Name, b.Name,
+                        StringComparison.OrdinalIgnoreCase);
+                });
                 _selectedIndex = FindIndexById(selectedId);
                 ClampPage();
                 _status = "Found " + _entries.Count + " NPCs and clients.";
@@ -108,6 +134,122 @@ namespace NugzzMenu.Services
             _searchText = value;
             _pageIndex = 0;
             Refresh();
+        }
+
+        public void SetRegionFilter(int index)
+        {
+            int clamped = Mathf.Clamp(index, 0, Regions.Length);
+            if (_regionFilter == clamped)
+                return;
+            _regionFilter = clamped;
+            _pageIndex = 0;
+            Refresh();
+        }
+
+        public string GetRegionFilterLabel(int index)
+        {
+            if (index <= 0)
+                return (_regionFilter == 0 ? "> " : string.Empty) + "All";
+            EMapRegion region = Regions[Mathf.Clamp(index - 1, 0, Regions.Length - 1)];
+            return (_regionFilter == index ? "> " : string.Empty) + RegionName(region);
+        }
+
+        public string GetSelectedRegionUnlockLabel()
+        {
+            if (_regionFilter <= 0)
+                return "Select a city section above";
+            EMapRegion region = Regions[_regionFilter - 1];
+            return (IsRegionUnlocked(region) ? "OPEN: " : "Unlock: ") + RegionName(region);
+        }
+
+        public void UnlockSelectedRegion()
+        {
+            if (_regionFilter <= 0)
+            {
+                SetStatus("Select one city section first");
+                return;
+            }
+            if (LobbyService.Instance.IsInLobby() && !LobbyService.Instance.IsHost())
+            {
+                SendRegionUnlockRequest(Regions[_regionFilter - 1]);
+                SetStatus("Requested city section unlock from the host");
+                return;
+            }
+
+            UnlockRegion(Regions[_regionFilter - 1]);
+        }
+
+        internal bool TryReceiveNetworkValue(Player source, string variableName, string value)
+        {
+            if (!string.Equals(variableName, RegionUnlockVariable,
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!LobbyService.Instance.IsHost() || source == null || source.IsLocalPlayer ||
+                !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                    out int rawRegion))
+            {
+                return true;
+            }
+
+            EMapRegion region = (EMapRegion)rawRegion;
+            for (int i = 0; i < Regions.Length; i++)
+            {
+                if (Regions[i].Equals(region))
+                {
+                    UnlockRegion(region);
+                    break;
+                }
+            }
+            return true;
+        }
+
+        private void UnlockRegion(EMapRegion region)
+        {
+            try
+            {
+                var map = Il2CppScheduleOne.Map.Map.Instance;
+                MapRegionData data = map?.GetRegionData(region);
+                if (data == null)
+                {
+                    SetStatus("City section data is unavailable");
+                    return;
+                }
+
+                data.SetUnlocked();
+                var unlocked = map.GetUnlockedRegions();
+                if (LevelManager.Instance != null && unlocked != null)
+                    LevelManager.Instance.SetUnlockedRegions(null, unlocked);
+                SetStatus(RegionName(region) + " unlocked");
+                Refresh();
+            }
+            catch (Exception ex) { ReportFailure("City section unlock", ex); }
+        }
+
+        private static void SendRegionUnlockRequest(EMapRegion region)
+        {
+            Player player = Player.Local;
+            if (player == null)
+                return;
+
+            try
+            {
+                if (player.GetVariable(RegionUnlockVariable) == null)
+                {
+                    player.AddVariable(new NumberVariable(RegionUnlockVariable,
+                        EVariableReplicationMode.Networked, false,
+                        EVariableMode.Player, player, 0f));
+                }
+
+                string value = ((int)region).ToString(CultureInfo.InvariantCulture);
+                player.SetVariableValue(RegionUnlockVariable, value, false);
+                player.SendValue(RegionUnlockVariable, value, true);
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning(
+                    "City section unlock request failed: " + ex.Message);
+            }
         }
 
         public int GetPageCount()
@@ -132,7 +274,8 @@ namespace NugzzMenu.Services
             string state = relation != null && relation.Unlocked ? "UNLOCKED" : "LOCKED";
             float value = relation?.RelationDelta ?? 0f;
             return (index == _selectedIndex ? "> " : string.Empty) + entry.Name +
-                " | " + kind + " | " + value.ToString("0.00") + "/5 | " + state;
+                " | " + RegionName(entry.Region) + " | " + kind + " | " +
+                value.ToString("0.00") + "/5 | " + state;
         }
 
         public void SelectPageRow(int row)
@@ -161,6 +304,7 @@ namespace NugzzMenu.Services
             NPCRelationData relation = GetRelation(entry.Npc);
             string details = entry.Name + "\n" +
                 "Type: " + (entry.Customer != null ? "Client / customer" : "NPC") +
+                " | City section: " + RegionName(entry.Region) +
                 " | ID: " + ShortId(GetNpcId(entry.Npc)) + "\n";
 
             if (relation != null)
@@ -343,11 +487,25 @@ namespace NugzzMenu.Services
                 : null;
         }
 
-        private bool MatchesFilter(string name, string type)
+        private bool MatchesFilter(string name, string type, EMapRegion region)
         {
+            if (_regionFilter > 0 && region != Regions[_regionFilter - 1])
+                return false;
             return string.IsNullOrWhiteSpace(_searchText) ||
                 name.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                type.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0;
+                type.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                RegionName(region).IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsRegionUnlocked(EMapRegion region)
+        {
+            try { return Il2CppScheduleOne.Map.Map.Instance?.GetRegionData(region)?.IsUnlocked == true; }
+            catch { return false; }
+        }
+
+        private static string RegionName(EMapRegion region)
+        {
+            return region == EMapRegion.Northtown ? "North Town" : region.ToString();
         }
 
         private int FindIndexById(string id)
@@ -429,8 +587,8 @@ namespace NugzzMenu.Services
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(npc.fullName))
-                    return npc.fullName.Trim();
+                if (!string.IsNullOrWhiteSpace(npc.FullName))
+                    return npc.FullName.Trim();
                 string combined = ((npc.FirstName ?? string.Empty) + " " +
                     (npc.LastName ?? string.Empty)).Trim();
                 return string.IsNullOrWhiteSpace(combined) ? npc.name : combined;
@@ -480,6 +638,16 @@ namespace NugzzMenu.Services
             EDrugType.MDMA,
             EDrugType.Shrooms,
             EDrugType.Heroin
+        };
+
+        private static readonly EMapRegion[] Regions =
+        {
+            EMapRegion.Northtown,
+            EMapRegion.Westville,
+            EMapRegion.Downtown,
+            EMapRegion.Docks,
+            EMapRegion.Suburbia,
+            EMapRegion.Uptown
         };
     }
 }

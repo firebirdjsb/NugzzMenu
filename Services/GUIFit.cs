@@ -9,7 +9,11 @@ namespace NugzzMenu.Services
         private const int DefaultMinFontSize = 7;
         private static readonly Dictionary<GUIStyle, Dictionary<int, GUIStyle>> StyleCache =
             new Dictionary<GUIStyle, Dictionary<int, GUIStyle>>();
+        private static readonly Dictionary<Texture2D, GUIStyle> TextureStyleCache =
+            new Dictionary<Texture2D, GUIStyle>();
         private static string _activeTextFieldKey;
+
+        public static bool IsTextFieldActive => !string.IsNullOrEmpty(_activeTextFieldKey);
 
         public static GUIStyle FittedStyle(GUIStyle source, Rect rect, string text, int minFontSize = DefaultMinFontSize, bool wordWrap = false)
         {
@@ -49,9 +53,25 @@ namespace NugzzMenu.Services
             if (gui.AccentSoftTexture == null)
                 return;
 
-            GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width, 1f), gui.AccentSoftTexture);
+            Texture(new Rect(rect.x, rect.y, rect.width, 1f), gui.AccentSoftTexture);
             if (rect.height >= 24f)
-                GUI.DrawTexture(new Rect(rect.x, rect.y, 2f, rect.height), gui.AccentSoftTexture);
+                Texture(new Rect(rect.x, rect.y, 2f, rect.height), gui.AccentSoftTexture);
+        }
+
+        public static void Texture(Rect rect, Texture2D texture)
+        {
+            if (texture == null || rect.width <= 0f || rect.height <= 0f)
+                return;
+
+            GUIStyle style;
+            if (!TextureStyleCache.TryGetValue(texture, out style))
+            {
+                style = new GUIStyle();
+                style.normal.background = texture;
+                TextureStyleCache[texture] = style;
+            }
+
+            GUI.Box(rect, string.Empty, style);
         }
 
         public static string TextField(Rect rect, string text, int maxLength, string fieldKey = null)
@@ -123,6 +143,7 @@ namespace NugzzMenu.Services
         public static void ClearCache()
         {
             StyleCache.Clear();
+            TextureStyleCache.Clear();
         }
 
         private static GUIStyle GetCachedStyle(GUIStyle source, int fontSize, bool wordWrap)

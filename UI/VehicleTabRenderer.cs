@@ -7,7 +7,7 @@ namespace NugzzMenu.UI
     public static class VehicleTabRenderer
     {
         private const int VehicleColumns = 3;
-        private const int VehicleRowsPerPage = 6;
+        private const int VehicleRowsPerPage = 4;
         private const int VehiclesPerPage = VehicleColumns * VehicleRowsPerPage;
 
         private static int _pendingRiskySpawnIndex = -1;
@@ -142,6 +142,7 @@ namespace NugzzMenu.UI
 
             y += 8f;
             DrawVehicleTuning(ref y, w, buttonStyle, boxStyle, service);
+            DrawSkateboardTuning(ref y, w, buttonStyle, boxStyle);
         }
 
         private static bool IsRiskySpawnConfirmed(int selected)
@@ -203,6 +204,36 @@ namespace NugzzMenu.UI
             y += height + 8f;
         }
 
+        private static void DrawSkateboardTuning(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle)
+        {
+            Label(4f, y, w, 18f, "SKATEBOARD TUNING", LabelCategory.Header);
+            y += 20f;
+
+            var tuning = SkateboardTuneService.Instance;
+            const float height = 190f;
+            GUIFit.Panel(new Rect(0f, y, w, height), boxStyle);
+            float rowY = y + 6f;
+
+            Label(8f, rowY + 2f, w * 0.60f, 18f,
+                tuning.HasActiveBoard ? "Tuning active skateboard" : "Mount a skateboard to apply tuning.");
+            string jumpLabel = tuning.UnlimitedJumps ? "Unlimited Jumps: ON" : "Unlimited Jumps: OFF";
+            if (GUIFit.Button(new Rect(w * 0.62f, rowY, w * 0.36f - 8f, 22f), jumpLabel, buttonStyle))
+                tuning.UnlimitedJumps = !tuning.UnlimitedJumps;
+            rowY += 28f;
+
+            bool changed = false;
+            changed |= DrawSlider(ref rowY, w, "Maximum Speed", ref tuning.SpeedMultiplier, 0.25f, 8f, "x");
+            changed |= DrawSlider(ref rowY, w, "Turning Speed", ref tuning.TurnMultiplier, 0.25f, 5f, "x");
+            changed |= DrawSlider(ref rowY, w, "Push Speed", ref tuning.PushMultiplier, 0.25f, 8f, "x");
+            changed |= DrawSlider(ref rowY, w, "Stopping Speed", ref tuning.StopMultiplier, 0.25f, 8f, "x");
+
+            if (GUIFit.Button(new Rect(8f, rowY, w - 16f, 22f), "Reset Skateboard Tuning", buttonStyle))
+                tuning.ResetCurrent();
+            else if (changed)
+                tuning.ApplyNow();
+
+            y += height + 8f;
+        }
         private static bool DrawSlider(ref float y, float w, string label, ref float value, float min, float max, string suffix)
         {
             float oldValue = value;

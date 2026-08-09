@@ -1,12 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using HarmonyLib;
 using Il2CppFishNet.Connection;
-using Il2CppScheduleOne.AvatarFramework;
-using Il2CppScheduleOne.AvatarFramework.Customization;
+using Il2CppScheduleOne.Equipping;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.PlayerScripts.Health;
-using Il2CppScheduleOne.Variables;
 using UnityEngine;
 
 namespace NugzzMenu.Services
@@ -27,18 +26,19 @@ namespace NugzzMenu.Services
         private float _speedBaseline = 1f;
         private float _nextWantedClearTime;
         private const string NetworkScaleVariable = "Nugzz.PlayerScale";
+        private const string NetworkScaleRequestVariable = "Nugzz.PlayerScale.Request";
         private const float ScaleRebroadcastInterval = 2f;
+        private static readonly Dictionary<int, ScaleAnchorState> ScaleAnchors =
+            new Dictionary<int, ScaleAnchorState>();
         private float _playerScale = 1f;
+        private float _localScaleCorrection;
         private float _lastAppliedPlayerScale = -1f;
         private float _lastBroadcastPlayerScale = -1f;
         private float _nextScaleBroadcastTime = -1f;
-        private bool _baseAppearanceScaleCaptured;
-        private float _baseGenderScaleMultiplier = 1f;
-        private float _baseAvatarWeight = 0.5f;
-        private float _baseAvatarHeight = 1f;
         private float _allowForcedDeathUntil = -1f;
-        private bool _scaleNetworkSyncDisabled;
-        private bool _vanillaVisibleScaleDisabled;
+        private float _lastAppliedJumpMultiplier = float.NaN;
+        private float _lastAppliedGravityMultiplier = float.NaN;
+        private bool _wasFlying;
 
         public bool GodMode { get; set; }
         public bool InfiniteStamina { get; set; }
@@ -71,6 +71,7 @@ namespace NugzzMenu.Services
         }
         public bool InfiniteAmmo { get; set; }
         public bool NeverWanted { get; set; }
+        public bool BottomlessTrashGrabber { get; set; }
         public float PlayerScale
         {
             get => _playerScale;
@@ -82,6 +83,31 @@ namespace NugzzMenu.Services
         }
 
         private PlayerCheatService() { }
+
+        public void ResetAll()
+        {
+            GodMode = false;
+            InfiniteStamina = false;
+            InfiniteAmmo = false;
+            NeverWanted = false;
+            BottomlessTrashGrabber = false;
+            SpeedBoost = false;
+            SpeedMultiplier = 2f;
+            PlayerScale = 1f;
+            JumpMultiplier = 1f;
+            GravityMultiplier = 1f;
+            _lastAppliedPlayerScale = -1f;
+            _lastAppliedJumpMultiplier = float.NaN;
+            _lastAppliedGravityMultiplier = float.NaN;
+            _nextWantedClearTime = 0f;
+
+            try
+            {
+                ApplyPlayerScale();
+                ApplyMovementTuning();
+            }
+            catch { }
+        }
 
         public void Update()
         {
@@ -103,9 +129,9 @@ namespace NugzzMenu.Services
                 if (player == null) return;
 
                 var health = player.Health;
-                if (health != null && health.CurrentHealth < PlayerHealth.MAX_HEALTH)
+                if (health != null && health.CurrentHealth < PlayerHealth.MaxHealth)
                 {
-                    health.SetHealth(PlayerHealth.MAX_HEALTH);
+                    health.SetHealth(PlayerHealth.MaxHealth);
                 }
             }
             catch (Exception ex)
@@ -119,7 +145,8 @@ namespace NugzzMenu.Services
             try
             {
                 var movement = GetLocalMovement();
-                if (movement != null)
+                if (movement != null &&
+                    movement._CurrentStaminaReserve_k__BackingField < PlayerMovement.StaminaReserveMax)
                     movement._CurrentStaminaReserve_k__BackingField = PlayerMovement.StaminaReserveMax;
             }
             catch (Exception ex)
@@ -140,7 +167,9 @@ namespace NugzzMenu.Services
                     _speedBaselineCaptured = true;
                 }
 
-                PlayerMovement.StaticMoveSpeedMultiplier = _speedBaseline * _speedMultiplier;
+                float target = _speedBaseline * _speedMultiplier;
+                if (Mathf.Abs(PlayerMovement.StaticMoveSpeedMultiplier - target) > 0.001f)
+                    PlayerMovement.StaticMoveSpeedMultiplier = target;
             }
             catch (Exception ex)
             {
@@ -152,15 +181,26 @@ namespace NugzzMenu.Services
         {
             try
             {
-                PlayerMovement.JumpMultiplier = _jumpMultiplier;
-                if (!FlyingService.Instance.Enabled)
+                if (float.IsNaN(_lastAppliedJumpMultiplier) ||
+                    Mathf.Abs(_lastAppliedJumpMultiplier - _jumpMultiplier) > 0.001f)
                 {
-                    float gravity = PlayerMovement.BaseGravityMultiplier * _gravityMultiplier;
+                    PlayerMovement.JumpMultiplier = _jumpMultiplier;
+                    _lastAppliedJumpMultiplier = _jumpMultiplier;
+                }
+
+                bool flying = FlyingService.Instance.Enabled;
+                float gravity = PlayerMovement.BaseGravityMultiplier * _gravityMultiplier;
+                if (!flying && (_wasFlying || float.IsNaN(_lastAppliedGravityMultiplier) ||
+                    Mathf.Abs(_lastAppliedGravityMultiplier - gravity) > 0.001f))
+                {
                     PlayerMovement.GravityMultiplier = gravity;
                     var player = ManagerCacheService.Instance.LocalPlayer;
                     if (player != null)
                         player.SetGravityMultiplier(gravity);
+                    _lastAppliedGravityMultiplier = gravity;
                 }
+
+                _wasFlying = flying;
             }
             catch (Exception ex)
             {
@@ -179,7 +219,7 @@ namespace NugzzMenu.Services
                 if (equippedItem == null) return;
 
                 var integerItem = equippedItem.TryCast<Il2CppScheduleOne.ItemFramework.IntegerItemInstance>();
-                if (integerItem != null)
+                if (integerItem != null && integerItem.Value < 99)
                 {
                     integerItem.SetValue(99);
                 }
@@ -225,11 +265,7 @@ namespace NugzzMenu.Services
                 if (player == null)
                     return;
 
-                Vector3 previousPosition = player.transform.position;
-                player.SetScale(_playerScale, 0.2f);
-                ApplyLocalMovementScale(_playerScale);
-                RestoreScalePosition(player, previousPosition);
-                ApplyVanillaVisibleScale(player, _playerScale, true);
+                _localScaleCorrection = ApplyActualPlayerScale(player, _playerScale);
                 _lastAppliedPlayerScale = _playerScale;
                 BroadcastPlayerScale(player, true);
             }
@@ -258,7 +294,7 @@ namespace NugzzMenu.Services
 
         private void BroadcastPlayerScale(Player player, bool force)
         {
-            if (player == null || _scaleNetworkSyncDisabled)
+            if (player == null)
                 return;
 
             if (!force &&
@@ -270,148 +306,67 @@ namespace NugzzMenu.Services
 
             try
             {
-                ApplyVanillaVisibleScale(player, _playerScale, true);
-                if (!EnsureScaleVariable(player))
+                string value = FormatScalePayload(_playerScale, _localScaleCorrection);
+                if (LobbyService.Instance.IsInLobby())
                 {
-                    _scaleNetworkSyncDisabled = true;
-                    _lastBroadcastPlayerScale = _playerScale;
-                    return;
+                    if (LobbyService.Instance.IsHost())
+                    {
+                        PlayerValueRpcService.BroadcastToApprovedClients(
+                            player, NetworkScaleVariable, value);
+                    }
+                    else
+                    {
+                        player.SendValue(NetworkScaleRequestVariable, value, true);
+                    }
                 }
-
-                string value = _playerScale.ToString("0.###", CultureInfo.InvariantCulture);
-                try { player.SetVariableValue(NetworkScaleVariable, value, false); } catch { }
-                player.SendValue(NetworkScaleVariable, value, true);
                 _lastBroadcastPlayerScale = _playerScale;
             }
             catch (Exception ex)
             {
-                _scaleNetworkSyncDisabled = true;
                 _lastBroadcastPlayerScale = _playerScale;
                 DebugLogService.Instance.VerboseWarning("Player scale sync failed: " + ex.Message);
             }
         }
 
-        private void ApplyVanillaVisibleScale(Player player, float scale, bool broadcast)
+        internal static bool IsNetworkScaleVariable(string variableName)
         {
-            if (player == null || _vanillaVisibleScaleDisabled)
-                return;
-
-            try
-            {
-                BasicAvatarSettings settings = player.CurrentAvatarSettings;
-                if (settings == null)
-                    return;
-
-                CaptureBaseAppearanceScale(settings);
-
-                float visibleScale = Mathf.Clamp(scale, 0.25f, 4f);
-                settings.SetValue<float>(
-                    nameof(BasicAvatarSettings.GenderScaleMultiplier),
-                    Mathf.Clamp(_baseGenderScaleMultiplier * visibleScale, 0.05f, 10f));
-                settings.Weight = Mathf.Clamp01(_baseAvatarWeight);
-
-                try { player.SetAppearance(settings, false); } catch { }
-                if (broadcast)
-                {
-                    try { player.SendAppearance(settings); } catch { }
-                }
-
-                try
-                {
-                    AvatarSettings avatarSettings = settings.GetAvatarSettings();
-                    if (avatarSettings != null)
-                    {
-                        avatarSettings.Height = Mathf.Clamp(_baseAvatarHeight * visibleScale, 0.05f, 10f);
-                        try { player.SetAvatarSettings(avatarSettings); } catch { }
-                        if (broadcast)
-                            player.SendAvatarSettings(avatarSettings);
-                    }
-                }
-                catch { }
-            }
-            catch (Exception ex)
-            {
-                if (ex is FieldAccessException ||
-                    ex.Message.IndexOf("constant field", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    _vanillaVisibleScaleDisabled = true;
-                }
-
-                DebugLogService.Instance.VerboseWarning("Vanilla visible scale sync failed: " + ex.Message);
-            }
-        }
-
-        private void CaptureBaseAppearanceScale(BasicAvatarSettings settings)
-        {
-            if (_baseAppearanceScaleCaptured || settings == null)
-                return;
-
-            try
-            {
-                _baseGenderScaleMultiplier = Mathf.Max(
-                    0.05f,
-                    settings.GetValue<float>(nameof(BasicAvatarSettings.GenderScaleMultiplier)));
-                _baseAvatarWeight = Mathf.Clamp01(settings.Weight);
-                AvatarSettings avatarSettings = settings.GetAvatarSettings();
-                if (avatarSettings != null)
-                    _baseAvatarHeight = Mathf.Max(0.05f, avatarSettings.Height);
-                _baseAppearanceScaleCaptured = true;
-            }
-            catch
-            {
-                _baseAppearanceScaleCaptured = true;
-            }
-        }
-
-        private static bool EnsureScaleVariable(Player player)
-        {
-            if (player == null)
-                return false;
-
-            try
-            {
-                if (player.GetVariable(NetworkScaleVariable) != null)
-                    return true;
-            }
-            catch { }
-
-            try
-            {
-                var variable = new NumberVariable(
-                    NetworkScaleVariable,
-                    EVariableReplicationMode.Networked,
-                    false,
-                    EVariableMode.Player,
-                    player,
-                    1f);
-                player.AddVariable(variable);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                DebugLogService.Instance.VerboseWarning("Scale variable registration failed: " + ex.Message);
-                return false;
-            }
+            return string.Equals(variableName, NetworkScaleVariable,
+                       StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(variableName, NetworkScaleRequestVariable,
+                       StringComparison.OrdinalIgnoreCase);
         }
 
         internal static bool TryApplyNetworkScale(Player player, string variableName, string value)
         {
-            if (player == null ||
-                !string.Equals(variableName, NetworkScaleVariable, StringComparison.OrdinalIgnoreCase))
-            {
+            if (player == null || !IsNetworkScaleVariable(variableName))
                 return false;
-            }
 
-            if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float scale))
+            if (!TryParseScalePayload(value, out float scale, out float correction))
                 return true;
 
-            scale = Mathf.Clamp(scale, 0.25f, 4f);
             try
             {
-                ApplyActualPlayerScale(player, scale);
-                Instance.ApplyVanillaVisibleScale(player, scale, false);
+                if (string.Equals(variableName, NetworkScaleRequestVariable,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!LobbyService.Instance.IsHost() || player.IsLocalPlayer ||
+                        !SessionAuthorityService.Instance.IsClientApproved(player))
+                    {
+                        return true;
+                    }
+
+                    float appliedCorrection = ApplyActualPlayerScale(player, scale, correction);
+                    PlayerValueRpcService.BroadcastToApprovedClients(player,
+                        NetworkScaleVariable, FormatScalePayload(scale, appliedCorrection));
+                    return true;
+                }
+
+                // The authoritative value is echoed to its owner. The owner already
+                // applied this exact scale and correction before sending the request.
                 if (player.IsLocalPlayer)
-                    Instance._lastAppliedPlayerScale = scale;
+                    return true;
+
+                ApplyActualPlayerScale(player, scale, correction);
             }
             catch (Exception ex)
             {
@@ -421,50 +376,206 @@ namespace NugzzMenu.Services
             return true;
         }
 
-        private static void ApplyActualPlayerScale(Player player, float scale)
+        private static string FormatScalePayload(float scale, float correction)
+        {
+            return scale.ToString("0.###", CultureInfo.InvariantCulture) + "|" +
+                   correction.ToString("0.#####", CultureInfo.InvariantCulture);
+        }
+
+        private static bool TryParseScalePayload(string value, out float scale,
+            out float correction)
+        {
+            scale = 1f;
+            correction = 0f;
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            string[] parts = value.Split('|');
+            if (!float.TryParse(parts[0], NumberStyles.Float,
+                CultureInfo.InvariantCulture, out scale))
+            {
+                return false;
+            }
+
+            if (parts.Length > 1)
+                float.TryParse(parts[1], NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out correction);
+
+            scale = Mathf.Clamp(scale, 0.25f, 4f);
+            correction = Mathf.Clamp(correction, -10f, 10f);
+            return true;
+        }
+
+        private static float ApplyActualPlayerScale(Player player, float scale,
+            float? correctionOverride = null)
         {
             if (player == null)
-                return;
+                return 0f;
 
             try
             {
-                Vector3 previousPosition = player.transform.position;
-                player.SetScale(scale, 0.2f);
-                if (player.IsLocalPlayer)
-                    ApplyLocalMovementScale(scale);
-                RestoreScalePosition(player, previousPosition);
+                bool isLocalPlayer = player.IsLocalPlayer;
+                Transform avatarTransform = player.Avatar?.transform;
+                Transform avatarParent = avatarTransform?.parent;
+                int playerId = player.GetInstanceID();
+                int avatarId = avatarTransform != null ? avatarTransform.GetInstanceID() : 0;
+                if (!ScaleAnchors.TryGetValue(playerId, out ScaleAnchorState anchor) ||
+                    anchor.AvatarId != avatarId)
+                {
+                    anchor = new ScaleAnchorState { AvatarId = avatarId };
+                    ScaleAnchors[playerId] = anchor;
+                }
+
+                if (anchor.HasCorrection &&
+                    Mathf.Abs(anchor.Scale - scale) < 0.001f &&
+                    (!correctionOverride.HasValue ||
+                     Mathf.Abs(anchor.Correction - correctionOverride.Value) < 0.0001f))
+                {
+                    return anchor.Correction;
+                }
+
+                float oldCorrection = anchor.HasCorrection ? anchor.Correction : 0f;
+                float baseAvatarY = avatarTransform != null
+                    ? avatarTransform.localPosition.y - oldCorrection
+                    : 0f;
+                float footPlaneBefore = 0f;
+                bool hasFootPlane = TryGetFootPlane(player, out footPlaneBefore);
+                float previousScale = Mathf.Max(0.001f, Mathf.Abs(player.Scale));
+                float controllerBottomBefore = 0f;
+                bool hasControllerBottom = isLocalPlayer &&
+                    TryGetControllerBottom(player, out controllerBottomBefore);
+                float normalizedFootClearance = hasControllerBottom
+                    ? (footPlaneBefore - controllerBottomBefore) / previousScale
+                    : 0f;
+
+                player.SetScale(scale);
+                float localCorrection = correctionOverride ?? 0f;
+                if (!correctionOverride.HasValue && hasFootPlane &&
+                    TryGetFootPlane(player, out float footPlaneAfter))
+                {
+                    float targetFootPlane = footPlaneBefore;
+                    if (hasControllerBottom && TryGetControllerBottom(player, out float controllerBottomAfter))
+                        targetFootPlane = controllerBottomAfter + normalizedFootClearance * scale;
+                    localCorrection = WorldToAvatarLocalCorrection(
+                        avatarParent, targetFootPlane - footPlaneAfter);
+                }
+
+                ApplyFootCorrection(avatarTransform, baseAvatarY, localCorrection);
+                anchor.Scale = scale;
+                anchor.Correction = localCorrection;
+                anchor.HasCorrection = avatarTransform != null;
+
+                if (isLocalPlayer)
+                {
+                    RestoreVanillaStandingScale();
+                    RefreshLocalViewmodel();
+                }
+
+                return localCorrection;
             }
             catch (Exception ex)
             {
                 DebugLogService.Instance.VerboseWarning("Actual player scale apply failed: " + ex.Message);
+                return 0f;
             }
         }
 
-        private static void ApplyLocalMovementScale(float scale)
+        private static bool TryGetControllerBottom(Player player, out float bottom)
+        {
+            bottom = 0f;
+            try
+            {
+                CharacterController controller = player?.CharacterController;
+                if (controller == null)
+                    return false;
+
+                bottom = controller.bounds.min.y;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryGetFootPlane(Player player, out float footPlane)
+        {
+            footPlane = 0f;
+            try
+            {
+                var avatar = player?.Avatar;
+                Transform leftFoot = avatar?.LeftFootBone;
+                Transform rightFoot = avatar?.RightFootBone;
+                if (leftFoot == null && rightFoot == null)
+                    return false;
+
+                footPlane = leftFoot != null ? leftFoot.position.y : rightFoot.position.y;
+                if (rightFoot != null)
+                    footPlane = Mathf.Min(footPlane, rightFoot.position.y);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static float WorldToAvatarLocalCorrection(Transform parent,
+            float verticalCorrection)
+        {
+            if (parent == null)
+                return 0f;
+
+            float parentScaleY = Mathf.Abs(parent.lossyScale.y);
+            if (parentScaleY < 0.001f)
+                return 0f;
+
+            return verticalCorrection / parentScaleY;
+        }
+
+        private static void ApplyFootCorrection(Transform avatarTransform,
+            float baseAvatarY, float localCorrection)
+        {
+            if (avatarTransform == null)
+                return;
+
+            Vector3 localPosition = avatarTransform.localPosition;
+            localPosition.y = baseAvatarY + localCorrection;
+            avatarTransform.localPosition = localPosition;
+        }
+
+        private sealed class ScaleAnchorState
+        {
+            public int AvatarId;
+            public float Scale = float.NaN;
+            public float Correction;
+            public bool HasCorrection;
+        }
+
+        private static void RestoreVanillaStandingScale()
         {
             try
             {
                 PlayerMovement movement = GetLocalMovement();
-                if (movement != null)
-                    movement._StandingScale_k__BackingField = scale;
+                if (movement != null &&
+                    Mathf.Abs(movement._StandingScale_k__BackingField - 1f) > 0.001f)
+                {
+                    movement._StandingScale_k__BackingField = 1f;
+                }
             }
             catch (Exception ex)
             {
-                DebugLogService.Instance.VerboseWarning("Movement scale apply failed: " + ex.Message);
+                DebugLogService.Instance.VerboseWarning("Standing scale restore failed: " + ex.Message);
             }
         }
 
-        private static void RestoreScalePosition(Player player, Vector3 previousPosition)
+        private static void RefreshLocalViewmodel()
         {
-            if (player == null)
-                return;
-
             try
             {
-                Vector3 currentPosition = player.transform.position;
-                if (currentPosition.y > previousPosition.y + 0.05f)
-                    currentPosition.y = previousPosition.y;
-                player.transform.position = currentPosition;
+                ViewmodelSway sway = ViewmodelSway.Instance;
+                if (sway != null)
+                    sway.RefreshViewmodel();
             }
             catch { }
         }
@@ -479,7 +590,7 @@ namespace NugzzMenu.Services
 
                 _allowForcedDeathUntil = Time.unscaledTime + 2f;
                 health.SetAfflictedWithLethalEffect(true);
-                health.TakeDamage(PlayerHealth.MAX_HEALTH + 999f, true, true);
+                health.TakeDamage(PlayerHealth.MaxHealth + 999f, true, true);
                 health.SendDie();
                 NotificationService.Instance.Status("Lethal effect killed player");
             }
@@ -518,6 +629,16 @@ namespace NugzzMenu.Services
             }
             catch { }
             return UnityEngine.Object.FindObjectOfType<PlayerMovement>();
+        }
+    }
+
+    [HarmonyPatch(typeof(Equippable_TrashGrabber), nameof(Equippable_TrashGrabber.GetCapacity))]
+    internal static class BottomlessTrashGrabberPatch
+    {
+        private static void Postfix(ref int __result)
+        {
+            if (PlayerCheatService.Instance.BottomlessTrashGrabber)
+                __result = int.MaxValue;
         }
     }
 
@@ -580,23 +701,47 @@ namespace NugzzMenu.Services
         }
     }
 
-    [HarmonyPatch(typeof(Player), "ReceiveValue", new[] { typeof(NetworkConnection), typeof(string), typeof(string) })]
-    internal static class PlayerReceiveValueTargetPatch
-    {
-        private static void Postfix(Player __instance, string variableName, string value)
-        {
-            PlayerCheatService.TryApplyNetworkScale(__instance, variableName, value);
-            VehicleService.Instance.TryApplyNetworkVehicleTune(__instance, variableName, value);
-        }
-    }
-
     [HarmonyPatch(typeof(Player), "ReceiveValue", new[] { typeof(string), typeof(string) })]
     internal static class PlayerReceiveValueLocalPatch
     {
+        private static bool Prefix(string variableName)
+        {
+            return !SessionAuthorityService.IsNugzzControlVariable(variableName);
+        }
+
         private static void Postfix(Player __instance, string variableName, string value)
         {
-            PlayerCheatService.TryApplyNetworkScale(__instance, variableName, value);
-            VehicleService.Instance.TryApplyNetworkVehicleTune(__instance, variableName, value);
+            PlayerNetworkValueDispatcher.Dispatch(__instance, variableName, value,
+                "ReceiveValue(local)");
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), "RpcLogic___ReceiveValue_3895153758",
+        new[] { typeof(NetworkConnection), typeof(string), typeof(string) })]
+    internal static class PlayerReceiveValueRpcLogicPatch
+    {
+        private static bool Prefix(Player __instance, string variableName, string value)
+        {
+            if (!SessionAuthorityService.IsNugzzControlVariable(variableName))
+                return true;
+
+            PlayerNetworkValueDispatcher.Dispatch(__instance, variableName, value,
+                "RpcLogic(target)");
+            return false;
+        }
+    }
+
+    internal static class PlayerNetworkValueDispatcher
+    {
+        internal static void Dispatch(Player source, string variableName, string value,
+            string receiveHook)
+        {
+            SessionAuthorityService.Instance.TryReceiveNetworkValue(
+                source, variableName, value, receiveHook);
+            ShapePrefabService.Instance.TryReceiveNetworkValue(source, variableName, value);
+            RelationshipService.Instance.TryReceiveNetworkValue(source, variableName, value);
+            PlayerCheatService.TryApplyNetworkScale(source, variableName, value);
+            VehicleService.Instance.TryApplyNetworkVehicleTune(source, variableName, value);
         }
     }
 }

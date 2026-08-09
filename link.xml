@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  link.xml for NugzzMenu mod
+  Place this file in the game's Managed folder (next to Assembly-CSharp.dll)
+  to prevent IL2CPP from stripping types/methods that this mod patches via Harmony.
+-->
+<linker>
+  <!-- GameplayStateGateService patches -->
+  <assembly fullname="Assembly-CSharp">
+    <type fullname="PauseMenu" preserve="all" />
+    <type fullname="GameInput" preserve="all" />
+    <type fullname="ActionList" preserve="all" />
+    <type fullname="ScheduleOne.UI.TemperatureDisplay" preserve="all" />
+    <type fullname="Il2CppScheduleOne.UI.TemperatureDisplay" preserve="all" />
+    <type fullname="ReflectionProbeUpdater" preserve="all" />
+    <type fullname="PlayerCamera" preserve="all" />
+    <type fullname="PunchController" preserve="all" />
+    <type fullname="Equippable_MeleeWeapon" preserve="all" />
+    <type fullname="ScheduleOne.AvatarFramework.Avatar" preserve="all" />
+    <type fullname="NPCEvent_StayInBuilding" preserve="all" />
+    <type fullname="CoweringBehaviour" preserve="all" />
+    <type fullname="ManagementWorldspaceCanvas" preserve="all" />
+    <type fullname="ObjectSelector" preserve="all" />
+    <type fullname="TransitEntitySelector" preserve="all" />
+    <type fullname="Equippable_Trimmers" preserve="all" />
+    <type fullname="Equippable_Pourable" preserve="all" />
+    <type fullname="Equippable_Seed" preserve="all" />
+    <type fullname="MushroomSpawnEquipped" preserve="all" />
+    <type fullname="Equippable_SprayBottle" preserve="all" />
+    <type fullname="ConsoleUI" preserve="all" />
+    <type fullname="InteractionManager" preserve="all" />
+    <type fullname="TVInterface" preserve="all" />
+    <type fullname="JukeboxInterface" preserve="all" />
+    <type fullname="BlackjackInterface" preserve="all" />
+    <type fullname="RTBInterface" preserve="all" />
+    <type fullname="Phone" preserve="all" />
+    <type fullname="CharacterInterface" preserve="all" />
+    <type fullname="CharacterDisplay" preserve="all" />
+    <type fullname="VehicleLights" preserve="all" />
+    <type fullname="Equippable_TrashGrabber" preserve="all" />
+    <type fullname="PlayerMovement" preserve="all" />
+    <type fullname="PlayerHealth" preserve="all" />
+    <type fullname="Player" preserve="all" />
+    <type fullname="Skateboard" preserve="all" />
+    <type fullname="TrashBag_Equippable" preserve="all" />
+    <type fullname="VehicleCamera" preserve="all" />
+    <type fullname="LandVehicle" preserve="all" />
+    <type fullname="PlayerInventory" preserve="all" />
+    <type fullname="DialogueController_Dan" preserve="all" />
+    <type fullname="QuestEntry" preserve="all" />
+    <type fullname="Quest_WelcomeToHylandPoint" preserve="all" />
+    <type fullname="CharacterCreator" preserve="all" />
+    <type fullname="UIScreenManager" preserve="all" />
+  </assembly>
+
+  <!-- Unity Engine types -->
+  <assembly fullname="UnityEngine.CoreModule">
+    <type fullname="UnityEngine.Logger" preserve="all" />
+    <type fullname="UnityEngine.ReflectionProbe" preserve="all" />
+  </assembly>
+
+  <!-- Il2CppScheduleOne types -->
+  <assembly fullname="Il2CppScheduleOne.Core">
+    <type fullname="ScheduleOne.UI.TemperatureDisplay" preserve="all" />
+    <type fullname="ScheduleOne.AvatarFramework.Avatar" preserve="all" />
+  </assembly>
+</linker>

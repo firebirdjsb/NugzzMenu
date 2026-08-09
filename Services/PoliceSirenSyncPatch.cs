@@ -4,16 +4,12 @@ using Il2CppScheduleOne.Vehicles;
 
 namespace NugzzMenu.Services
 {
-    [HarmonyPatch(typeof(VehicleLights), "UpdateVisuals")]
+    // This helper is intentionally not patched onto VehicleLights.UpdateVisuals. Siren state
+    // changes are event-driven below; a per-frame hook on every vehicle was needlessly costly.
     internal static class PoliceSirenSyncPatch
     {
         private static readonly Dictionary<int, bool> AppliedStates =
             new Dictionary<int, bool>();
-
-        private static void Postfix(VehicleLights __instance)
-        {
-            Apply(__instance, false);
-        }
 
         internal static void Apply(VehicleLights vehicleLights, bool force)
         {

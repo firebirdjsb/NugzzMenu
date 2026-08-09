@@ -1,4 +1,6 @@
 using System;
+using System.Reflection;
+using HarmonyLib;
 using Il2CppScheduleOne;
 using Il2CppScheduleOne.Growing;
 using Il2CppScheduleOne.ItemFramework;
@@ -12,11 +14,16 @@ namespace NugzzMenu.Services
     {
         private static readonly WorldObjectService _instance = new WorldObjectService();
         public static WorldObjectService Instance => _instance;
+        private static readonly MethodInfo FinalizeChemistryOperation =
+            AccessTools.Method(typeof(ChemistryStation), "FinalizeOperation");
 
         private WorldObjectService() { }
 
         public int GrowAllPlants()
         {
+            if (!CanModifyWorld())
+                return 0;
+
             int changed = 0;
 
             try
@@ -66,10 +73,14 @@ namespace NugzzMenu.Services
                             if (!bed.ContainsGrowable())
                                 continue;
 
-                            // MushroomBed has no public SetGrowthProgress API in the dump. The console
-                            // grow command appears to target grow containers internally; for direct API
-                            // access we can at least maximize grow speed and moisture so it completes fast.
-                            bed.SetMoistureAmount(1f);
+                            ShroomColony colony = bed.CurrentColony;
+                            if (colony == null || colony.IsFullyGrown)
+                                continue;
+
+                            float capacity = bed.MoistureCapacity > 0f ? bed.MoistureCapacity : 1f;
+                            bed.SetMoistureAmount(capacity);
+                            try { bed.SyncMoistureData(); } catch { }
+                            colony.SetFullyGrown();
                             changed++;
                         }
                         catch (Exception ex)
@@ -90,6 +101,9 @@ namespace NugzzMenu.Services
 
         public int WaterAllPlants()
         {
+            if (!CanModifyWorld())
+                return 0;
+
             int watered = 0;
 
             watered += WaterContainers<Pot>(FindObjectsOfType<Pot>());
@@ -99,8 +113,53 @@ namespace NugzzMenu.Services
             return watered;
         }
 
+        public int SeedAllPots(string seedId)
+        {
+            if (!CanModifyWorld())
+                return 0;
+
+            SeedDefinition seed = ResolveDefinition<SeedDefinition>(seedId);
+            if (seed == null)
+            {
+                NotificationService.Instance.Status("Seed not found: " + seedId);
+                return 0;
+            }
+
+            int planted = 0;
+            Pot[] pots = FindObjectsOfType<Pot>();
+            for (int i = 0; pots != null && i < pots.Length; i++)
+            {
+                try
+                {
+                    Pot pot = pots[i];
+                    if (pot == null || pot.ContainsGrowable() || pot.CurrentSoil == null ||
+                        pot.NormalizedSoilAmount <= 0.001f)
+                    {
+                        continue;
+                    }
+
+                    string reason;
+                    if (!pot.CanAcceptSeed(out reason))
+                        continue;
+
+                    pot.PlantSeed_Server(seed.ID, 0f);
+                    planted++;
+                }
+                catch (Exception ex)
+                {
+                    DebugLogService.Instance.VerboseWarning("Auto-seed failed: " + ex.Message);
+                }
+            }
+
+            NotificationService.Instance.Status("Pots seeded: " + planted);
+            return planted;
+        }
+
         public int FillAllPotsWithBestSoil()
         {
+            if (!CanModifyWorld())
+                return 0;
+
             int filled = 0;
             SoilDefinition soil = ResolveBestSoilDefinition();
             if (soil == null)
@@ -191,6 +250,9 @@ namespace NugzzMenu.Services
 
         public int CompleteDryingRacks()
         {
+            if (!CanModifyWorld())
+                return 0;
+
             int completed = 0;
 
             try
@@ -238,6 +300,149 @@ namespace NugzzMenu.Services
 
             NotificationService.Instance.Status("Drying completed: " + completed);
             return completed;
+        }
+
+        public int CompleteChemistryStations()
+        {
+            if (!CanModifyWorld())
+                return 0;
+
+            int completed = 0;
+            ChemistryStation[] stations = FindObjectsOfType<ChemistryStation>();
+            for (int i = 0; stations != null && i < stations.Length; i++)
+            {
+                try
+                {
+                    ChemistryStation station = stations[i];
+                    ChemistryCookOperation operation = station?.CurrentCookOperation;
+                    if (operation == null || operation.IsComplete() || operation.Recipe == null ||
+                        !station.DoesOutputHaveSpace(operation.Recipe))
+                    {
+                        continue;
+                    }
+
+                    operation.Progress(Math.Max(1, operation.Recipe.CookTime_Mins - operation.CurrentTime));
+                    if (!operation.IsComplete() || FinalizeChemistryOperation == null)
+                        continue;
+
+                    FinalizeChemistryOperation.Invoke(station, null);
+                    completed++;
+                }
+                catch (Exception ex)
+                {
+                    DebugLogService.Instance.VerboseWarning("Chemistry completion failed: " + ex.Message);
+                }
+            }
+
+            NotificationService.Instance.Status("Meth cooks completed: " + completed);
+            return completed;
+        }
+
+        public int CompleteLabOvens()
+        {
+            if (!CanModifyWorld())
+                return 0;
+
+            int completed = 0;
+            LabOven[] ovens = FindObjectsOfType<LabOven>();
+            for (int i = 0; ovens != null && i < ovens.Length; i++)
+            {
+                try
+                {
+                    LabOven oven = ovens[i];
+                    OvenCookOperation operation = oven?.CurrentOperation;
+                    if (operation == null || operation.IsComplete())
+                        continue;
+
+                    operation.UpdateCookProgress(Math.Max(1,
+                        operation.GetCookDuration() - operation.CookProgress));
+                    oven.SetCookOperation(null, operation, false);
+                    oven.SetOvenLit(false);
+                    completed++;
+                }
+                catch (Exception ex)
+                {
+                    DebugLogService.Instance.VerboseWarning("Lab oven completion failed: " + ex.Message);
+                }
+            }
+
+            NotificationService.Instance.Status("Lab ovens completed: " + completed);
+            return completed;
+        }
+
+        public int CompleteMixingStations()
+        {
+            if (!CanModifyWorld())
+                return 0;
+
+            int completed = 0;
+            MixingStation[] stations = FindObjectsOfType<MixingStation>();
+            for (int i = 0; stations != null && i < stations.Length; i++)
+            {
+                try
+                {
+                    MixingStation station = stations[i];
+                    if (station == null || station.CurrentMixOperation == null)
+                        continue;
+
+                    if (!station.IsMixingDone)
+                    {
+                        int mixTime = Math.Max(station.CurrentMixTime,
+                            station.GetMixTimeForCurrentOperation());
+                        station._CurrentMixTime_k__BackingField = mixTime;
+                        station.SetMixOperation(null, station.CurrentMixOperation, mixTime);
+                        station.MixingDone_Networked();
+                    }
+
+                    station.TryCreateOutputItems();
+                    completed++;
+                }
+                catch (Exception ex)
+                {
+                    DebugLogService.Instance.VerboseWarning("Mixing completion failed: " + ex.Message);
+                }
+            }
+
+            NotificationService.Instance.Status("Mixing stations completed: " + completed);
+            return completed;
+        }
+
+        public int CompleteCauldrons()
+        {
+            if (!CanModifyWorld())
+                return 0;
+
+            int completed = 0;
+            Cauldron[] cauldrons = FindObjectsOfType<Cauldron>();
+            for (int i = 0; cauldrons != null && i < cauldrons.Length; i++)
+            {
+                try
+                {
+                    Cauldron cauldron = cauldrons[i];
+                    if (cauldron == null || cauldron.GetState() != Cauldron.EState.Cooking)
+                        continue;
+
+                    cauldron.RemainingCookTime = 0;
+                    cauldron.FinishCookOperation();
+                    completed++;
+                }
+                catch (Exception ex)
+                {
+                    DebugLogService.Instance.VerboseWarning("Cauldron completion failed: " + ex.Message);
+                }
+            }
+
+            NotificationService.Instance.Status("Cauldrons completed: " + completed);
+            return completed;
+        }
+
+        private static bool CanModifyWorld()
+        {
+            if (!LobbyService.Instance.IsInLobby() || LobbyService.Instance.IsHost())
+                return true;
+
+            NotificationService.Instance.Status("World automation is host only");
+            return false;
         }
 
         private static int WaterContainers<T>(T[] containers)
