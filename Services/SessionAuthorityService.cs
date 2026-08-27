@@ -13,7 +13,7 @@ namespace NugzzMenu.Services
 {
     /// <summary>
     /// Negotiates Nugzz access inside the current lobby. Clients advertise their
-    /// build through Player.SendValue; the host explicitly approves matching builds.
+    /// build through Player.SendValue; the host explicitly approves R4+ builds.
     /// Approval is session-only and is cleared when the lobby changes.
     /// </summary>
     public sealed class SessionAuthorityService
@@ -21,7 +21,7 @@ namespace NugzzMenu.Services
         public sealed class ClientStatus
         {
             public bool Detected { get; internal set; }
-            public bool VersionMatches { get; internal set; }
+            public bool Compatible { get; internal set; }
             public bool Approved { get; internal set; }
             public bool IsLocal { get; internal set; }
             public string BuildLabel { get; internal set; } = "Not detected";
@@ -44,7 +44,8 @@ namespace NugzzMenu.Services
         private const string DecisionVariable = Prefix + "Decision";
         private const string DecisionPrefix = Prefix + "Decision.";
         private const string LegacyAuthorityVariable = "Nugzz.HostAuthority";
-        private const string BuildVersion = "0.9.9R4";
+        private const string BuildVersion = "1.0.0";
+        private const string MinimumCompatibleVersion = "0.9.9R4";
         private const float PulseInterval = 1.5f;
         private const float PulseTimeout = 5f;
         private const float AssemblyScanInterval = 3f;
@@ -58,6 +59,7 @@ namespace NugzzMenu.Services
         private bool _rpModBlocked;
         private string _rpModLocation = string.Empty;
         private ulong _lobbyId;
+        private bool _autoApproveCompatibleClients;
         private int _hostClientId = -1;
         private bool _hostApproved;
         private float _lastHostMessage = -100f;
@@ -74,6 +76,7 @@ namespace NugzzMenu.Services
         public static SessionAuthorityService Instance => _instance;
         public bool FeaturesAllowed { get; private set; } = true;
         public bool IsRpModBlocked => _rpModBlocked;
+        public bool AutoApproveCompatibleClients => _autoApproveCompatibleClients;
         public string BlockReason { get; private set; } = string.Empty;
 
         private SessionAuthorityService() { }
@@ -184,7 +187,7 @@ namespace NugzzMenu.Services
             if (status.IsLocal && IsLocalHost())
             {
                 status.Detected = true;
-                status.VersionMatches = true;
+                status.Compatible = true;
                 status.Approved = true;
                 status.BuildLabel = BuildVersion;
                 return status;
@@ -195,9 +198,11 @@ namespace NugzzMenu.Services
                 return status;
 
             status.Detected = Time.unscaledTime - record.LastSeen <= ClientExpiry;
-            status.VersionMatches = record.BuildToken == BuildToken;
-            status.Approved = record.Approved && status.VersionMatches;
-            status.BuildLabel = status.VersionMatches ? BuildVersion : "Different build";
+            status.Compatible = IsCompatibleBuildToken(record.BuildToken);
+            status.Approved = record.Approved && status.Compatible;
+            status.BuildLabel = record.BuildToken == BuildToken
+                ? BuildVersion
+                : status.Compatible ? MinimumCompatibleVersion + "+" : "Incompatible build";
             return status;
         }
 
@@ -212,7 +217,7 @@ namespace NugzzMenu.Services
 
             int clientId = GetClientId(player);
             if (clientId < 0 || !_clients.TryGetValue(clientId, out ClientRecord record) ||
-                record.BuildToken != BuildToken)
+                !IsCompatibleBuildToken(record.BuildToken))
             {
                 DebugLogService.Instance.SessionWarning("HOST approval rejected: player=" +
                     PlayerLabel(player) + "; clientId=" + clientId +
@@ -223,9 +228,36 @@ namespace NugzzMenu.Services
             record.Approved = approved;
             DebugLogService.Instance.Session("HOST approval changed: player=" + PlayerLabel(player) +
                 "; clientId=" + clientId + "; approved=" + approved +
-                "; tokenMatch=" + (record.BuildToken == BuildToken));
+                "; compatible=" + IsCompatibleBuildToken(record.BuildToken));
             BroadcastDecision(record, true);
             return true;
+        }
+
+        public int SetAllClientApprovals(bool approved)
+        {
+            if (!IsLocalHost())
+            {
+                DebugLogService.Instance.SessionWarning(
+                    "HOST bulk approval rejected: caller is not the lobby host");
+                return 0;
+            }
+
+            _autoApproveCompatibleClients = approved;
+            int updated = 0;
+            foreach (ClientRecord record in _clients.Values)
+            {
+                if (record == null || !IsCompatibleBuildToken(record.BuildToken) ||
+                    Time.unscaledTime - record.LastSeen > ClientExpiry)
+                    continue;
+
+                record.Approved = approved;
+                BroadcastDecision(record, true);
+                updated++;
+            }
+
+            DebugLogService.Instance.Session("HOST bulk approval changed: approved=" + approved +
+                "; clientsUpdated=" + updated + "; compatibleLateJoiners=" + approved);
+            return updated;
         }
 
         internal bool IsClientApproved(Player player)
@@ -237,7 +269,7 @@ namespace NugzzMenu.Services
 
             int clientId = GetClientId(player);
             return clientId >= 0 && _clients.TryGetValue(clientId, out ClientRecord record) &&
-                record.Approved && record.BuildToken == BuildToken &&
+                record.Approved && IsCompatibleBuildToken(record.BuildToken) &&
                 Time.unscaledTime - record.LastSeen <= ClientExpiry;
         }
 
@@ -322,13 +354,16 @@ namespace NugzzMenu.Services
                 record.Approved = false;
             record.BuildToken = token;
             record.LastSeen = Time.unscaledTime;
+            if ((isNew || tokenChanged) && _autoApproveCompatibleClients &&
+                IsCompatibleBuildToken(token))
+                record.Approved = true;
 
             if (isNew || tokenChanged)
             {
                 DebugLogService.Instance.Session("HOST RX ClientHello: hook=" + receiveHook +
                     "; source=" + PlayerLabel(source) + "; clientId=" + clientId +
                     "; token=" + token + "; expected=" + BuildToken +
-                    "; match=" + (token == BuildToken));
+                    "; compatible=" + IsCompatibleBuildToken(token));
             }
             else
             {
@@ -424,7 +459,8 @@ namespace NugzzMenu.Services
 
             foreach (ClientRecord client in _clients.Values)
             {
-                SendHostValue(client, HostHelloVariable, BuildToken, false);
+                // Echo the client's token so R4 clients accept hosts built from a newer DLL.
+                SendHostValue(client, HostHelloVariable, client.BuildToken, false);
                 BroadcastDecision(client, false);
             }
         }
@@ -455,8 +491,13 @@ namespace NugzzMenu.Services
             if (record == null)
                 return;
 
-            int payload = record.Approved && record.BuildToken == BuildToken ? BuildToken : -BuildToken;
-            SendHostValue(record, DecisionVariable, payload, forceLog);
+            bool approved = record.Approved && IsCompatibleBuildToken(record.BuildToken);
+            int payload = approved
+                ? record.BuildToken
+                : record.BuildToken == int.MinValue ? -1 : -Math.Abs(record.BuildToken);
+            string variableName = DecisionPrefix +
+                record.ClientId.ToString(CultureInfo.InvariantCulture);
+            SendHostValue(record, variableName, payload, forceLog);
         }
 
         private void SendHostValue(ClientRecord record, string name, int value, bool forceLog)
@@ -532,6 +573,7 @@ namespace NugzzMenu.Services
         private void ResetLobbyState()
         {
             _clients.Clear();
+            _autoApproveCompatibleClients = false;
             _hostClientId = -1;
             _hostApproved = false;
             _lastHostMessage = -100f;
@@ -596,6 +638,14 @@ namespace NugzzMenu.Services
                     hash = (hash ^ identity[i]) * 16777619;
                 return (hash & 0x3FFFFF) + 1;
             }
+        }
+
+        private static bool IsCompatibleBuildToken(int token)
+        {
+            // This session handshake first shipped in R4. A positive token proves the
+            // remote DLL implements that protocol; the token identifies a build but is
+            // deliberately not compared with the host's assembly hash.
+            return token > 0;
         }
 
         private static void LogReceiverHookState()

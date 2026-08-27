@@ -25,6 +25,37 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
             y += 20f;
 
+            if (LobbyService.Instance.IsHost())
+            {
+                SessionAuthorityService authority = SessionAuthorityService.Instance;
+                GUIFit.Panel(new Rect(0f, y, w, 48f), boxStyle);
+                TMPHybridService.Instance.Label(6f, y + 4f, w - 12f, 18f,
+                    authority.AutoApproveCompatibleClients
+                        ? "R4+ lobby authorization: AUTO-ALLOW ON"
+                        : "R4+ lobby authorization: MANUAL",
+                    authority.AutoApproveCompatibleClients
+                        ? new Color(0.45f, 1f, 0.45f)
+                        : GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+
+                float approvalButtonWidth = (w - 18f) / 2f;
+                if (GUIFit.Button(new Rect(6f, y + 26f, approvalButtonWidth, 18f),
+                    "Allow All + Late Joiners",
+                    authority.AutoApproveCompatibleClients ? onStyle : buttonStyle))
+                {
+                    authority.SetAllClientApprovals(true);
+                }
+                if (GUIFit.Button(new Rect(12f + approvalButtonWidth, y + 26f,
+                    approvalButtonWidth, 18f), "Deny All / Stop Auto-Allow",
+                    !authority.AutoApproveCompatibleClients ? onStyle : buttonStyle))
+                {
+                    authority.SetAllClientApprovals(false);
+                }
+                y += 52f;
+            }
+
             int playerCount = players?.Count ?? 0;
             if (playerCount == 0)
             {
@@ -91,8 +122,8 @@ namespace NugzzMenu.UI
                         ? "Nugzz host build " + authority.BuildLabel + " - always allowed"
                         : !authority.Detected
                             ? "Nugzz: not detected"
-                            : !authority.VersionMatches
-                                ? "Nugzz: different build - access unavailable"
+                            : !authority.Compatible
+                                ? "Nugzz: incompatible - v0.9.9R4 or newer required"
                                 : "Nugzz " + authority.BuildLabel + " - " +
                                     (authority.Approved ? "ALLOWED" : "DENIED");
                     TMPHybridService.Instance.Label(6f, y + 50f, w - 12f, 18f, authorityText,
@@ -157,8 +188,8 @@ namespace NugzzMenu.UI
                 SessionAuthorityService.Instance.GetClientStatus(player);
             if (!status.Detected)
                 return " | Nugzz: no";
-            if (!status.VersionMatches)
-                return " | Nugzz: mismatch";
+            if (!status.Compatible)
+                return " | Nugzz: incompatible";
             return status.Approved ? " | Nugzz: allowed" : " | Nugzz: denied";
         }
 

@@ -270,6 +270,17 @@ namespace NugzzMenu.Services
                 {
                     _yaw += Input.GetAxisRaw("Mouse X") * 1.6f;
                     _pitch = Mathf.Clamp(_pitch - Input.GetAxisRaw("Mouse Y") * 1.3f, -35f, 55f);
+
+                    Vector2 controllerLook = ControllerInputService.Instance.GameplayLook;
+                    if (controllerLook.sqrMagnitude > 0.01f)
+                    {
+                        _yaw += controllerLook.x * 150f * Time.unscaledDeltaTime;
+                        _pitch = Mathf.Clamp(
+                            _pitch - controllerLook.y * 115f * Time.unscaledDeltaTime,
+                            -35f,
+                            55f);
+                    }
+
                     _lastInputFrame = Time.frameCount;
                 }
 

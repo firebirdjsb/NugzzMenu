@@ -18,8 +18,11 @@ namespace NugzzMenu.Services
         private string _cachedText = string.Empty;
         private long _nextRefreshAtMs;
         private GUIStyle _labelStyle;
+        private GUIStyle _shadowStyle;
         private long _nextExceptionLogAtMs;
         private bool _runtimeSupported = true;
+        private bool _cachedControllerConnected;
+        private bool _cachedPlayStationLayout;
 
         public bool Enabled => _enabled;
 
@@ -72,29 +75,33 @@ namespace NugzzMenu.Services
             if (string.IsNullOrEmpty(text))
                 return;
 
-            GUISystemService gui = GUISystemService.Instance;
-            EnsureStyle(gui);
+            EnsureStyle(GUISystemService.Instance);
 
-            float width = Clamp(text.Length * 6f + 20f, 280f, 440f);
+            float maxWidth = Mathf.Max(280f, Screen.width - 32f);
+            float width = Clamp(text.Length * 6f + 20f, 280f, maxWidth);
             float x = Clamp(Screen.width - width - 16f, 8f, Screen.width - width - 8f);
             float y = Clamp(Screen.height - 138f, 44f, Screen.height - 40f);
             Rect rect = new Rect(x, y, width, 24f);
 
-            if (gui.NotificationTexture != null)
-                GUIFit.Texture(rect, gui.NotificationTexture);
-
-            if (gui.AccentTexture != null)
-                GUIFit.Texture(new Rect(rect.x, rect.y, 3f, rect.height), gui.AccentTexture);
-
-            GUI.Label(new Rect(rect.x + 8f, rect.y + 3f, rect.width - 16f, 18f), text, _labelStyle);
+            Rect labelRect = new Rect(rect.x + 8f, rect.y + 3f, rect.width - 16f, 18f);
+            GUI.Label(new Rect(labelRect.x + 1f, labelRect.y + 1f, labelRect.width, labelRect.height),
+                text, _shadowStyle);
+            GUI.Label(labelRect, text, _labelStyle);
         }
 
         private string GetCachedText()
         {
             long now = Environment.TickCount64;
-            if (now >= _nextRefreshAtMs || string.IsNullOrEmpty(_cachedText))
+            ControllerInputService input = ControllerInputService.Instance;
+            bool controllerConnected = input.ControllerConnected;
+            bool playStationLayout = input.IsPlayStation;
+            bool inputModeChanged = controllerConnected != _cachedControllerConnected ||
+                playStationLayout != _cachedPlayStationLayout;
+            if (now >= _nextRefreshAtMs || string.IsNullOrEmpty(_cachedText) || inputModeChanged)
             {
                 _cachedText = BuildText();
+                _cachedControllerConnected = controllerConnected;
+                _cachedPlayStationLayout = playStationLayout;
                 _nextRefreshAtMs = now + RefreshIntervalMs;
             }
 
@@ -116,6 +123,9 @@ namespace NugzzMenu.Services
             _labelStyle.normal.textColor = gui.GetColorForCategory(LabelCategory.Notif);
             if (gui.UIFont != null)
                 _labelStyle.font = gui.UIFont;
+
+            _shadowStyle = new GUIStyle(_labelStyle);
+            _shadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.9f);
         }
 
         private static float Clamp(float value, float min, float max)
@@ -128,14 +138,32 @@ namespace NugzzMenu.Services
         private string BuildText()
         {
             _builder.Length = 0;
-            Append(_menuKey + " Menu");
-            Append("G 3rd Person");
+            ControllerInputService input = ControllerInputService.Instance;
+            if (input.ControllerConnected)
+            {
+                Append(input.LeftShoulderPrompt + "+" + input.RightShoulderPrompt +
+                    "+D-Pad Up Menu");
+                Append(input.LeftShoulderPrompt + "+" + input.RightShoulderPrompt +
+                    "+D-Pad Down 3rd Person");
 
-            if (FlyingService.Instance.DoubleSpaceHotkeyEnabled)
-                Append("Space+Space Fly");
+                if (FlyingService.Instance.DoubleSpaceHotkeyEnabled)
+                    Append(input.ConfirmPrompt + "+" + input.ConfirmPrompt + " Fly");
 
-            if (FlyingService.Instance.Enabled)
-                Append("Fly Move: WASD Space Ctrl");
+                if (FlyingService.Instance.Enabled)
+                    Append("Fly Move: Left Stick  " + input.ConfirmPrompt + " Up  " +
+                        input.CancelPrompt + " Down");
+            }
+            else
+            {
+                Append(_menuKey + " Menu");
+                Append("G 3rd Person");
+
+                if (FlyingService.Instance.DoubleSpaceHotkeyEnabled)
+                    Append("Space+Space Fly");
+
+                if (FlyingService.Instance.Enabled)
+                    Append("Fly Move: WASD  Space Up  Ctrl Down");
+            }
 
             return _builder.ToString();
         }

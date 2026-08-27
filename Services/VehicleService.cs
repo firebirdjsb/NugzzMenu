@@ -1616,12 +1616,32 @@ namespace NugzzMenu.Services
         {
             try
             {
+                PlayerMovement movement = PlayerMovement.Instance;
+                if (movement != null && movement.CurrentVehicle != null)
+                {
+                    LandVehicle vehicle = movement.CurrentVehicle.GetComponent<LandVehicle>();
+                    if (vehicle != null)
+                        return vehicle;
+                }
+            }
+            catch { }
+
+            try
+            {
                 Player player = ManagerCacheService.Instance.LocalPlayer;
-                VehicleSeat seat = player?.CurrentVehicleSeat;
-                if (seat == null || !seat.isDriverSeat)
+                if (player == null || !player.IsInVehicle)
                     return null;
 
-                return seat.GetComponentInParent<LandVehicle>(true);
+                if (player.CurrentVehicle != null)
+                {
+                    LandVehicle vehicle = player.CurrentVehicle.GetComponent<LandVehicle>();
+                    if (vehicle != null)
+                        return vehicle;
+                }
+
+                VehicleSeat seat = player.CurrentVehicleSeat;
+                if (seat != null && seat.isDriverSeat)
+                    return seat.GetComponentInParent<LandVehicle>(true);
             }
             catch { }
 

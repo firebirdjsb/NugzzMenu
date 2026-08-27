@@ -87,7 +87,12 @@ namespace NugzzMenu.Services
                     "OnCamera", "OnScrollWheel", "OnInventoryLeft", "OnInventoryRight",
                     "OnHolster", "OnControllerCombo", "OnVehicleResetCamera",
                     "OnVehicleDrive", "OnSkateboardDismount", "OnSkateboardMount",
-                    "OnTogglePauseMenu", "OnUINavigationDirection"
+                    "OnTogglePauseMenu", "OnUINavigationDirection",
+                    "OnUICyclePanelDirection", "OnUITabNavigationPrimary",
+                    "OnUITabNavigationSecondary", "OnUITabNavigationTertiary",
+                    "OnUIScrollbar", "OnUIMapNavigationDirection", "OnUIMapZoom",
+                    "OnUIModifyAmountIncrementTierOne", "OnUIModifyAmountIncrementTierTwo",
+                    "OnUIModifyAmountIncrementTierThree"
                 };
 
                 var gameInputType = typeof(GameInput);

@@ -69,6 +69,9 @@
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>net6.0\UnityEngine.InputLegacyModule.dll</HintPath>
     </Reference>
+    <Reference Include="Unity.InputSystem">
+      <HintPath>net6.0\Unity.InputSystem.dll</HintPath>
+    </Reference>
     <Reference Include="Il2CppFishNet.Runtime">
       <HintPath>net6.0\Il2CppFishNet.Runtime.dll</HintPath>
     </Reference>
@@ -84,10 +87,5 @@
     <Reference Include="Il2CppSystem">
       <HintPath>net6.0\Il2CppSystem.dll</HintPath>
     </Reference>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="link.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 </Project>

@@ -12,8 +12,20 @@ namespace NugzzMenu.Services
         private static readonly Dictionary<Texture2D, GUIStyle> TextureStyleCache =
             new Dictionary<Texture2D, GUIStyle>();
         private static string _activeTextFieldKey;
+        private static ControllerInputService _controller;
+        private static int _controlCount;
+        private static int _focusedControl;
+        private static int _pendingFocusMove;
+        private static Rect _focusedControlRect;
+        private static bool _hasFocusedControlRect;
 
         public static bool IsTextFieldActive => !string.IsNullOrEmpty(_activeTextFieldKey);
+
+        public static bool TryGetFocusedControlRect(out Rect rect)
+        {
+            rect = _focusedControlRect;
+            return _hasFocusedControlRect;
+        }
 
         public static GUIStyle FittedStyle(GUIStyle source, Rect rect, string text, int minFontSize = DefaultMinFontSize, bool wordWrap = false)
         {
@@ -37,9 +49,36 @@ namespace NugzzMenu.Services
             return GetCachedStyle(sourceStyle, smallest, wordWrap);
         }
 
-        public static bool Button(Rect rect, string text, GUIStyle style, int minFontSize = DefaultMinFontSize, bool wordWrap = false)
+        public static bool Button(Rect rect, string text, GUIStyle style, int minFontSize = DefaultMinFontSize,
+            bool wordWrap = false, bool navigable = true)
         {
-            return GUI.Button(rect, text ?? "", FittedStyle(style, rect, text, minFontSize, wordWrap));
+            bool focused = navigable && RegisterControl(rect);
+            bool clicked = GUI.Button(rect, text ?? "", FittedStyle(style, rect, text, minFontSize, wordWrap));
+            if (focused)
+                DrawFocus(rect);
+            if (focused && _controller != null && _controller.ConsumeSubmit())
+                clicked = true;
+            return clicked;
+        }
+
+        public static float Slider(Rect rect, float value, float min, float max, float step = 0f)
+        {
+            bool focused = RegisterControl(rect);
+            GUISystemService gui = GUISystemService.Instance;
+            float result = GUI.HorizontalSlider(rect, value, min, max,
+                gui.SliderStyle, gui.SliderThumbStyle);
+            if (focused)
+                DrawFocus(new Rect(rect.x, rect.y - 5f, rect.width, rect.height + 10f));
+            if (focused && _controller != null)
+            {
+                int direction = _controller.ConsumeHorizontalMove();
+                if (direction != 0)
+                {
+                    float increment = step > 0f ? step : Mathf.Max(0.01f, (max - min) / 50f);
+                    result = Mathf.Clamp(result + increment * direction, min, max);
+                }
+            }
+            return result;
         }
 
         public static void Panel(Rect rect, GUIStyle style)
@@ -53,9 +92,23 @@ namespace NugzzMenu.Services
             if (gui.AccentSoftTexture == null)
                 return;
 
-            Texture(new Rect(rect.x, rect.y, rect.width, 1f), gui.AccentSoftTexture);
+            float horizontalInset = Mathf.Min(10f, Mathf.Max(3f, rect.width * 0.08f));
+            Texture(new Rect(rect.x + horizontalInset, rect.y + 1f,
+                Mathf.Max(0f, rect.width - horizontalInset * 2f), 1f), gui.AccentSoftTexture);
             if (rect.height >= 24f)
-                Texture(new Rect(rect.x, rect.y, 2f, rect.height), gui.AccentSoftTexture);
+            {
+                float verticalInset = Mathf.Min(9f, rect.height * 0.25f);
+                Texture(new Rect(rect.x + 1f, rect.y + verticalInset, 1f,
+                    Mathf.Max(0f, rect.height - verticalInset * 2f)), gui.AccentSoftTexture);
+            }
+        }
+
+        public static void Surface(Rect rect, GUIStyle style)
+        {
+            if (rect.width <= 0f || rect.height <= 0f || style == null)
+                return;
+
+            GUI.Box(rect, string.Empty, style);
         }
 
         public static void Texture(Rect rect, Texture2D texture)
@@ -97,11 +150,15 @@ namespace NugzzMenu.Services
             else if (display.Length == 0)
                 display = "Click to type...";
 
-            if (GUI.Button(rect, display, style))
+            bool focused = RegisterControl(rect);
+            if (GUI.Button(rect, display, style) ||
+                (focused && _controller != null && _controller.ConsumeSubmit()))
             {
                 _activeTextFieldKey = key;
                 active = true;
             }
+            if (focused)
+                DrawFocus(rect);
 
             if (!active || current == null || current.type != EventType.KeyDown)
                 return value;
@@ -132,6 +189,48 @@ namespace NugzzMenu.Services
             return value;
         }
 
+        public static void BeginControllerPass(ControllerInputService controller)
+        {
+            _controller = controller;
+            _controlCount = 0;
+            _hasFocusedControlRect = false;
+        }
+
+        public static void EndControllerPass()
+        {
+            if (_controlCount <= 0)
+                _focusedControl = 0;
+            else
+                _focusedControl = Mathf.Clamp(_focusedControl, 0, _controlCount - 1);
+
+            if (_pendingFocusMove != 0 && _controlCount > 0)
+            {
+                _focusedControl = (_focusedControl + _pendingFocusMove) % _controlCount;
+                if (_focusedControl < 0)
+                    _focusedControl += _controlCount;
+                _pendingFocusMove = 0;
+            }
+            _controller = null;
+        }
+
+        public static void MoveFocus(int direction)
+        {
+            if (direction != 0)
+                _pendingFocusMove += direction;
+        }
+
+        public static void ResetFocus()
+        {
+            _focusedControl = 0;
+            _pendingFocusMove = 0;
+            _activeTextFieldKey = null;
+        }
+
+        public static void DeactivateTextField()
+        {
+            _activeTextFieldKey = null;
+        }
+
         public static void EnsureFont(GUIStyle style)
         {
             if (style == null)
@@ -144,6 +243,38 @@ namespace NugzzMenu.Services
         {
             StyleCache.Clear();
             TextureStyleCache.Clear();
+            ResetFocus();
+        }
+
+        private static bool RegisterControl(Rect rect)
+        {
+            int index = _controlCount++;
+            bool focused = _controller != null && _controller.ControllerActive && index == _focusedControl;
+            if (focused)
+            {
+                _focusedControlRect = rect;
+                _hasFocusedControlRect = true;
+            }
+            return focused;
+        }
+
+        private static void DrawFocus(Rect rect)
+        {
+            GUISystemService gui = GUISystemService.Instance;
+            Rect focus = new Rect(rect.x - 2f, rect.y - 2f, rect.width + 4f, rect.height + 4f);
+            if (gui.FocusStyle != null)
+            {
+                Surface(focus, gui.FocusStyle);
+                return;
+            }
+
+            Texture2D texture = gui.AccentTexture;
+            if (texture == null)
+                return;
+            Texture(new Rect(focus.x, focus.y, focus.width, 2f), texture);
+            Texture(new Rect(focus.x, focus.yMax - 2f, focus.width, 2f), texture);
+            Texture(new Rect(focus.x, focus.y, 2f, focus.height), texture);
+            Texture(new Rect(focus.xMax - 2f, focus.y, 2f, focus.height), texture);
         }
 
         private static GUIStyle GetCachedStyle(GUIStyle source, int fontSize, bool wordWrap)

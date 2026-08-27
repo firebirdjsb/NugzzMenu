@@ -1089,31 +1089,40 @@ namespace NugzzMenu.Services
                 EQuality requestedQuality = GetQuality(qualityIndex);
                 DebugLogService.Instance.Verbose("Spawn diagnose: requested=" + itemId + " resolved=" + resolvedItemId + " quantity=" + quantity + " quality=" + requestedQuality + " defType=" + itemDefinition.GetType().Name);
 
-                SlotSnapshot[] beforeSlots = CaptureSlotSnapshot(playerInventory);
+                int stackLimit = GetSafeStackLimit(itemDefinition);
+                int remaining = quantity;
+                int inserted = 0;
 
-                ItemInstance instance = CreateItemInstance(
-                    itemDefinition, itemId, quantity, qualityIndex, clothingColor);
-                if (instance == null)
+                while (remaining > 0)
                 {
-                    UnityEngine.Debug.LogError("[Nugzz] Failed to create item instance for '" + itemId + "'");
-                    NotificationService.Instance.Status("Item create failed: " + itemId);
-                    return;
+                    int stackQuantity = UseGameStackLogic ? 1 : Math.Min(remaining, stackLimit);
+                    SlotSnapshot[] beforeSlots = CaptureSlotSnapshot(playerInventory);
+                    ItemInstance instance = CreateItemInstance(
+                        itemDefinition, itemId, stackQuantity, qualityIndex, clothingColor);
+                    if (instance == null)
+                    {
+                        UnityEngine.Debug.LogError("[Nugzz] Failed to create item instance for '" + itemId + "'");
+                        break;
+                    }
+
+                    LogInstanceQuality("pre-insert", instance);
+                    if (!TryAddItemToInventory(playerInventory, instance, requestedQuality))
+                    {
+                        UnityEngine.Debug.LogError("[Nugzz] Failed to insert item into inventory for '" + itemId + "'");
+                        break;
+                    }
+
+                    ApplyQualityToChangedInventorySlots(playerInventory, itemId, beforeSlots, requestedQuality);
+                    inserted += stackQuantity;
+                    remaining -= stackQuantity;
                 }
 
-                LogInstanceQuality("pre-insert", instance);
-
-                if (!TryAddItemToInventory(playerInventory, instance, requestedQuality))
-                {
-                    UnityEngine.Debug.LogError("[Nugzz] Failed to insert item into inventory for '" + itemId + "'");
-                    NotificationService.Instance.Status("Item insert failed: " + itemId);
-                    return;
-                }
-
-                ApplyQualityToChangedInventorySlots(playerInventory, itemId, beforeSlots, requestedQuality);
                 LogMatchingInventoryQuality(playerInventory, itemId, "post-insert");
-
-                DebugLogService.Instance.Verbose("Spawned " + quantity + "x " + itemId + " via direct item instance");
-                NotificationService.Instance.Status("Spawned " + quantity + "x " + itemId);
+                DebugLogService.Instance.Verbose("Spawned " + inserted + "/" + quantity + "x " + itemId +
+                    " using stack limit " + stackLimit);
+                NotificationService.Instance.Status(inserted == quantity
+                    ? "Spawned " + quantity + "x " + itemId
+                    : "Spawned " + inserted + "/" + quantity + "x " + itemId + " (inventory full)");
             }
             catch (Exception ex)
             {
@@ -1158,6 +1167,21 @@ namespace NugzzMenu.Services
             return false;
         }
 
+        private static int GetSafeStackLimit(ItemDefinition definition)
+        {
+            if (definition == null)
+                return 1;
+
+            try
+            {
+                return Math.Max(1, definition.StackLimit);
+            }
+            catch
+            {
+                return 1;
+            }
+        }
+
         private bool TryInsertQualityItemToInventory(PlayerInventory playerInventory, ItemInstance instance, EQuality requestedQuality)
         {
             try
@@ -1189,7 +1213,8 @@ namespace NugzzMenu.Services
 
                     try
                     {
-                        if (slot.IsAtCapacity || slot.IsAddLocked)
+                        if (slot.IsAtCapacity || slot.IsAddLocked ||
+                            slot.GetCapacityForItem(instance, true) < instance.Quantity)
                             continue;
                     }
                     catch { }
@@ -1225,7 +1250,7 @@ namespace NugzzMenu.Services
                     try
                     {
                         int capacity = slot.GetCapacityForItem(instance, true);
-                        if (capacity <= 0)
+                        if (capacity < instance.Quantity)
                             continue;
                     }
                     catch { }

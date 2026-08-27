@@ -6,7 +6,7 @@ world and inventory utilities, multiplayer-aware vehicle features, quest and
 save recovery, performance tuning, and developer-friendly diagnostics in one
 menu.
 
-Current release: [v0.9.9R4](RELEASE_NOTES_v0.9.9R4.md)
+Current release: [v1.0.0](RELEASE_NOTES_v1.0.0.md)
 
 ## Features
 
@@ -29,29 +29,23 @@ Current release: [v0.9.9R4](RELEASE_NOTES_v0.9.9R4.md)
   static or physics-enabled 3D shapes.
 - Clothing color selection, remembered custom mixtures, production automation,
   and selected-seed grow helpers.
+- Full Xbox and PlayStation controller navigation with a polished animated menu
+  shell, visible focus, contextual controls, and automatic scrolling.
 
 ## Latest Changes
 
-### v0.9.9R4
+### v1.0.0
 
-- Updated NugzzMenu for the current Schedule I IL2CPP assemblies and S1API,
-  including safer GUI rendering and preserved patch targets.
-- Added host-controlled Nugzz access for matching multiplayer clients, with
-  live allow and deny controls in the Lobby tab.
-- Added native console auto-complete, interactive 3D shapes, per-skateboard
-  tuning, clothing colors, and remembered custom drug mixtures.
-- Added selected-seed auto planting plus one-click completion for meth cooks,
-  ovens, mixing stations, cauldrons, and mushroom grow cycles.
-- Added stricter pause, phone, console, TV, jukebox, casino, workstation,
-  vehicle, skateboard, and character-creation input protection.
-- Reduced repeated frame work in vehicle collision, camera, player, overlay,
-  relationship, and menu systems while keeping the gameplay tools available.
-- Reworked first-person view restoration, player scale synchronization, shape
-  interaction, vehicle HUD cleanup, and menu availability in live saves.
-- Removed the remaining legacy building patch source so vanilla placement owns
-  building behavior.
+- Added full controller support for Xbox and PlayStation layouts across every
+  tab, option, slider, text field, and action in NugzzMenu.
+- Redesigned the shared menu shell with smooth open and close animation,
+  clearer focus states, contextual controller help, and automatic scrolling.
+- Preserved all existing tab names, features, mouse controls, keyboard controls,
+  multiplayer safeguards, and main-menu save tools.
+- Kept multiplayer authorization compatible with approved NugzzMenu R4 and
+  newer clients while advertising the current v1.0.0 build.
 
-Full transparent diff notes: [RELEASE_NOTES_v0.9.9R4.md](RELEASE_NOTES_v0.9.9R4.md)
+Full release notes: [RELEASE_NOTES_v1.0.0.md](RELEASE_NOTES_v1.0.0.md)
 
 Release history: [CHANGELOG.md](CHANGELOG.md)
 

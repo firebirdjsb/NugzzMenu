@@ -16,11 +16,15 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "0.9.9R4";
+        private const string Version = "1.0.0";
         private const int WindowId = 98765;
         private const float HeaderHeight = 56f;
         private const float TabStripHeight = 36f;
-        private const float WindowBottomPadding = 16f;
+        private const float FooterHeight = 34f;
+        private const float HelpHeight = 50f;
+        private const float WindowBottomPadding = 10f;
+        private const float MenuOpenAnimationDuration = 0.22f;
+        private const float MenuCloseAnimationDuration = 0.15f;
 
         private enum MenuTab
         {
@@ -70,6 +74,9 @@ namespace NugzzMenu
         private readonly float[] _tabContentHeights = new float[TabLabels.Length];
         private readonly Vector2[] _tabScrollPositions = new Vector2[TabLabels.Length];
         private bool _isMenuOpen;
+        private bool _menuInputCaptured;
+        private bool _showControllerHelp;
+        private float _menuVisualProgress;
         private bool _authorityWasAllowed = true;
         private bool _isWindowDragging;
         private Vector2 _windowDragOffset;
@@ -132,6 +139,10 @@ namespace NugzzMenu
 
         public override void OnDeinitializeMelon()
         {
+            _isMenuOpen = false;
+            _menuInputCaptured = false;
+            _menuVisualProgress = 0f;
+            ControllerInputService.Instance.SetMenuOpen(false, false);
             GameplayStateGateService.Instance.SetMenuOpen(false);
             UnsubscribeS1ApiEvents();
             DebugTestRoomService.Instance.ClearRoom();
@@ -179,6 +190,8 @@ namespace NugzzMenu
         public override void OnUpdate()
         {
             PerformanceService.Instance.BeginNugzzUpdate();
+            ControllerInputService.Instance.Update();
+            UpdateMenuAnimation();
             SessionAuthorityService.Instance.Update();
             bool featuresAllowed = SessionAuthorityService.Instance.FeaturesAllowed;
             if (_authorityWasAllowed && !featuresAllowed)
@@ -188,8 +201,11 @@ namespace NugzzMenu
             if (featuresAllowed)
                 ConsoleAutocompleteService.Instance.Update();
 
-            bool menuKeyPressed = Input.GetKeyDown(_menuKey);
-            if (menuKeyPressed && !_isMenuOpen)
+            bool controllerMenuPressed = ControllerInputService.Instance.ConsumeMenuToggle();
+            bool controllerThirdPersonPressed =
+                ControllerInputService.Instance.ConsumeThirdPersonToggle();
+            bool menuKeyPressed = Input.GetKeyDown(_menuKey) || controllerMenuPressed;
+            if (menuKeyPressed && !_isMenuOpen && !_menuInputCaptured)
                 RefreshSaveToolSceneState();
 
             bool mainMenuSaveMode = SaveManagementService.Instance.IsMainMenu &&
@@ -198,8 +214,8 @@ namespace NugzzMenu
                 out string blockedReason);
             if (nativeUiBlocked && !mainMenuSaveMode)
             {
-                if (_isMenuOpen)
-                    SetMenuOpen(false);
+                if (_isMenuOpen || _menuInputCaptured)
+                    SetMenuOpen(false, false, true);
                 if (CameraService.Instance.ThirdPersonEnabled)
                     CameraService.Instance.ToggleThirdPerson(false, false);
             }
@@ -209,16 +225,24 @@ namespace NugzzMenu
             {
                 if (_isMenuOpen)
                 {
-                    if (!GUIFit.IsTextFieldActive)
+                    if (controllerMenuPressed || !GUIFit.IsTextFieldActive)
                         SetMenuOpen(false);
+                }
+                else if (_menuInputCaptured)
+                {
+                    SetMenuOpen(true, controllerMenuPressed);
                 }
                 else if (mainMenuSaveMode || (!nativeUiBlocked && !hotkeysBlocked))
                 {
-                    ToggleMenu();
+                    ToggleMenu(controllerMenuPressed);
                 }
             }
 
-            if (Input.GetKeyDown(KeyCode.G) && !_isMenuOpen)
+            if (_isMenuOpen && _menuVisualProgress >= 0.999f)
+                HandleControllerMenuInput();
+
+            if ((Input.GetKeyDown(KeyCode.G) || controllerThirdPersonPressed) &&
+                !_menuInputCaptured)
             {
                 if (!featuresAllowed)
                     Status(SessionAuthorityService.Instance.BlockReason);
@@ -239,11 +263,11 @@ namespace NugzzMenu
 
             PlayerCheatService.Instance.Update();
             EffectsService.Instance.Update();
-            CameraService.Instance.MaintainThirdPersonState(_isMenuOpen);
+            CameraService.Instance.MaintainThirdPersonState(_menuInputCaptured);
             ItemService.Instance.ProcessPendingSpawns();
             VehicleService.Instance.Update();
             VehicleCollisionService.Instance.Update();
-            VehicleMenuCameraService.Instance.Update(_isMenuOpen);
+            VehicleMenuCameraService.Instance.Update(_menuInputCaptured);
             VehicleHudLifecycle.Update();
             SkateboardTuneService.Instance.Update();
             PerformanceService.Instance.Update();
@@ -267,7 +291,7 @@ namespace NugzzMenu
                 return;
             if (CameraService.Instance.ThirdPersonEnabled)
                 CameraService.Instance.ApplyThirdPersonCameraLate();
-            VehicleMenuCameraService.Instance.LateUpdate(_isMenuOpen);
+            VehicleMenuCameraService.Instance.LateUpdate(_menuInputCaptured);
             if (FlyingService.Instance.Enabled)
                 FlyingService.Instance.ApplyPostMovementLock();
         }
@@ -305,7 +329,7 @@ namespace NugzzMenu
             var notifications = NotificationService.Instance;
             var text = TMPHybridService.Instance;
 
-            if (_isMenuOpen || notifications.HasNotification)
+            if (_isMenuOpen || _menuVisualProgress > 0.001f || notifications.HasNotification)
                 TryApplyFontToSkin(gui);
 
             if (notifications.HasNotification)
@@ -313,7 +337,7 @@ namespace NugzzMenu
                 const float notificationWidth = 420f;
                 float notificationX = (Screen.width - notificationWidth) / 2f;
                 GUIFit.Panel(new Rect(notificationX, 10f, notificationWidth, 34f), gui.NotificationStyle);
-                GUIFit.Texture(new Rect(notificationX, 10f, 4f, 34f), gui.AccentTexture);
+                GUIFit.Texture(new Rect(notificationX + 1f, 17f, 3f, 20f), gui.AccentTexture);
                 text.Label(
                     notificationX + 8f, 10f, notificationWidth - 16f, 34f,
                     notifications.NotificationMessage ?? string.Empty,
@@ -323,31 +347,62 @@ namespace NugzzMenu
                     gui.GetStyleForCategory(LabelCategory.Notif));
             }
 
-            if (!_isMenuOpen)
+            if (!_isMenuOpen && _menuVisualProgress <= 0.001f)
                 return;
 
-            RefreshSaveToolSceneState();
             ApplyDynamicWindowSize();
             ClampWindowToScreen();
 
-            if (gui.ShadowTexture != null)
-                GUIFit.Texture(new Rect(_windowRect.x + 8f, _windowRect.y + 10f, _windowRect.width, _windowRect.height), gui.ShadowTexture);
-            if (gui.BorderTexture != null)
+            bool menuInteractive = _isMenuOpen && _menuVisualProgress >= 0.999f;
+            Event currentEvent = Event.current;
+            if (!menuInteractive && currentEvent != null &&
+                currentEvent.type != EventType.Repaint)
             {
-                GUIFit.Texture(new Rect(_windowRect.x - 1f, _windowRect.y - 1f, _windowRect.width + 2f, 1f), gui.BorderTexture);
-                GUIFit.Texture(new Rect(_windowRect.x - 1f, _windowRect.y + _windowRect.height, _windowRect.width + 2f, 1f), gui.BorderTexture);
-                GUIFit.Texture(new Rect(_windowRect.x - 1f, _windowRect.y, 1f, _windowRect.height), gui.BorderTexture);
-                GUIFit.Texture(new Rect(_windowRect.x + _windowRect.width, _windowRect.y, 1f, _windowRect.height), gui.BorderTexture);
+                return;
             }
+
+            float easedProgress = SmoothStep01(_menuVisualProgress);
+            if (gui.BackdropTexture != null)
+            {
+                Color backdropColor = GUI.color;
+                GUI.color = new Color(backdropColor.r, backdropColor.g, backdropColor.b,
+                    backdropColor.a * easedProgress);
+                GUIFit.Texture(new Rect(0f, 0f, Screen.width, Screen.height), gui.BackdropTexture);
+                GUI.color = backdropColor;
+            }
+
+            Rect drawRect = _windowRect;
+            drawRect.y += (1f - easedProgress) * 12f;
+            Color previousColor = GUI.color;
+            bool previousEnabled = GUI.enabled;
+            GUI.color = new Color(previousColor.r, previousColor.g, previousColor.b,
+                previousColor.a * easedProgress);
+            GUI.enabled = menuInteractive;
+            if (menuInteractive)
+                GUIFit.BeginControllerPass(ControllerInputService.Instance);
 
             try
             {
-                DrawMenuWindow(gui);
+                if (gui.ShadowStyle != null)
+                    GUIFit.Surface(new Rect(drawRect.x + 7f, drawRect.y + 9f,
+                        drawRect.width, drawRect.height), gui.ShadowStyle);
+
+                if (menuInteractive)
+                    DrawMenuWindow(gui, drawRect);
+                else
+                    DrawMenuTransitionFrame(gui, drawRect);
             }
             catch (Exception ex)
             {
                 if (ShouldLogGuiException())
                     LoggerInstance.Warning("[Nugzz] Menu shell draw failed: " + ex);
+            }
+            finally
+            {
+                if (menuInteractive)
+                    GUIFit.EndControllerPass();
+                GUI.color = previousColor;
+                GUI.enabled = previousEnabled;
             }
         }
 
@@ -358,7 +413,7 @@ namespace NugzzMenu
 
             try
             {
-                KeybindOverlayService.Instance.Draw(_isMenuOpen);
+                KeybindOverlayService.Instance.Draw(_menuInputCaptured);
             }
             catch (System.NotSupportedException ex)
             {
@@ -403,14 +458,91 @@ namespace NugzzMenu
             return true;
         }
 
-        private void DrawMenuWindow(GUISystemService gui)
+        private void DrawMenuWindow(GUISystemService gui, Rect drawRect)
         {
-            HandleWindowDrag();
-            GUIFit.Panel(_windowRect, gui.WindowStyle);
-            GUI.BeginGroup(_windowRect);
+            if (_isMenuOpen && _menuVisualProgress >= 0.999f)
+                HandleWindowDrag();
+            GUIFit.Surface(drawRect, gui.WindowStyle);
+            GUI.BeginGroup(drawRect);
             try
             {
                 DrawWindow(WindowId);
+            }
+            finally
+            {
+                GUI.EndGroup();
+            }
+        }
+
+        private void DrawMenuTransitionFrame(GUISystemService gui, Rect drawRect)
+        {
+            var text = TMPHybridService.Instance;
+            float width = drawRect.width;
+            float contentW = width - 20f;
+
+            GUIFit.Surface(drawRect, gui.WindowStyle);
+            GUI.BeginGroup(drawRect);
+            try
+            {
+                GUIFit.Surface(new Rect(4f, 4f, width - 8f, 43f),
+                    gui.HeaderBackdropStyle);
+                GUIFit.Texture(new Rect(14f, 46f, width - 28f, 2f), gui.AccentTexture);
+                GUIFit.Texture(new Rect(20f, 48f, width - 40f, 1f), gui.AccentSoftTexture);
+                GUIFit.Texture(new Rect(12f, 3f, 42f, 42f), gui.LogoTexture);
+
+                text.Label(62f, 0f, 220f, 32f, "NugzzMenu",
+                    gui.GetColorForCategory(LabelCategory.Title),
+                    gui.GetFontSizeForCategory(LabelCategory.Title),
+                    gui.GetAlignmentForCategory(LabelCategory.Title),
+                    gui.GetStyleForCategory(LabelCategory.Title));
+                text.Label(64f, 30f, 300f, 14f, "Schedule I control suite",
+                    gui.GetColorForCategory(LabelCategory.Label), 10f,
+                    TextAnchor.MiddleLeft, FontStyle.Normal);
+
+                string rightText = $"v{Version}  |  {_menuKeyPreference.Value}";
+                GUIFit.Panel(new Rect(contentW - 224f, 10f, 220f, 24f), gui.BoxStyle);
+                text.Label(contentW - 216f, 13f, 76f, 18f, GetHostLabel(),
+                    GetHostLabelColor(), 10f, TextAnchor.MiddleLeft, FontStyle.Bold);
+                text.Label(contentW - 138f, 13f, 126f, 18f, rightText,
+                    gui.GetColorForCategory(LabelCategory.Subtitle),
+                    gui.GetFontSizeForCategory(LabelCategory.Subtitle),
+                    gui.GetAlignmentForCategory(LabelCategory.Subtitle),
+                    gui.GetStyleForCategory(LabelCategory.Subtitle));
+
+                float y = HeaderHeight;
+                float tabWidth = (contentW - 12f) / TabLabels.Length;
+                for (int i = 0; i < TabLabels.Length; i++)
+                {
+                    bool selected = i == (int)_selectedTab;
+                    Rect tabRect = new Rect(8f + i * tabWidth, y, tabWidth - 4f, 28f);
+                    GUIFit.Panel(tabRect, selected ? gui.TabActiveStyle : gui.TabStyle);
+                    text.Label(tabRect.x, tabRect.y, tabRect.width, tabRect.height,
+                        TabLabels[i],
+                        gui.GetColorForCategory(selected
+                            ? LabelCategory.Header
+                            : LabelCategory.Label),
+                        10f,
+                        TextAnchor.MiddleCenter,
+                        selected ? FontStyle.Bold : FontStyle.Normal);
+                    if (selected)
+                    {
+                        GUIFit.Texture(new Rect(tabRect.x + 8f, tabRect.yMax - 3f,
+                            tabRect.width - 16f, 2f), gui.AccentTexture);
+                    }
+                }
+
+                y += TabStripHeight;
+                float availableH = Mathf.Max(80f,
+                    drawRect.height - y - GetFooterAreaHeight() - 10f);
+                float drawW = Mathf.Min(contentW, 840f);
+                float drawX = Mathf.Max(10f, (contentW - drawW) * 0.5f + 6f);
+                Rect contentBackdrop = new Rect(drawX - 8f, y - 4f,
+                    drawW + 16f, availableH + 2f);
+                GUIFit.Surface(contentBackdrop, gui.ContentBackdropStyle);
+                GUIFit.Texture(new Rect(contentBackdrop.x + 1f,
+                    contentBackdrop.y + 12f, 2f,
+                    Mathf.Max(0f, contentBackdrop.height - 24f)),
+                    gui.AccentSoftTexture);
             }
             finally
             {
@@ -496,7 +628,8 @@ namespace NugzzMenu
             }
 
             _windowRect.width = targetWidth;
-            _windowRect.height = GetCurrentTabContentHeight() + HeaderHeight + TabStripHeight + WindowBottomPadding;
+            _windowRect.height = GetCurrentTabContentHeight() + HeaderHeight + TabStripHeight +
+                GetFooterAreaHeight() + WindowBottomPadding;
         }
 
         private float GetCurrentTabContentHeight()
@@ -522,18 +655,20 @@ namespace NugzzMenu
             float contentW = _windowRect.width - 20f;
             float y = 2f;
 
-            GUIFit.Texture(new Rect(-10f, -10f, _windowRect.width + 20f, 58f), gui.TitleTexture);
-            GUIFit.Texture(new Rect(0f, 46f, _windowRect.width, 2f), gui.AccentTexture);
-            GUIFit.Texture(new Rect(0f, 48f, _windowRect.width, 1f), gui.AccentSoftTexture);
-            GUIFit.Texture(new Rect(0f, 0f, 4f, _windowRect.height), gui.AccentSoftTexture);
+            GUIFit.Surface(new Rect(4f, 4f, _windowRect.width - 8f, 43f),
+                gui.HeaderBackdropStyle);
+            GUIFit.Texture(new Rect(14f, 46f, _windowRect.width - 28f, 2f), gui.AccentTexture);
+            GUIFit.Texture(new Rect(20f, 48f, _windowRect.width - 40f, 1f), gui.AccentSoftTexture);
 
-            tmp.Label(12f, 0f, 220f, 32f, "NugzzMenu",
+            GUIFit.Texture(new Rect(12f, 3f, 42f, 42f), gui.LogoTexture);
+
+            tmp.Label(62f, 0f, 220f, 32f, "NugzzMenu",
                 gui.GetColorForCategory(LabelCategory.Title),
                 gui.GetFontSizeForCategory(LabelCategory.Title),
                 gui.GetAlignmentForCategory(LabelCategory.Title),
                 gui.GetStyleForCategory(LabelCategory.Title));
 
-            tmp.Label(14f, 30f, 300f, 14f, "Schedule I control suite",
+            tmp.Label(64f, 30f, 300f, 14f, "Schedule I control suite",
                 gui.GetColorForCategory(LabelCategory.Label),
                 10f,
                 TextAnchor.MiddleLeft,
@@ -571,6 +706,7 @@ namespace NugzzMenu
             if (!SessionAuthorityService.Instance.FeaturesAllowed)
             {
                 DrawAuthorityBlocked(contentW, ref y);
+                DrawMenuFooter(contentW);
                 return;
             }
 
@@ -580,34 +716,48 @@ namespace NugzzMenu
             {
                 float drawW = Mathf.Min(contentW, 840f);
                 float drawX = Mathf.Max(10f, (contentW - drawW) * 0.5f + 6f);
-                float availableH = Mathf.Max(0f, _windowRect.height - y - 8f);
+                float availableH = Mathf.Max(0f, _windowRect.height - y - GetFooterAreaHeight() - 8f);
                 int tabIndex = (int)_selectedTab;
                 float measuredHeight = GetCurrentTabContentHeight();
                 bool needsScroll = measuredHeight > availableH + 1f;
+                if (needsScroll)
+                {
+                    const float scrollControlsHeight = 20f;
+                    float controlsY = y;
+                    availableH = Mathf.Max(0f, availableH - scrollControlsHeight);
+
+                    GUIFit.Panel(new Rect(drawX, controlsY, drawW, 18f), gui.BoxStyle);
+                    TMPHybridService.Instance.Label(drawX + 6f, controlsY + 1f,
+                        Mathf.Max(80f, drawW - 86f), 16f, "Scroll for more",
+                        gui.GetColorForCategory(LabelCategory.Subtitle),
+                        gui.GetFontSizeForCategory(LabelCategory.Subtitle),
+                        TextAnchor.MiddleLeft,
+                        gui.GetStyleForCategory(LabelCategory.Subtitle));
+
+                    Vector2 scroll = _tabScrollPositions[tabIndex];
+                    if (GUIFit.Button(new Rect(drawX + drawW - 74f, controlsY + 1f, 34f, 16f),
+                            "Up", gui.ButtonStyle, navigable: false))
+                        scroll.y -= 80f;
+                    if (GUIFit.Button(new Rect(drawX + drawW - 38f, controlsY + 1f, 36f, 16f),
+                            "Down", gui.ButtonStyle, navigable: false))
+                        scroll.y += 80f;
+                    _tabScrollPositions[tabIndex] = scroll;
+                    y += scrollControlsHeight;
+                }
                 float viewW = needsScroll ? Mathf.Max(240f, drawW - 18f) : drawW;
                 float viewH = Mathf.Max(availableH, measuredHeight + 12f);
                 float localY = 0f;
-                GUIFit.Texture(new Rect(drawX - 8f, y - 4f, drawW + 16f, Mathf.Max(80f, availableH + 2f)), gui.DarkTexture);
-                GUIFit.Texture(new Rect(drawX - 8f, y - 4f, 3f, Mathf.Max(80f, availableH + 2f)), gui.AccentSoftTexture);
-                if (needsScroll)
-                {
-                    TMPHybridService.Instance.Label(drawX + drawW - 84f, y - 18f, 82f, 14f, "Scroll for more",
-                        gui.GetColorForCategory(LabelCategory.Subtitle),
-                        gui.GetFontSizeForCategory(LabelCategory.Subtitle),
-                        TextAnchor.MiddleRight,
-                        gui.GetStyleForCategory(LabelCategory.Subtitle));
-                }
+                Rect contentBackdrop = new Rect(drawX - 8f, y - 4f, drawW + 16f,
+                    Mathf.Max(80f, availableH + 2f));
+                GUIFit.Surface(contentBackdrop, gui.ContentBackdropStyle);
+                GUIFit.Texture(new Rect(contentBackdrop.x + 1f, contentBackdrop.y + 12f, 2f,
+                    Mathf.Max(0f, contentBackdrop.height - 24f)), gui.AccentSoftTexture);
 
                 Rect viewport = new Rect(drawX, y, drawW, availableH);
                 float maxScrollY = Mathf.Max(0f, measuredHeight - availableH + 12f);
                 if (needsScroll)
                 {
                     Vector2 scroll = _tabScrollPositions[tabIndex];
-                    if (GUIFit.Button(new Rect(drawX + drawW - 72f, y - 20f, 32f, 16f), "Up", gui.ButtonStyle))
-                        scroll.y -= 80f;
-                    if (GUIFit.Button(new Rect(drawX + drawW - 36f, y - 20f, 34f, 16f), "Down", gui.ButtonStyle))
-                        scroll.y += 80f;
-
                     _tabScrollPositions[tabIndex] = new Vector2(
                         Mathf.Clamp(scroll.x, 0f, 0f),
                         Mathf.Clamp(scroll.y, 0f, maxScrollY));
@@ -664,6 +814,19 @@ namespace NugzzMenu
                     GUI.EndGroup();
                 }
 
+                if (needsScroll && GUIFit.TryGetFocusedControlRect(out Rect focusedRect))
+                {
+                    const float focusMargin = 10f;
+                    float scrollY = _tabScrollPositions[tabIndex].y;
+                    if (focusedRect.y < scrollY + focusMargin)
+                        scrollY = focusedRect.y - focusMargin;
+                    else if (focusedRect.yMax > scrollY + availableH - focusMargin)
+                        scrollY = focusedRect.yMax - availableH + focusMargin;
+
+                    _tabScrollPositions[tabIndex] = new Vector2(0f,
+                        Mathf.Clamp(scrollY, 0f, maxScrollY));
+                }
+
                 DrawManualScrollbar(viewport, measuredHeight, availableH, _tabScrollPositions[tabIndex].y);
                 y += localY;
                 _measuredContentHeight = Mathf.Max(100f, localY);
@@ -690,6 +853,8 @@ namespace NugzzMenu
                     gui.GetAlignmentForCategory(LabelCategory.Error),
                     gui.GetStyleForCategory(LabelCategory.Error));
             }
+
+            DrawMenuFooter(contentW);
         }
 
         private static void DrawManualScrollbar(Rect viewport, float contentHeight, float visibleHeight, float scrollY)
@@ -766,7 +931,7 @@ namespace NugzzMenu
             tmp.Label(x + 22f, y + 140f, panelW - 44f, 36f,
                 SessionAuthorityService.Instance.IsRpModBlocked
                     ? "Remove S.I.A.K - Imperium and restart the game to use Nugzz."
-                    : "Join a host running the same NugzzMenu DLL. Access enables automatically after the host is detected.",
+                    : "Join a host running NugzzMenu v0.9.9R4 or newer. The host can approve access from the Lobby tab.",
                 gui.GetColorForCategory(LabelCategory.Status), 12f,
                 TextAnchor.MiddleCenter, FontStyle.Italic, true);
             y += 210f;
@@ -781,9 +946,11 @@ namespace NugzzMenu
                 bool selected = i == (int)_selectedTab;
                 Rect tabRect = new Rect(8f + i * tabWidth, y, tabWidth - 4f, 28f);
                 if (GUIFit.Button(tabRect, TabLabels[i],
-                        selected ? GUISystemService.Instance.TabActiveStyle : GUISystemService.Instance.TabStyle))
+                        selected ? GUISystemService.Instance.TabActiveStyle : GUISystemService.Instance.TabStyle,
+                        navigable: false))
                 {
                     _selectedTab = (MenuTab)i;
+                    GUIFit.ResetFocus();
                 }
 
                 if (selected)
@@ -795,9 +962,9 @@ namespace NugzzMenu
             y += TabStripHeight;
         }
 
-        private void ToggleMenu()
+        private void ToggleMenu(bool openedWithController = false)
         {
-            if (!_isMenuOpen &&
+            if (!_isMenuOpen && !_menuInputCaptured &&
                 GameplayStateGateService.Instance.IsModControlBlocked(out string reason) &&
                 !(SaveManagementService.Instance.IsMainMenu &&
                   !GameplayStateGateService.IsCharacterCreatorOpen()))
@@ -806,29 +973,226 @@ namespace NugzzMenu
                 return;
             }
 
-            SetMenuOpen(!_isMenuOpen);
+            SetMenuOpen(!_isMenuOpen, openedWithController);
         }
 
-        private void SetMenuOpen(bool open)
+        private void SetMenuOpen(bool open, bool openedWithController = false,
+            bool immediate = false)
         {
-            if (_isMenuOpen == open)
+            if (open)
+            {
+                if (_isMenuOpen)
+                    return;
+
+                bool wasCaptured = _menuInputCaptured;
+                _isMenuOpen = true;
+                _menuInputCaptured = true;
+                ControllerInputService.Instance.SetMenuOpen(true, openedWithController);
+                GUIFit.ResetFocus();
+                GameplayStateGateService.Instance.SetMenuOpen(true);
+                if (!wasCaptured)
+                    VehicleMenuCameraService.Instance.NotifyMenuStateChanged(true, false);
+                ApplyMenuInputState();
+                return;
+            }
+
+            if (!_isMenuOpen && !_menuInputCaptured)
                 return;
 
-            bool wasOpen = _isMenuOpen;
-            _isMenuOpen = open;
-            GameplayStateGateService.Instance.SetMenuOpen(open);
-            VehicleMenuCameraService.Instance.NotifyMenuStateChanged(open, wasOpen);
+            _isMenuOpen = false;
+            _showControllerHelp = false;
+            GUIFit.DeactivateTextField();
+            if (immediate)
+            {
+                _menuVisualProgress = 0f;
+                CompleteMenuClose();
+            }
+        }
+
+        private void UpdateMenuAnimation()
+        {
+            float delta;
+            try
+            {
+                delta = Mathf.Max(0f, Time.unscaledDeltaTime);
+            }
+            catch
+            {
+                delta = 1f / 60f;
+            }
+
+            float target = _isMenuOpen ? 1f : 0f;
+            float duration = _isMenuOpen
+                ? MenuOpenAnimationDuration
+                : MenuCloseAnimationDuration;
+            _menuVisualProgress = Mathf.MoveTowards(_menuVisualProgress, target,
+                delta / Mathf.Max(0.01f, duration));
+
+            if (!_isMenuOpen && _menuInputCaptured && _menuVisualProgress <= 0.001f)
+                CompleteMenuClose();
+        }
+
+        private void CompleteMenuClose()
+        {
+            if (!_menuInputCaptured)
+                return;
+
+            _menuInputCaptured = false;
+            ControllerInputService.Instance.SetMenuOpen(false, false);
+            GameplayStateGateService.Instance.SetMenuOpen(false);
+            VehicleMenuCameraService.Instance.NotifyMenuStateChanged(false, true);
             ApplyMenuInputState();
+        }
+
+        private static float SmoothStep01(float value)
+        {
+            value = Mathf.Clamp01(value);
+            return value * value * (3f - 2f * value);
+        }
+
+        private void HandleControllerMenuInput()
+        {
+            ControllerInputService input = ControllerInputService.Instance;
+            if (!input.ControllerActive)
+                return;
+
+            if (input.ConsumeCancel())
+            {
+                if (GUIFit.IsTextFieldActive)
+                    GUIFit.DeactivateTextField();
+                else
+                    SetMenuOpen(false);
+                return;
+            }
+
+            if (GUIFit.IsTextFieldActive)
+                return;
+
+            if (input.ConsumePreviousTab())
+                CycleSelectedTab(-1);
+            if (input.ConsumeNextTab())
+                CycleSelectedTab(1);
+
+            int vertical = input.ConsumeVerticalMove();
+            if (vertical != 0)
+                GUIFit.MoveFocus(-vertical);
+
+            if (input.ConsumeReset())
+                ResetAllRuntimeChanges(true);
+            if (input.ConsumeHelp())
+                _showControllerHelp = !_showControllerHelp;
+        }
+
+        private void CycleSelectedTab(int direction)
+        {
+            int count = TabLabels.Length;
+            int next = ((int)_selectedTab + direction) % count;
+            if (next < 0)
+                next += count;
+            if (next == (int)_selectedTab)
+                return;
+
+            _selectedTab = (MenuTab)next;
+            GUIFit.ResetFocus();
+        }
+
+        private float GetFooterAreaHeight()
+        {
+            return FooterHeight + (_showControllerHelp ? HelpHeight + 4f : 0f);
+        }
+
+        private void DrawMenuFooter(float contentWidth)
+        {
+            var gui = GUISystemService.Instance;
+            var tmp = TMPHybridService.Instance;
+            ControllerInputService input = ControllerInputService.Instance;
+            float footerWidth = Mathf.Max(120f, _windowRect.width - 16f);
+            float y = _windowRect.height - GetFooterAreaHeight() - 4f;
+
+            if (_showControllerHelp)
+            {
+                GUIFit.Panel(new Rect(8f, y, footerWidth, HelpHeight), gui.BoxStyle);
+                string help = input.LeftShoulderPrompt + " + " + input.RightShoulderPrompt +
+                              " + D-Pad Up opens Nugzz. " + input.DPadGlyph + "/" +
+                              input.LeftStickGlyph + " navigate, " + input.ConfirmGlyph +
+                              " select, " + input.CancelGlyph + " close, " + input.ResetGlyph +
+                              " reset, " + input.HelpGlyph + " hide guide.";
+                tmp.Label(20f, y + 7f, footerWidth - 24f, HelpHeight - 14f, help,
+                    gui.GetColorForCategory(LabelCategory.Subtitle),
+                    gui.GetFontSizeForCategory(LabelCategory.Subtitle),
+                    TextAnchor.MiddleLeft, FontStyle.Normal, true);
+                y += HelpHeight + 4f;
+            }
+
+            GUIFit.Panel(new Rect(8f, y, footerWidth, FooterHeight - 4f), gui.BoxStyle);
+            GUIFit.Texture(new Rect(9f, y + 8f, 2f, FooterHeight - 20f), gui.AccentTexture);
+            if (input.ControllerActive)
+                DrawControllerFooter(y, footerWidth, input, gui, tmp);
+            else
+                tmp.Label(18f, y + 3f, footerWidth - 20f, FooterHeight - 10f,
+                    "F8 Close   Mouse Navigate   G Third Person   Space+Space Fly   Controller: LB+RB+D-Pad Up",
+                    gui.GetColorForCategory(LabelCategory.Subtitle),
+                    gui.GetFontSizeForCategory(LabelCategory.Subtitle),
+                    TextAnchor.MiddleCenter, FontStyle.Bold);
+        }
+
+        private static void DrawControllerFooter(float y, float footerWidth,
+            ControllerInputService input, GUISystemService gui, TMPHybridService tmp)
+        {
+            const float tokenHeight = 22f;
+            const float totalWidth = 536f;
+            float tokenY = y + (FooterHeight - 4f - tokenHeight) * 0.5f;
+            float x = 8f + Mathf.Max(8f, (footerWidth - totalWidth) * 0.5f);
+
+            x = DrawControllerToken(x, tokenY, input.LeftShoulderPrompt, 31f, gui, tmp);
+            x = DrawControllerToken(x + 3f, tokenY, input.RightShoulderPrompt, 31f, gui, tmp);
+            x = DrawControllerAction(x + 4f, tokenY, "Tabs", 34f, gui, tmp) + 10f;
+
+            x = DrawControllerToken(x, tokenY, input.DPadGlyph, 24f, gui, tmp);
+            x = DrawControllerToken(x + 3f, tokenY, input.LeftStickGlyph, 24f, gui, tmp);
+            x = DrawControllerAction(x + 4f, tokenY, "Navigate", 60f, gui, tmp) + 10f;
+
+            x = DrawControllerPrompt(x, tokenY, input.ConfirmGlyph, "Select", 42f, gui, tmp) + 10f;
+            x = DrawControllerPrompt(x, tokenY, input.CancelGlyph, "Close", 40f, gui, tmp) + 10f;
+            x = DrawControllerPrompt(x, tokenY, input.ResetGlyph, "Reset", 40f, gui, tmp) + 10f;
+            DrawControllerPrompt(x, tokenY, input.HelpGlyph, "Help", 34f, gui, tmp);
+        }
+
+        private static float DrawControllerPrompt(float x, float y, string glyph, string action,
+            float actionWidth, GUISystemService gui, TMPHybridService tmp)
+        {
+            x = DrawControllerToken(x, y, glyph, 24f, gui, tmp);
+            return DrawControllerAction(x + 4f, y, action, actionWidth, gui, tmp);
+        }
+
+        private static float DrawControllerToken(float x, float y, string glyph, float width,
+            GUISystemService gui, TMPHybridService tmp)
+        {
+            var rect = new Rect(x, y, width, 22f);
+            GUIFit.Panel(rect, gui.PromptChipStyle);
+            tmp.Label(rect.x, rect.y, rect.width, rect.height, glyph,
+                new Color(0.84f, 0.96f, 0.67f, 1f), 12,
+                TextAnchor.MiddleCenter, FontStyle.Bold);
+            return x + width;
+        }
+
+        private static float DrawControllerAction(float x, float y, string action, float width,
+            GUISystemService gui, TMPHybridService tmp)
+        {
+            tmp.Label(x, y, width, 22f, action,
+                gui.GetColorForCategory(LabelCategory.Subtitle), 10,
+                TextAnchor.MiddleLeft, FontStyle.Bold);
+            return x + width;
         }
 
         private void ApplyMenuInputState()
         {
             try
             {
-                bool keepNativeCursor = !_isMenuOpen && ShouldKeepNativeCursor();
-                bool gameplayFocus = !_isMenuOpen && !keepNativeCursor;
-                Cursor.visible = _isMenuOpen || keepNativeCursor;
-                Cursor.lockState = (_isMenuOpen || keepNativeCursor)
+                bool keepNativeCursor = !_menuInputCaptured && ShouldKeepNativeCursor();
+                bool gameplayFocus = !_menuInputCaptured && !keepNativeCursor;
+                Cursor.visible = _menuInputCaptured || keepNativeCursor;
+                Cursor.lockState = (_menuInputCaptured || keepNativeCursor)
                     ? CursorLockMode.None
                     : CursorLockMode.Locked;
 
@@ -843,7 +1207,7 @@ namespace NugzzMenu
                     return;
 
                 camera?.SetCanLook(
-                    !_isMenuOpen &&
+                    !_menuInputCaptured &&
                     !keepNativeCursor &&
                     !CameraService.Instance.ThirdPersonEnabled);
             }
@@ -1093,7 +1457,7 @@ namespace NugzzMenu
                 FlyingService.Instance.SetDoubleSpaceHotkeyEnabled(true);
                 FlyingService.Instance.SetVehicleFlyEnabled(false);
                 SkateboardTuneService.Instance.ResetAll();
-                CameraService.Instance.ToggleThirdPerson(false, _isMenuOpen);
+                CameraService.Instance.ToggleThirdPerson(false, _menuInputCaptured);
                 CameraService.Instance.SetDistance(1.90f);
                 CameraService.Instance.SetHeight(0.80f);
                 CameraService.Instance.SetShoulderOffset(0.20f);
@@ -1165,13 +1529,13 @@ namespace NugzzMenu
             if (enabled && !ThirdPersonCameraService.Instance.CanEnable(out string reason))
             {
                 if (CameraService.Instance.ThirdPersonEnabled)
-                    CameraService.Instance.ToggleThirdPerson(false, _isMenuOpen);
+                    CameraService.Instance.ToggleThirdPerson(false, _menuInputCaptured);
 
                 Status("3rd person unavailable: " + reason);
                 return;
             }
 
-            CameraService.Instance.ToggleThirdPerson(enabled, _isMenuOpen);
+            CameraService.Instance.ToggleThirdPerson(enabled, _menuInputCaptured);
         }
 
         private void SavePosition() { TeleportService.Instance.SavePosition(); }

@@ -114,7 +114,9 @@ namespace NugzzMenu.Services
                 return;
             }
 
-            if (!UnityEngine.Input.GetKeyDown(KeyCode.Space))
+            bool jumpPressed = UnityEngine.Input.GetKeyDown(KeyCode.Space) ||
+                ControllerInputService.Instance.ConsumeGameplayJump();
+            if (!jumpPressed)
                 return;
 
             if (ManagerCacheService.Instance.LocalPlayer == null)
@@ -170,6 +172,7 @@ namespace NugzzMenu.Services
                 Vector3 right = camera.transform.right;
 
                 Vector3 velocity = Vector3.zero;
+                Vector2 controllerMove = ControllerInputService.Instance.GameplayMove;
 
                 if (UnityEngine.Input.GetKey(KeyCode.W))
                 {
@@ -195,6 +198,11 @@ namespace NugzzMenu.Services
                 {
                     velocity -= Vector3.up * moveAmount;
                 }
+                velocity += (forward * controllerMove.y + right * controllerMove.x) * moveAmount;
+                if (ControllerInputService.Instance.GameplayAscend)
+                    velocity += Vector3.up * moveAmount;
+                if (ControllerInputService.Instance.GameplayDescend)
+                    velocity -= Vector3.up * moveAmount;
 
                 if (velocity != Vector3.zero)
                 {
@@ -299,6 +307,10 @@ namespace NugzzMenu.Services
             if (UnityEngine.Input.GetKey(KeyCode.D)) delta += right * moveAmount;
             if (UnityEngine.Input.GetKey(KeyCode.Space)) delta += Vector3.up * moveAmount;
             if (UnityEngine.Input.GetKey(KeyCode.LeftControl)) delta -= Vector3.up * moveAmount;
+            Vector2 controllerMove = ControllerInputService.Instance.GameplayMove;
+            delta += (forward * controllerMove.y + right * controllerMove.x) * moveAmount;
+            if (ControllerInputService.Instance.GameplayAscend) delta += Vector3.up * moveAmount;
+            if (ControllerInputService.Instance.GameplayDescend) delta -= Vector3.up * moveAmount;
 
             return delta;
         }

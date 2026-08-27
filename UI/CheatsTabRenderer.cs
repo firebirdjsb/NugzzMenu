@@ -70,16 +70,16 @@ namespace NugzzMenu.UI
             DrawToggle(rowY, w, onStyle, offStyle, "Speed Boost", state.SpeedBoost, value => state.SpeedBoost = value);
             rowY += 22f;
 
-            DrawMultiplier(rowY, w, "Speed Multiplier", state.SpeedMultiplier, setSpeedMultiplier, buttonStyle);
+            DrawSliderOption(rowY, w, "Speed Multiplier", state.SpeedMultiplier, 0.25f, 10f, 0.25f, setSpeedMultiplier, "x");
             rowY += 22f;
 
-            DrawMultiplier(rowY, w, "Player Size (buggy)", state.PlayerScale, setPlayerScale, buttonStyle);
+            DrawSliderOption(rowY, w, "Player Size", state.PlayerScale, 0.25f, 4f, 0.25f, setPlayerScale, "x");
             rowY += 22f;
 
-            DrawMultiplier(rowY, w, "Jump Height", state.JumpMultiplier, setJumpMultiplier, buttonStyle);
+            DrawSliderOption(rowY, w, "Jump Height", state.JumpMultiplier, 0.25f, 5f, 0.25f, setJumpMultiplier, "x");
             rowY += 22f;
 
-            DrawMultiplier(rowY, w, "Gravity", state.GravityMultiplier, setGravityMultiplier, buttonStyle);
+            DrawSliderOption(rowY, w, "Gravity", state.GravityMultiplier, 0.25f, 3f, 0.25f, setGravityMultiplier, "x");
             rowY += 22f;
 
             float actionWidth = (w - 18f) * 0.5f;
@@ -96,7 +96,11 @@ namespace NugzzMenu.UI
             y += 20f;
             GUIFit.Panel(new Rect(0f, y, w, 74f), boxStyle);
             rowY = y + 3f;
-            TMPHybridService.Instance.Label(6f, rowY, w * 0.6f, 20f, "Fly (WASD+Space/Ctrl)",
+            ControllerInputService input = ControllerInputService.Instance;
+            string flyLabel = input.ControllerActive
+                ? $"Fly (LS + {input.ConfirmPrompt}/{input.CancelPrompt})"
+                : "Fly (WASD + Space/Ctrl)";
+            TMPHybridService.Instance.Label(6f, rowY, w * 0.6f, 20f, flyLabel,
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
@@ -106,29 +110,12 @@ namespace NugzzMenu.UI
                 toggleFly?.Invoke(!state.FlyEnabled);
             }
             rowY += 22f;
-            if (GUIFit.Button(new Rect(6f, rowY, 48f, 20f), "Slow", buttonStyle))
-            {
-                setFlySpeed(8f);
-            }
-            if (GUIFit.Button(new Rect(58f, rowY, 48f, 20f), "Med", buttonStyle))
-            {
-                setFlySpeed(20f);
-            }
-            if (GUIFit.Button(new Rect(110f, rowY, 48f, 20f), "Fast", buttonStyle))
-            {
-                setFlySpeed(50f);
-            }
-            if (GUIFit.Button(new Rect(162f, rowY, 48f, 20f), "Ultra", buttonStyle))
-            {
-                setFlySpeed(100f);
-            }
-            TMPHybridService.Instance.Label(216f, rowY, 90f, 20f, "Spd:" + state.FlySpeed.ToString("F0"),
-                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+            DrawSliderOption(rowY, w, "Flight Speed", state.FlySpeed, 5f, 100f, 5f, setFlySpeed, string.Empty, "F0");
             rowY += 24f;
-            DrawToggle(rowY, w, onStyle, offStyle, "Double Space Fly", state.DoubleSpaceFlyHotkey, value =>
+            string gestureLabel = input.ControllerActive
+                ? $"Double Tap {input.ConfirmPrompt} Fly"
+                : "Double Space Fly";
+            DrawToggle(rowY, w, onStyle, offStyle, gestureLabel, state.DoubleSpaceFlyHotkey, value =>
             {
                 state.DoubleSpaceFlyHotkey = value;
                 setDoubleSpaceFlyHotkey?.Invoke(value);
@@ -143,15 +130,20 @@ namespace NugzzMenu.UI
             y += 20f;
             float cameraBoxHeight = state.ThirdPerson ? 100f : 28f;
             GUIFit.Panel(new Rect(0f, y, w, cameraBoxHeight), boxStyle);
-            if (GUIFit.Button(new Rect(4f, y + 3f, w - 8f, 22f), state.ThirdPerson ? "3rd Person: ON (G)" : "1st Person - press G or click", state.ThirdPerson ? onStyle : buttonStyle))
+            string cameraLabel;
+            if (state.ThirdPerson)
+                cameraLabel = input.ControllerActive ? "3rd Person: ON" : "3rd Person: ON (G)";
+            else
+                cameraLabel = input.ControllerActive ? $"1st Person - {input.ConfirmPrompt} to enable" : "1st Person - press G or click";
+            if (GUIFit.Button(new Rect(4f, y + 3f, w - 8f, 22f), cameraLabel, state.ThirdPerson ? onStyle : buttonStyle))
             {
                 toggleCamera?.Invoke(!state.ThirdPerson);
             }
             if (state.ThirdPerson)
             {
-                DrawCameraOption(y + 29f, w, "Distance", state.CameraDistance, 0.25f, setCameraDistance, buttonStyle);
-                DrawCameraOption(y + 52f, w, "Height", state.CameraHeight, 0.1f, setCameraHeight, buttonStyle);
-                DrawCameraOption(y + 75f, w, "Shoulder", state.CameraShoulder, 0.1f, setCameraShoulder, buttonStyle);
+                DrawSliderOption(y + 29f, w, "Distance", state.CameraDistance, 0.5f, 8f, 0.25f, setCameraDistance, string.Empty);
+                DrawSliderOption(y + 52f, w, "Height", state.CameraHeight, -1f, 3f, 0.1f, setCameraHeight, string.Empty);
+                DrawSliderOption(y + 75f, w, "Shoulder", state.CameraShoulder, -2f, 2f, 0.1f, setCameraShoulder, string.Empty);
             }
             y += cameraBoxHeight + 4f;
 
@@ -284,32 +276,20 @@ namespace NugzzMenu.UI
             y += panelHeight + 4f;
         }
 
-        private static void DrawCameraOption(float y, float w, string label, float value, float step,
-            Action<float> setter, GUIStyle buttonStyle)
+        private static void DrawSliderOption(float y, float w, string label, float value,
+            float min, float max, float step, Action<float> setter, string suffix, string format = "F2")
         {
-            TMPHybridService.Instance.Label(8f, y, 110f, 20f, label + ": " + value.ToString("F2"),
+            float labelWidth = Mathf.Min(190f, w * 0.45f);
+            TMPHybridService.Instance.Label(8f, y, labelWidth, 20f, label + ": " + value.ToString(format) + suffix,
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
-            if (GUIFit.Button(new Rect(w - 86f, y, 38f, 20f), "-", buttonStyle))
-                setter?.Invoke(value - step);
-            if (GUIFit.Button(new Rect(w - 44f, y, 38f, 20f), "+", buttonStyle))
-                setter?.Invoke(value + step);
-        }
-
-        private static void DrawMultiplier(float y, float w, string label, float value,
-            Action<float> setter, GUIStyle buttonStyle)
-        {
-            TMPHybridService.Instance.Label(6f, y, w - 104f, 20f, label + ": " + value.ToString("F2") + "x",
-                GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Label),
-                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
-            if (GUIFit.Button(new Rect(w - 86f, y, 38f, 20f), "-", buttonStyle))
-                setter?.Invoke(value - 0.25f);
-            if (GUIFit.Button(new Rect(w - 44f, y, 38f, 20f), "+", buttonStyle))
-                setter?.Invoke(value + 0.25f);
+            float sliderX = labelWidth + 18f;
+            float next = GUIFit.Slider(new Rect(sliderX, y + 7f, Mathf.Max(72f, w - sliderX - 14f), 10f),
+                value, min, max, step);
+            if (!Mathf.Approximately(next, value))
+                setter?.Invoke(next);
         }
 
         private static void DrawToggle(float y, float w, GUIStyle onStyle, GUIStyle offStyle,

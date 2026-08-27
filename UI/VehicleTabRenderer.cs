@@ -240,7 +240,7 @@ namespace NugzzMenu.UI
             string valueText = suffix == "x" ? value.ToString("0.00") + "x" : value.ToString("0.00");
             Label(8f, y, w * 0.40f, 18f, label + ": " + valueText);
             Rect sliderRect = new Rect(w * 0.42f, y + 4f, w * 0.54f, 16f);
-            value = GUI.HorizontalSlider(sliderRect, value, min, max);
+            value = GUIFit.Slider(sliderRect, value, min, max, Mathf.Max(0.05f, (max - min) / 100f));
             y += 24f;
             return Math.Abs(oldValue - value) > 0.001f;
         }

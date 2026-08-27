@@ -17,7 +17,6 @@ namespace NugzzMenu.UI
     public static class ItemsTabRenderer
     {
         private static readonly string[] QualityLabels = { "Trash", "Poor", "Std", "Prem", "Heaven" };
-        private static readonly int[] SpawnQuantities = { 1, 5, 10, 25, 50, 100 };
         private static GUIStyle _styleSource;
         private static GUIStyle _smallButton;
         private static GUIStyle _selectedButton;
@@ -34,28 +33,29 @@ namespace NugzzMenu.UI
             {
                 EnsureStyles(buttonStyle);
 
-                TMPHybridService.Instance.Label(4f, y, w, 18f, "SPAWN COUNT",
+                TMPHybridService.Instance.Label(4f, y, w, 18f, "SPAWN QUANTITY",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
-                GUIFit.Panel(new Rect(0f, y, w, 24f), boxStyle);
-                float rowY = y + 3f;
-                float quantityButtonWidth = (w - 28f) / SpawnQuantities.Length;
-
-                for (int i = 0; i < SpawnQuantities.Length; i++)
+                GUIFit.Panel(new Rect(0f, y, w, 38f), boxStyle);
+                TMPHybridService.Instance.Label(8f, y + 3f, 106f, 18f,
+                    "Quantity: " + state.SpawnQuantity,
+                    GUISystemService.Instance.GetColorForCategory(LabelCategory.Label),
+                    GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Label),
+                    TextAnchor.MiddleLeft,
+                    GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
+                float nextQuantity = GUIFit.Slider(
+                    new Rect(116f, y + 13f, Mathf.Max(80f, w - 128f), 14f),
+                    state.SpawnQuantity, 1f, 100f, 1f);
+                int roundedQuantity = Mathf.Clamp(Mathf.RoundToInt(nextQuantity), 1, 100);
+                if (roundedQuantity != state.SpawnQuantity)
                 {
-                    string countLabel = state.SpawnQuantity == SpawnQuantities[i] ? "> " + SpawnQuantities[i] + " <" : SpawnQuantities[i].ToString();
-                    if (GUIFit.Button(new Rect(4f + i * (quantityButtonWidth + 4f), rowY, quantityButtonWidth, 18f),
-                            countLabel,
-                            state.SpawnQuantity == SpawnQuantities[i] ? _selectedButton : _smallButton))
-                    {
-                        state.SpawnQuantity = SpawnQuantities[i];
-                        updateQuantity?.Invoke(SpawnQuantities[i]);
-                    }
+                    state.SpawnQuantity = roundedQuantity;
+                    updateQuantity?.Invoke(roundedQuantity);
                 }
-                y += 28f;
+                y += 42f;
 
                 TMPHybridService.Instance.Label(4f, y, w, 18f, "QUALITY LEVEL",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
@@ -64,7 +64,7 @@ namespace NugzzMenu.UI
                     GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
                 y += 20f;
                 GUIFit.Panel(new Rect(0f, y, w, 24f), boxStyle);
-                rowY = y + 3f;
+                float rowY = y + 3f;
                 float qualityButtonWidth = (w - 24f) / QualityLabels.Length;
 
                 for (int qualityIndex = 0; qualityIndex < QualityLabels.Length; qualityIndex++)
