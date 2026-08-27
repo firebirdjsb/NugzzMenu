@@ -1,6 +1,6 @@
 # NugzzMenu v1.0.0
 
-Release date: August 26, 2026
+Release date: August 27, 2026
 
 NugzzMenu v1.0.0 is the controller, interface, and usability release. It keeps
 the complete v0.9.9R4 feature set while rebuilding the shared menu interaction
@@ -199,3 +199,7 @@ editor continue to work alongside controller support.
 - Buttons, toggles, sliders, text fields, and vehicle tuning controls route
   through the shared controller-aware GUI layer.
 - The built DLL reports assembly version `1.0.0.0`.
+
+## Full Changelog
+
+[Compare NugzzMenu v0.9.9R4 to v1.0.0](https://github.com/firebirdjsb/NugzzMenu/compare/v0.9.9R4...v1.0.0)

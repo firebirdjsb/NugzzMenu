@@ -3,7 +3,7 @@
 All notable NugzzMenu releases are recorded here. Detailed release notes remain
 the authoritative record for each checkpoint.
 
-## v1.0.0 - 2026-08-26
+## v1.0.0 - 2026-08-27
 
 v1.0.0 is the controller, interface, and usability release. It preserves the
 complete v0.9.9R4 feature set while rebuilding the shared interaction and
