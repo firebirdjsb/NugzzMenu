@@ -66,8 +66,16 @@ namespace NugzzMenu.Services
 
             try
             {
+                if (!IsConsoleOpen())
+                {
+                    if (IsTyping || _matches.Count > 0)
+                        ClearSuggestions();
+                    IsTyping = false;
+                    return;
+                }
+
                 ResolveInputField();
-                IsTyping = IsConsoleOpen() && _inputField != null &&
+                IsTyping = _inputField != null &&
                            GetBool(_focusedProperty, _inputField);
             }
             catch

@@ -35,6 +35,7 @@ namespace NugzzMenu.Services
         private float _nextVerticalRepeat;
         private float _nextHorizontalRepeat;
         private float _nextDeviceScan;
+        private int _currentGamepadDeviceId = -1;
         private bool _gameplayJumpPressed;
         private bool _gameplayAscend;
         private bool _gameplayDescend;
@@ -85,10 +86,9 @@ namespace NugzzMenu.Services
             _gameplayMove = Vector2.zero;
             _gameplayLook = Vector2.zero;
 
-            ScanDevices();
-
             bool controllerActivity;
             Gamepad gamepad = GetCurrentGamepad();
+            ScanLegacyDevices(gamepad == null);
             _controllerConnected = gamepad != null || _legacyControllerConnected;
             if (!_controllerConnected)
             {
@@ -97,11 +97,18 @@ namespace NugzzMenu.Services
             }
             if (gamepad != null)
             {
-                UpdateControllerLayout(gamepad);
+                if (gamepad.deviceId != _currentGamepadDeviceId)
+                {
+                    _currentGamepadDeviceId = gamepad.deviceId;
+                    UpdateControllerLayout(gamepad);
+                }
                 controllerActivity = ReadInputSystemGamepad(gamepad);
             }
             else
+            {
+                _currentGamepadDeviceId = -1;
                 controllerActivity = ReadLegacyController();
+            }
 
             if (controllerActivity)
             {
@@ -206,6 +213,8 @@ namespace NugzzMenu.Services
 
         private bool ReadLegacyController()
         {
+            if (!_legacyControllerConnected)
+                return false;
 
             bool leftShoulder = GetButton(4);
             bool rightShoulder = GetButton(5);
@@ -250,14 +259,17 @@ namespace NugzzMenu.Services
                    AnyControllerButtonDown();
         }
 
-        private void ScanDevices()
+        private void ScanLegacyDevices(bool scanLegacy)
         {
             if (Time.realtimeSinceStartup < _nextDeviceScan)
                 return;
 
             _nextDeviceScan = Time.realtimeSinceStartup + 2f;
-            _playStationLayout = false;
             _legacyControllerConnected = false;
+            if (!scanLegacy)
+                return;
+
+            _playStationLayout = false;
             string[] names = Input.GetJoystickNames();
             for (int i = 0; i < names.Length; i++)
             {

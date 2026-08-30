@@ -42,6 +42,7 @@ namespace NugzzMenu.Services
         public GUIStyle CreditStyle { get; private set; }
         public GUIStyle SliderStyle { get; private set; }
         public GUIStyle SliderThumbStyle { get; private set; }
+        public GUIStyle TextFieldStyle { get; private set; }
         public GUIStyle PromptChipStyle { get; private set; }
         public GUIStyle ShadowStyle { get; private set; }
         public GUIStyle HeaderBackdropStyle { get; private set; }
@@ -598,6 +599,20 @@ namespace NugzzMenu.Services
             SliderThumbStyle.border = new RectOffset(9, 9, 9, 9);
             SliderThumbStyle.overflow = new RectOffset(0, 0, 4, -4);
 
+            TextFieldStyle = new GUIStyle();
+            TextFieldStyle.normal.background = DarkTexture;
+            TextFieldStyle.focused.background = PanelTexture;
+            TextFieldStyle.hover.background = DarkTexture;
+            TextFieldStyle.active.background = PanelTexture;
+            TextFieldStyle.normal.textColor = new Color(0.94f, 0.98f, 0.92f);
+            TextFieldStyle.focused.textColor = Color.white;
+            TextFieldStyle.hover.textColor = new Color(0.94f, 0.98f, 0.92f);
+            TextFieldStyle.active.textColor = Color.white;
+            TextFieldStyle.alignment = TextAnchor.MiddleLeft;
+            TextFieldStyle.fontSize = 12;
+            TextFieldStyle.border = new RectOffset(9, 9, 9, 9);
+            TextFieldStyle.padding = new RectOffset(10, 10, 5, 5);
+
             PromptChipStyle = new GUIStyle(ButtonStyle);
             PromptChipStyle.normal.background = DarkTexture;
             PromptChipStyle.hover.background = DarkTexture;
@@ -608,31 +623,13 @@ namespace NugzzMenu.Services
 
             ApplyUIFont(WindowStyle, TabStyle, TabActiveStyle, OnStyle, OffStyle, ButtonStyle, SmallButtonStyle,
                 BoxStyle, HeaderStyle, LabelStyle, StatusStyle, TitleStyle, GoodButtonStyle, WarningButtonStyle,
-                NotificationStyle, CreditStyle, SliderStyle, SliderThumbStyle, PromptChipStyle);
+                NotificationStyle, CreditStyle, SliderStyle, SliderThumbStyle, TextFieldStyle, PromptChipStyle);
 
             ApplyDisplayFont(TabStyle, TabActiveStyle, OnStyle, OffStyle, ButtonStyle, SmallButtonStyle,
                 HeaderStyle, TitleStyle, GoodButtonStyle, WarningButtonStyle, NotificationStyle, CreditStyle,
                 PromptChipStyle);
 
             _initialized = true;
-        }
-
-        public void ApplyFontToSkin()
-        {
-            if (GUI.skin == null)
-                return;
-
-            GUI.skin.button = ButtonStyle ?? GUI.skin.button;
-            GUI.skin.box = BoxStyle ?? GUI.skin.box;
-            GUI.skin.label = LabelStyle ?? GUI.skin.label;
-            if (UIFont != null)
-                GUI.skin.textField.font = UIFont;
-            GUI.skin.textField.normal.background = DarkTexture;
-            GUI.skin.textField.focused.background = PanelTexture;
-            GUI.skin.textField.normal.textColor = new Color(0.94f, 0.98f, 0.92f);
-            GUI.skin.textField.focused.textColor = Color.white;
-            GUI.skin.textField.border = new RectOffset(9, 9, 9, 9);
-            GUI.skin.textField.padding = new RectOffset(10, 10, 5, 5);
         }
 
         public void Reset()

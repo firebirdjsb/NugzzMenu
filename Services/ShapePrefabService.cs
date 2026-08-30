@@ -47,6 +47,7 @@ namespace NugzzMenu.Services
         public static ShapePrefabService Instance => _instance;
 
         private readonly Dictionary<int, ShapeRecord> _shapes = new Dictionary<int, ShapeRecord>();
+        private readonly RaycastHit[] _pickupHits = new RaycastHit[32];
         private int _selectedType;
         private int _selectedScale = 1;
         private int _selectedColor;
@@ -158,6 +159,12 @@ namespace NugzzMenu.Services
                     _carried = null;
                     NotificationService.Instance.Status("Shape pickup cancelled");
                 }
+                return;
+            }
+
+            if (_shapes.Count == 0)
+            {
+                _hovered = null;
                 return;
             }
 
@@ -538,20 +545,21 @@ namespace NugzzMenu.Services
                 }
             }
 
-            RaycastHit[] hits = Physics.SphereCastAll(origin, 0.3f, direction, 6f, -5,
-                QueryTriggerInteraction.Collide);
+            int hitCount = Physics.SphereCastNonAlloc(origin, 0.3f, direction, _pickupHits, 6f,
+                -5, QueryTriggerInteraction.Collide);
             float bestDistance = float.MaxValue;
-            for (int i = 0; i < hits.Length; i++)
+            for (int i = 0; i < hitCount; i++)
             {
-                ShapeRecord candidate = FindRecord(hits[i].collider?.transform);
-                if (candidate == null || candidate.Object == null || hits[i].distance >= bestDistance)
+                RaycastHit candidateHit = _pickupHits[i];
+                ShapeRecord candidate = FindRecord(candidateHit.collider?.transform);
+                if (candidate == null || candidate.Object == null || candidateHit.distance >= bestDistance)
                     continue;
-                if (!HasLineOfSight(camera, candidate, hits[i]))
+                if (!HasLineOfSight(camera, candidate, candidateHit))
                     continue;
 
                 record = candidate;
-                hit = hits[i];
-                bestDistance = hits[i].distance;
+                hit = candidateHit;
+                bestDistance = candidateHit.distance;
             }
             return record != null;
         }

@@ -1,10 +1,8 @@
-using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Il2CppScheduleOne;
 using Il2CppScheduleOne.AvatarFramework.Customization;
 using Il2CppScheduleOne.UI;
-using MelonLoader;
 
 namespace NugzzMenu.Services
 {
@@ -18,32 +16,27 @@ namespace NugzzMenu.Services
 
         public bool MenuOpen { get; private set; }
 
-        // Runtime Harmony patches for input blocking (replaces attribute-based patches to handle stripped methods)
+        private const string InputBlockHarmonyId = "com.xunfairx.nugzzmenu.inputblock";
         private static HarmonyLib.Harmony _inputBlockHarmony;
         private static bool _inputBlockPatchesApplied;
-        private const string InputBlockHarmonyId = "com.xunfairx.nugzzmenu.inputblock";
 
         private GameplayStateGateService() { }
+
+        public void Initialize()
+        {
+            MenuOpen = false;
+            ApplyInputBlockPatches();
+        }
 
         public void SetMenuOpen(bool open)
         {
             MenuOpen = open;
-            UpdateInputBlockPatches();
         }
 
-        private void UpdateInputBlockPatches()
+        public void Shutdown()
         {
-            try
-            {
-                if (MenuOpen)
-                    ApplyInputBlockPatches();
-                else
-                    RemoveInputBlockPatches();
-            }
-            catch (System.Exception ex)
-            {
-                DebugLogService.Instance.VerboseWarning("Input block patch update failed: " + ex.Message);
-            }
+            MenuOpen = false;
+            RemoveInputBlockPatches();
         }
 
         private static void ApplyInputBlockPatches()
@@ -55,37 +48,21 @@ namespace NugzzMenu.Services
             {
                 _inputBlockHarmony = new HarmonyLib.Harmony(InputBlockHarmonyId);
 
-                // Patch PauseMenu.Pause
-                try
-                {
-                    var pauseMethod = AccessTools.Method(typeof(PauseMenu), nameof(PauseMenu.Pause));
-                    if (pauseMethod != null)
-                    {
-                        var prefix = AccessTools.Method(typeof(GameplayStateGateService), nameof(PauseMenuPrefix));
-                        if (prefix != null)
-                            _inputBlockHarmony.Patch(pauseMethod, prefix: new HarmonyMethod(prefix));
-                    }
-                }
-                catch (System.NotSupportedException ex)
-                {
-                    DebugLogService.Instance.Verbose("PauseMenu.Pause patch skipped (method stripped): " + ex.Message);
-                }
-                catch (System.Exception ex)
-                {
-                    DebugLogService.Instance.VerboseWarning("PauseMenu.Pause patch failed: " + ex.Message);
-                }
+                PatchInputMethod(
+                    typeof(PauseMenu),
+                    nameof(PauseMenu.Pause),
+                    nameof(PauseMenuPrefix));
 
-                // Patch GameInput callbacks
-                var blockedCallbacks = new[]
+                string[] blockedCallbacks =
                 {
                     "OnMotion", "OnPrimaryClick", "OnSecondaryClick", "OnTertiaryClick",
                     "OnJump", "OnCrouch", "OnSprint", "OnEscape", "OnBack",
                     "OnInteract", "OnSubmit", "OnTogglePhone", "OnVehicleToggleLights",
-                    "OnVehicleHandbrake", "OnRotateLeft", "OnRotateRight",
-                    "OnManagementMode", "OnOpenMap", "OnOpenJournal", "OnOpenTexts",
-                    "OnQuickMove", "OnToggleFlashlight", "OnViewAvatar", "OnReload",
-                    "OnCamera", "OnScrollWheel", "OnInventoryLeft", "OnInventoryRight",
-                    "OnHolster", "OnControllerCombo", "OnVehicleResetCamera",
+                    "OnVehicleHandbrake", "OnRotateLeft", "OnRotateRight", "OnManagementMode",
+                    "OnOpenMap", "OnOpenJournal", "OnOpenTexts", "OnQuickMove",
+                    "OnToggleFlashlight", "OnViewAvatar", "OnReload",
+                    "OnScrollWheel", "OnInventoryLeft", "OnInventoryRight", "OnHolster",
+                    "OnControllerCombo",
                     "OnVehicleDrive", "OnSkateboardDismount", "OnSkateboardMount",
                     "OnTogglePauseMenu", "OnUINavigationDirection",
                     "OnUICyclePanelDirection", "OnUITabNavigationPrimary",
@@ -95,36 +72,54 @@ namespace NugzzMenu.Services
                     "OnUIModifyAmountIncrementTierThree"
                 };
 
-                var gameInputType = typeof(GameInput);
-                var prefixMethod = AccessTools.Method(typeof(GameplayStateGateService), nameof(GameInputCallbackPrefix));
-
-                foreach (var callback in blockedCallbacks)
+                foreach (string callback in blockedCallbacks)
                 {
-                    try
-                    {
-                        var method = gameInputType.GetMethod(callback, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                        if (method != null && prefixMethod != null)
-                        {
-                            _inputBlockHarmony.Patch(method, prefix: new HarmonyMethod(prefixMethod));
-                        }
-                    }
-                    catch (System.NotSupportedException ex)
-                    {
-                        DebugLogService.Instance.Verbose($"GameInput.{callback} patch skipped (method stripped): " + ex.Message);
-                    }
-                    catch (System.Exception ex)
-                    {
-                        DebugLogService.Instance.VerboseWarning($"GameInput.{callback} patch failed: " + ex.Message);
-                    }
+                    PatchInputMethod(
+                        typeof(GameInput),
+                        callback,
+                        nameof(GameInputCallbackPrefix));
                 }
 
                 _inputBlockPatchesApplied = true;
             }
             catch (System.Exception ex)
             {
-                DebugLogService.Instance.VerboseWarning("Failed to apply input block patches: " + ex.Message);
+                DebugLogService.Instance.VerboseWarning(
+                    "Failed to apply input block patches: " + ex.Message);
                 try { _inputBlockHarmony?.UnpatchSelf(); } catch { }
                 _inputBlockHarmony = null;
+                _inputBlockPatchesApplied = false;
+            }
+        }
+
+        private static void PatchInputMethod(
+            System.Type targetType,
+            string targetName,
+            string prefixName)
+        {
+            try
+            {
+                MethodInfo target = targetType.GetMethod(
+                    targetName,
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                MethodInfo prefix = typeof(GameplayStateGateService).GetMethod(
+                    prefixName,
+                    BindingFlags.Static | BindingFlags.NonPublic);
+
+                if (target != null && prefix != null)
+                    _inputBlockHarmony.Patch(target, prefix: new HarmonyMethod(prefix));
+            }
+            catch (System.NotSupportedException ex)
+            {
+                DebugLogService.Instance.Verbose(
+                    targetType.Name + "." + targetName +
+                    " patch skipped (method stripped): " + ex.Message);
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning(
+                    targetType.Name + "." + targetName +
+                    " patch failed: " + ex.Message);
             }
         }
 
@@ -145,10 +140,9 @@ namespace NugzzMenu.Services
             }
         }
 
-        // Prefix methods for runtime patches
         private static bool PauseMenuPrefix()
         {
-            if (!GameplayStateGateService.Instance.MenuOpen)
+            if (!Instance.MenuOpen)
                 return true;
 
             NotificationService.Instance.Status("Close Nugzz before pausing");
@@ -157,7 +151,7 @@ namespace NugzzMenu.Services
 
         private static bool GameInputCallbackPrefix()
         {
-            return !GameplayStateGateService.Instance.MenuOpen;
+            return !Instance.MenuOpen;
         }
 
         public bool IsModControlBlocked(out string reason)

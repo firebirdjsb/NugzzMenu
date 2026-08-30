@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace NugzzMenu.Services
@@ -11,6 +12,11 @@ namespace NugzzMenu.Services
             new Dictionary<GUIStyle, Dictionary<int, GUIStyle>>();
         private static readonly Dictionary<Texture2D, GUIStyle> TextureStyleCache =
             new Dictionary<Texture2D, GUIStyle>();
+        private static readonly Dictionary<FitCacheKey, GUIStyle> FitResultCache =
+            new Dictionary<FitCacheKey, GUIStyle>();
+        private static readonly GUIContent MeasurementContent = new GUIContent();
+        private const int MaxFitCacheEntries = 2048;
+        private static GUIStyle _fallbackButtonStyle;
         private static string _activeTextFieldKey;
         private static ControllerInputService _controller;
         private static int _controlCount;
@@ -29,7 +35,7 @@ namespace NugzzMenu.Services
 
         public static GUIStyle FittedStyle(GUIStyle source, Rect rect, string text, int minFontSize = DefaultMinFontSize, bool wordWrap = false)
         {
-            GUIStyle sourceStyle = source ?? GUI.skin.button;
+            GUIStyle sourceStyle = source ?? GetFallbackButtonStyle();
             EnsureFont(sourceStyle);
 
             int startSize = sourceStyle.fontSize > 0 ? sourceStyle.fontSize : 12;
@@ -39,14 +45,18 @@ namespace NugzzMenu.Services
             if (!wordWrap && LikelyFits(sourceStyle, rect, value, startSize))
                 return sourceStyle;
 
+            var cacheKey = new FitCacheKey(sourceStyle, rect, value, smallest, wordWrap);
+            if (FitResultCache.TryGetValue(cacheKey, out GUIStyle fitted))
+                return fitted;
+
             for (int size = startSize; size >= smallest; size--)
             {
                 GUIStyle style = GetCachedStyle(sourceStyle, size, wordWrap);
                 if (Fits(style, rect, value, wordWrap))
-                    return style;
+                    return CacheFitResult(cacheKey, style);
             }
 
-            return GetCachedStyle(sourceStyle, smallest, wordWrap);
+            return CacheFitResult(cacheKey, GetCachedStyle(sourceStyle, smallest, wordWrap));
         }
 
         public static bool Button(Rect rect, string text, GUIStyle style, int minFontSize = DefaultMinFontSize,
@@ -133,7 +143,7 @@ namespace NugzzMenu.Services
             string key = string.IsNullOrEmpty(fieldKey)
                 ? rect.x + ":" + rect.y + ":" + rect.width
                 : fieldKey;
-            var style = FittedStyle(GUI.skin.textField, rect, text, 8);
+            var style = FittedStyle(GUISystemService.Instance.TextFieldStyle, rect, text, 8);
             Event current = Event.current;
             bool active = _activeTextFieldKey == key;
 
@@ -243,6 +253,7 @@ namespace NugzzMenu.Services
         {
             StyleCache.Clear();
             TextureStyleCache.Clear();
+            FitResultCache.Clear();
             ResetFocus();
         }
 
@@ -256,6 +267,21 @@ namespace NugzzMenu.Services
                 _hasFocusedControlRect = true;
             }
             return focused;
+        }
+
+        private static GUIStyle GetFallbackButtonStyle()
+        {
+            if (_fallbackButtonStyle != null)
+                return _fallbackButtonStyle;
+
+            _fallbackButtonStyle = new GUIStyle
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 12,
+                clipping = TextClipping.Clip
+            };
+            EnsureFont(_fallbackButtonStyle);
+            return _fallbackButtonStyle;
         }
 
         private static void DrawFocus(Rect rect)
@@ -308,12 +334,20 @@ namespace NugzzMenu.Services
             if (rect.width <= 0f || rect.height <= 0f)
                 return true;
 
-            var content = new GUIContent(text ?? "");
+            MeasurementContent.text = text ?? "";
             if (wordWrap)
-                return style.CalcHeight(content, rect.width) <= rect.height + 1f;
+                return style.CalcHeight(MeasurementContent, rect.width) <= rect.height + 1f;
 
-            Vector2 size = style.CalcSize(content);
+            Vector2 size = style.CalcSize(MeasurementContent);
             return size.x <= rect.width + 1f && size.y <= rect.height + 1f;
+        }
+
+        private static GUIStyle CacheFitResult(FitCacheKey key, GUIStyle style)
+        {
+            if (FitResultCache.Count >= MaxFitCacheEntries)
+                FitResultCache.Clear();
+            FitResultCache[key] = style;
+            return style;
         }
 
         private static bool LikelyFits(GUIStyle style, Rect rect, string text, int fontSize)
@@ -328,6 +362,56 @@ namespace NugzzMenu.Services
             float estimatedWidth = length * fontSize * 0.62f + 12f;
             float estimatedHeight = fontSize + 8f;
             return estimatedWidth <= rect.width && estimatedHeight <= rect.height;
+        }
+
+        private readonly struct FitCacheKey : IEquatable<FitCacheKey>
+        {
+            private readonly GUIStyle _style;
+            private readonly string _text;
+            private readonly int _width;
+            private readonly int _height;
+            private readonly int _minimumFontSize;
+            private readonly bool _wordWrap;
+
+            public FitCacheKey(GUIStyle style, Rect rect, string text, int minimumFontSize,
+                bool wordWrap)
+            {
+                _style = style;
+                _text = text ?? string.Empty;
+                _width = Mathf.RoundToInt(rect.width);
+                _height = Mathf.RoundToInt(rect.height);
+                _minimumFontSize = minimumFontSize;
+                _wordWrap = wordWrap;
+            }
+
+            public bool Equals(FitCacheKey other)
+            {
+                return ReferenceEquals(_style, other._style) &&
+                    _width == other._width &&
+                    _height == other._height &&
+                    _minimumFontSize == other._minimumFontSize &&
+                    _wordWrap == other._wordWrap &&
+                    string.Equals(_text, other._text, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is FitCacheKey other && Equals(other);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = RuntimeHelpers.GetHashCode(_style);
+                    hash = (hash * 397) ^ _width;
+                    hash = (hash * 397) ^ _height;
+                    hash = (hash * 397) ^ _minimumFontSize;
+                    hash = (hash * 397) ^ (_wordWrap ? 1 : 0);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(_text);
+                    return hash;
+                }
+            }
         }
     }
 }

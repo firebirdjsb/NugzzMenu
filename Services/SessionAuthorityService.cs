@@ -48,12 +48,12 @@ namespace NugzzMenu.Services
         private const string MinimumCompatibleVersion = "0.9.9R4";
         private const float PulseInterval = 1.5f;
         private const float PulseTimeout = 5f;
-        private const float AssemblyScanInterval = 3f;
         private const float ClientExpiry = 8f;
 
         private static readonly SessionAuthorityService _instance = new SessionAuthorityService();
         private static readonly int BuildToken = ComputeBuildToken();
         private readonly Dictionary<int, ClientRecord> _clients = new Dictionary<int, ClientRecord>();
+        private readonly List<int> _expiredClientIds = new List<int>();
 
         private bool _initialized;
         private bool _rpModBlocked;
@@ -64,7 +64,6 @@ namespace NugzzMenu.Services
         private bool _hostApproved;
         private float _lastHostMessage = -100f;
         private float _nextPulse;
-        private float _nextAssemblyScan;
         private float _nextWaitingDiagnostic;
         private bool? _reportedClientAccess;
         private bool _clientHelloTransportKnown;
@@ -89,6 +88,7 @@ namespace NugzzMenu.Services
             _initialized = true;
             ScanInstallLocations();
             ScanLoadedAssemblies();
+            AppDomain.CurrentDomain.AssemblyLoad += HandleAssemblyLoaded;
             LogReceiverHookState();
             Update();
         }
@@ -97,12 +97,6 @@ namespace NugzzMenu.Services
         {
             if (!_initialized)
                 Initialize();
-
-            if (!_rpModBlocked && Time.unscaledTime >= _nextAssemblyScan)
-            {
-                _nextAssemblyScan = Time.unscaledTime + AssemblyScanInterval;
-                ScanLoadedAssemblies();
-            }
 
             if (_rpModBlocked)
             {
@@ -557,17 +551,18 @@ namespace NugzzMenu.Services
 
         private void ExpireClients()
         {
+            _expiredClientIds.Clear();
             if (_clients.Count == 0)
                 return;
 
-            var expired = new List<int>();
             foreach (KeyValuePair<int, ClientRecord> pair in _clients)
             {
                 if (Time.unscaledTime - pair.Value.LastSeen > ClientExpiry)
-                    expired.Add(pair.Key);
+                    _expiredClientIds.Add(pair.Key);
             }
-            for (int i = 0; i < expired.Count; i++)
-                _clients.Remove(expired[i]);
+            for (int i = 0; i < _expiredClientIds.Count; i++)
+                _clients.Remove(_expiredClientIds[i]);
+            _expiredClientIds.Clear();
         }
 
         private void ResetLobbyState()
@@ -705,6 +700,20 @@ namespace NugzzMenu.Services
                     MarkRpMod(name);
                     return;
                 }
+            }
+            catch { }
+        }
+
+        private void HandleAssemblyLoaded(object sender, AssemblyLoadEventArgs args)
+        {
+            if (_rpModBlocked)
+                return;
+
+            try
+            {
+                string name = args?.LoadedAssembly?.GetName()?.Name ?? string.Empty;
+                if (LooksLikeImperium(name))
+                    MarkRpMod(name);
             }
             catch { }
         }

@@ -45,6 +45,27 @@ Current release: [v1.0.0](RELEASE_NOTES_v1.0.0.md)
 - Kept multiplayer authorization compatible with approved NugzzMenu R4 and
   newer clients while advertising the current v1.0.0 build.
 
+#### Maintenance fixes
+
+- Restored the custom left-click interaction prompts and actions for weed,
+  mushrooms, watering, soil, substrate, and grow additives. Prompt discovery
+  now follows the game's active interactable and held-item definitions instead
+  of relying on a narrow physics-layer lookup.
+- Preserved the native cooking-station temperature minigame and added a focused
+  Bunsen burner input fallback for mouse and controller when the updated game
+  does not advance the dial itself.
+- Removed the large menu open/close hitch by keeping input patches installed,
+  skipping unused IMGUI layout work, caching fitted controls and diagnostics,
+  and drawing passive overlays only during repaint events.
+- Isolated NugzzMenu's GUI styles so opening the menu no longer replaces the
+  global Unity skin or changes the appearance of other mods.
+- Improved native-activity blocking, controller detection, console suggestion
+  cleanup, multiplayer session discovery, interactive shape prompts, and
+  per-skateboard tuning persistence.
+- Reworked multiplayer vehicle collision tracking and staggered parked-vehicle
+  transform synchronization to keep visible cars and their blocking colliders
+  aligned without doing expensive full refreshes every frame.
+
 Full release notes: [RELEASE_NOTES_v1.0.0.md](RELEASE_NOTES_v1.0.0.md)
 
 Release history: [CHANGELOG.md](CHANGELOG.md)

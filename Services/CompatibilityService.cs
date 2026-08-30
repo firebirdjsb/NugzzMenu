@@ -3,9 +3,12 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using Il2CppScheduleOne;
+using Il2CppScheduleOne.ObjectScripts;
 using Il2CppScheduleOne.PlayerScripts;
 using MelonLoader;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace NugzzMenu.Services
 {
@@ -17,6 +20,7 @@ namespace NugzzMenu.Services
         private bool _unityLogFilterPatched;
         private bool _actionListStaggeredPatched;
         private bool _temperatureDisplayPatched;
+        private bool _cookingBurnerInputPatched;
         [ThreadStatic]
         private static bool _temperatureDisplayUpdateActive;
         private static Camera _temperatureCamera;
@@ -28,6 +32,7 @@ namespace NugzzMenu.Services
         {
             ApplyActionListStaggeredPatch(harmony);
             ApplyTemperatureDisplayPatch(harmony);
+            ApplyCookingBurnerInputPatch(harmony);
         }
 
         private void ApplyUnityLogFilter(HarmonyLib.Harmony harmony)
@@ -223,6 +228,116 @@ private void ApplyActionListStaggeredPatch(HarmonyLib.Harmony harmony)
             }
 
             _temperatureDisplayPatched = true;
+        }
+
+        private void ApplyCookingBurnerInputPatch(HarmonyLib.Harmony harmony)
+        {
+            if (_cookingBurnerInputPatched || harmony == null)
+                return;
+
+            try
+            {
+                MethodInfo target = AccessTools.Method(typeof(BunsenBurner), "Update");
+                MethodInfo prefix = typeof(CompatibilityService).GetMethod(
+                    nameof(CookingBurnerUpdatePrefix),
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                MethodInfo postfix = typeof(CompatibilityService).GetMethod(
+                    nameof(CookingBurnerUpdatePostfix),
+                    BindingFlags.Static | BindingFlags.NonPublic);
+
+                if (target != null && prefix != null && postfix != null)
+                {
+                    harmony.Patch(
+                        target,
+                        prefix: new HarmonyMethod(prefix),
+                        postfix: new HarmonyMethod(postfix));
+                    DebugLogService.Instance.Verbose(
+                        "Patched BunsenBurner.Update native temperature-input fallback");
+                }
+            }
+            catch (System.NotSupportedException ex)
+            {
+                DebugLogService.Instance.Verbose(
+                    "BunsenBurner.Update patch skipped (method stripped): " + ex.Message);
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning(
+                    "Cooking burner input patch failed: " + ex.Message);
+            }
+
+            _cookingBurnerInputPatched = true;
+        }
+
+        private static void CookingBurnerUpdatePrefix(
+            BunsenBurner __instance,
+            out float __state)
+        {
+            __state = float.NaN;
+            try
+            {
+                if (__instance != null)
+                    __state = __instance.CurrentDialValue;
+            }
+            catch { }
+        }
+
+        private static void CookingBurnerUpdatePostfix(
+            BunsenBurner __instance,
+            float __state)
+        {
+            try
+            {
+                if (__instance == null || float.IsNaN(__state) ||
+                    !__instance.Interactable || __instance.LockDial)
+                    return;
+
+                bool held = __instance.IsDialHeld;
+                if (!held && __instance.HandleClickable != null)
+                    held = __instance.HandleClickable.IsHeld;
+                if (!held)
+                    return;
+
+                float current = __instance.CurrentDialValue;
+                if (!Mathf.Approximately(current, __state))
+                    return;
+
+                Vector2 pointerDelta = GameInput.MouseDelta;
+                if (pointerDelta.sqrMagnitude <= 0.0001f && Mouse.current != null)
+                    pointerDelta = Mouse.current.delta.ReadValue();
+
+                float directionalDelta = Mathf.Abs(pointerDelta.x) >= Mathf.Abs(pointerDelta.y)
+                    ? pointerDelta.x
+                    : -pointerDelta.y;
+                float dialDelta;
+                if (Mathf.Abs(directionalDelta) > 0.01f)
+                {
+                    float dragDistance = Mathf.Max(280f, Screen.width * 0.2f);
+                    float speedScale = Mathf.Clamp(
+                        __instance.HandleRotationSpeed / 100f,
+                        0.5f,
+                        2f);
+                    dialDelta = directionalDelta * speedScale / dragDistance;
+                }
+                else if (GameInput.GetCurrentInputDeviceIsGamepad())
+                {
+                    float axis = GameInput.CameraAxis.x;
+                    if (Mathf.Abs(axis) <= 0.05f)
+                        return;
+                    dialDelta = axis * Time.unscaledDeltaTime * 0.65f;
+                }
+                else
+                {
+                    return;
+                }
+
+                __instance.SetDialPosition(Mathf.Clamp01(current + dialDelta));
+            }
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning(
+                    "Cooking burner temperature input fallback failed: " + ex.Message);
+            }
         }
 
         private static bool TemperatureDisplayUpdateCanvasPrefix(object __instance)

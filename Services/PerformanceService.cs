@@ -37,6 +37,8 @@ namespace NugzzMenu.Services
         private int _nugzzUpdateSamples;
         private float _nextTimingPublish;
         private float _nugzzUpdateAverageMs;
+        private float _nextSummaryRefresh;
+        private string _cachedSummary = "Collecting frame timing...";
 
         private PerformanceService()
         {
@@ -110,15 +112,20 @@ namespace NugzzMenu.Services
 
         public string GetSummary()
         {
+            if (Time.unscaledTime < _nextSummaryRefresh)
+                return _cachedSummary;
+
+            _nextSummaryRefresh = Time.unscaledTime + 0.25f;
             float fps = Time.smoothDeltaTime > 0.0001f ? 1f / Time.smoothDeltaTime : 0f;
             string cap = TargetFps <= 0 ? "Unlimited" : TargetFps.ToString();
             string gameCap = GameTargetFps <= 0 ? "Unlimited" : GameTargetFps.ToString();
             int refreshRate = 0;
             try { refreshRate = Screen.currentResolution.refreshRate; } catch { }
-            return "FPS " + fps.ToString("0") + " | Cap E/G " + cap + "/" + gameCap +
+            _cachedSummary = "FPS " + fps.ToString("0") + " | Cap E/G " + cap + "/" + gameCap +
                 " | Sync E/G " + (VSyncEnabled ? "ON" : "OFF") + "/" +
                 (GameVSyncEnabled ? "ON" : "OFF") + " | " + refreshRate + " Hz | Nugzz " +
                 _nugzzUpdateAverageMs.ToString("0.00") + " ms";
+            return _cachedSummary;
         }
 
         public void SetTargetFps(int fps)

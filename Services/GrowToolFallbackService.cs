@@ -21,8 +21,11 @@ namespace NugzzMenu.Services
         private const float InteractionRadius = 0.18f;
         private const float FullContainerThreshold = 0.995f;
         private const float EmptyContainerThreshold = 0.001f;
+        private const int InteractionHitCapacity = 32;
 
         private static readonly GrowToolFallbackService _instance = new GrowToolFallbackService();
+        private static readonly RaycastHit[] InteractionHits =
+            new RaycastHit[InteractionHitCapacity];
         public static GrowToolFallbackService Instance => _instance;
 
         private static FieldInfo _equippableItemInstanceField;
@@ -41,8 +44,71 @@ namespace NugzzMenu.Services
         private RaycastHit _promptHit;
         private bool _hasPromptTarget;
         private bool _promptFailureReported;
+        private bool _queuedPrompt;
+        private int _queuedPromptFrame = -1;
+        private Vector3 _queuedPromptPosition;
+        private string _queuedPromptMessage;
 
         private GrowToolFallbackService() { }
+
+        public void RefreshPromptForEquippedTool()
+        {
+            if (_queuedPrompt && _queuedPromptFrame == Time.frameCount)
+                return;
+
+            try
+            {
+                Equippable equipped = ManagerCacheService.Instance.PlayerInventory?.Equippable;
+                if (!IsUsableToolObject(equipped))
+                    return;
+
+                Equippable_Trimmers trimmers = TryCastEquippable<Equippable_Trimmers>(equipped);
+                if (trimmers != null)
+                {
+                    ShowTrimmerPrompt(trimmers);
+                    return;
+                }
+
+                Equippable_SprayBottle sprayBottle =
+                    TryCastEquippable<Equippable_SprayBottle>(equipped);
+                if (sprayBottle != null)
+                {
+                    ShowSprayBottlePrompt(sprayBottle);
+                    return;
+                }
+
+                MushroomSpawnEquipped mushroomSpawn =
+                    TryCastEquippable<MushroomSpawnEquipped>(equipped);
+                if (mushroomSpawn != null)
+                {
+                    ShowMushroomSpawnPrompt(mushroomSpawn);
+                    return;
+                }
+
+                Equippable_Seed seed = TryCastEquippable<Equippable_Seed>(equipped);
+                if (seed != null)
+                {
+                    ShowSeedPrompt(seed);
+                    return;
+                }
+
+                Equippable_Pourable pourable =
+                    TryCastEquippable<Equippable_Pourable>(equipped);
+                if (pourable == null)
+                    return;
+
+                if (IsWaterContainerTool(pourable))
+                    ShowWateringPrompt(pourable);
+                else if (IsSoilTool(pourable))
+                    ShowSoilPrompt(pourable);
+                else if (IsAdditiveTool(pourable))
+                    ShowAdditivePrompt(pourable);
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
 
         public bool RunTrimmersUpdate(Equippable_Trimmers trimmers)
         {
@@ -220,8 +286,33 @@ namespace NugzzMenu.Services
                     return true;
                 }
 
-                // The native task owns animation, inventory use, and network state.
-                spawnTool.StartTask(bed);
+                ItemInstance heldItem = GetHeldItemInstance(spawnTool);
+                ShroomSpawnDefinition spawnDefinition =
+                    TryCastDefinition<ShroomSpawnDefinition>(heldItem?.Definition);
+                if (spawnDefinition == null)
+                {
+                    StatusThrottled("Grain spawn definition not found");
+                    return true;
+                }
+
+                if (!CanSpendEquippedStack(spawnDefinition, spawnTool))
+                {
+                    StatusThrottled("No grain spawn left");
+                    return true;
+                }
+
+                string spawnId = GetDefinitionId(spawnDefinition);
+                if (string.IsNullOrEmpty(spawnId))
+                {
+                    StatusThrottled("Grain spawn ID not found");
+                    return true;
+                }
+
+                // This is the same synchronized endpoint reached after the native
+                // BreakUpChunks and MixIntoSoil stages complete.
+                bed.CreateAndAssignColony_Server(spawnId);
+                SpendOneEquippedStack(spawnDefinition, spawnTool, null);
+                NotificationService.Instance.Status("Added grain spawn to mushroom bed");
             }
             catch (Exception ex)
             {
@@ -443,9 +534,17 @@ namespace NugzzMenu.Services
                 }
 
                 MushroomBed bed = TryCastComponent<MushroomBed>(container);
+                ItemInstance heldItem = GetHeldItemInstance(spawnTool);
+                ShroomSpawnDefinition spawnDefinition =
+                    TryCastDefinition<ShroomSpawnDefinition>(heldItem?.Definition);
                 string reason;
-                if (bed != null && spawnTool.CanApplyToMushroomBed(bed, out reason))
-                    ShowLeftClickPrompt(hit, "Add shroom spawn");
+                if (bed != null &&
+                    spawnDefinition != null &&
+                    CanSpendEquippedStack(spawnDefinition, spawnTool) &&
+                    spawnTool.CanApplyToMushroomBed(bed, out reason))
+                {
+                    ShowLeftClickPrompt(hit, "Add grain bag");
+                }
             }
             catch (Exception ex)
             {
@@ -504,6 +603,35 @@ namespace NugzzMenu.Services
         {
             try
             {
+                Vector3 position = hit.point;
+                if (hit.collider != null && hit.distance <= 0.001f)
+                    position = hit.collider.bounds.center;
+
+                _queuedPromptPosition = position;
+                _queuedPromptMessage = message;
+                _queuedPromptFrame = Time.frameCount;
+                _queuedPrompt = true;
+            }
+            catch (Exception ex)
+            {
+                ReportPromptFailure(ex);
+            }
+        }
+
+        public void RenderQueuedPrompt()
+        {
+            if (!_queuedPrompt)
+                return;
+
+            int age = Time.frameCount - _queuedPromptFrame;
+            if (age < 0 || age > 1)
+            {
+                ClearQueuedPrompt();
+                return;
+            }
+
+            try
+            {
                 InteractionCanvas canvas = InteractionCanvas.Instance;
                 if (canvas == null)
                     return;
@@ -511,28 +639,44 @@ namespace NugzzMenu.Services
                 Sprite icon = canvas.LeftMouseIcon;
                 if (icon == null && InteractionManager.Instance != null)
                     icon = InteractionManager.Instance.icon_LeftMouse;
-                if (icon == null)
-                    return;
 
-                Vector3 position = hit.point;
-                if (hit.collider != null && hit.distance <= 0.001f)
-                    position = hit.collider.bounds.center;
+                string iconText = string.Empty;
+                Vector2 iconSize = new Vector2(32f, 32f);
+                if (icon == null)
+                {
+                    icon = canvas.KeyIcon;
+                    if (icon == null && InteractionManager.Instance != null)
+                        icon = InteractionManager.Instance.icon_Key;
+                    iconText = "LMB";
+                    iconSize = new Vector2(44f, 32f);
+                }
 
                 canvas.EnableInteractionDisplay(
-                    position,
-                    message,
+                    _queuedPromptPosition,
+                    _queuedPromptMessage ?? string.Empty,
                     canvas.DefaultMessageColor,
                     icon,
                     canvas.DefaultIconColor,
-                    string.Empty,
+                    iconText,
                     1f,
-                    new Vector2(32f, 32f),
+                    iconSize,
                     true);
             }
             catch (Exception ex)
             {
                 ReportPromptFailure(ex);
             }
+            finally
+            {
+                ClearQueuedPrompt();
+            }
+        }
+
+        private void ClearQueuedPrompt()
+        {
+            _queuedPrompt = false;
+            _queuedPromptFrame = -1;
+            _queuedPromptMessage = null;
         }
 
         private void ReportPromptFailure(Exception exception)
@@ -865,24 +1009,26 @@ namespace NugzzMenu.Services
             container = null;
             hit = default;
 
+            if (TryGetNativeHoveredGrowContainer(out container, out hit))
+                return true;
+
             Camera camera = GetCamera();
             if (camera == null)
                 return false;
 
-            RaycastHit[] hits = Physics.SphereCastAll(
+            int hitCount = Physics.SphereCastNonAlloc(
                 camera.transform.position,
                 InteractionRadius,
                 camera.transform.forward,
+                InteractionHits,
                 InteractionRange,
-                -5,
+                ~0,
                 QueryTriggerInteraction.Collide);
-            if (hits == null)
-                return false;
 
             float bestDistance = float.MaxValue;
-            for (int i = 0; i < hits.Length; i++)
+            for (int i = 0; i < hitCount; i++)
             {
-                RaycastHit candidate = hits[i];
+                RaycastHit candidate = InteractionHits[i];
                 if (candidate.collider == null ||
                     IsLocalPlayerCollider(candidate.collider) ||
                     IsEquippedToolCollider(candidate.collider))
@@ -902,14 +1048,60 @@ namespace NugzzMenu.Services
             return container != null;
         }
 
-        private static GrowContainer ResolveGrowContainer(Collider collider)
+        private static bool TryGetNativeHoveredGrowContainer(
+            out GrowContainer container,
+            out RaycastHit hit)
         {
-            if (collider == null)
+            container = null;
+            hit = default;
+
+            try
+            {
+                InteractionManager manager = InteractionManager.Instance;
+                if (manager == null)
+                    return false;
+
+                InteractableObject hovered = manager.HoveredValidInteractableObject ??
+                    manager.HoveredInteractableObject;
+                if (hovered == null)
+                    return false;
+
+                container = ResolveGrowContainer(hovered);
+                if (container == null)
+                    return false;
+
+                Vector3 position = hovered.transform != null
+                    ? hovered.transform.position
+                    : container.transform.position;
+                try
+                {
+                    if (container.PourableStartPoint != null)
+                        position = container.PourableStartPoint.position;
+                }
+                catch { }
+
+                hit.point = position;
+                Camera camera = GetCamera();
+                if (camera != null && camera.transform != null)
+                    hit.distance = Vector3.Distance(camera.transform.position, position);
+                return true;
+            }
+            catch
+            {
+                container = null;
+                hit = default;
+                return false;
+            }
+        }
+
+        private static GrowContainer ResolveGrowContainer(Component component)
+        {
+            if (component == null)
                 return null;
 
             try
             {
-                GrowContainer direct = collider.GetComponentInParent<GrowContainer>();
+                GrowContainer direct = component.GetComponentInParent<GrowContainer>();
                 if (direct != null)
                     return direct;
             }
@@ -918,7 +1110,7 @@ namespace NugzzMenu.Services
             try
             {
                 MushroomBedInteraction interaction =
-                    collider.GetComponentInParent<MushroomBedInteraction>();
+                    component.GetComponentInParent<MushroomBedInteraction>();
                 if (interaction != null && interaction._bed != null)
                     return interaction._bed;
             }
@@ -926,7 +1118,26 @@ namespace NugzzMenu.Services
 
             try
             {
-                GrowContainer child = collider.GetComponentInChildren<GrowContainer>(true);
+                PotInteraction interaction = component.GetComponentInParent<PotInteraction>();
+                GrowContainer resolved = ResolveInteractionContainer(interaction);
+                if (resolved != null)
+                    return resolved;
+            }
+            catch { }
+
+            try
+            {
+                GrowContainerInteraction interaction =
+                    component.GetComponentInParent<GrowContainerInteraction>();
+                GrowContainer resolved = ResolveInteractionContainer(interaction);
+                if (resolved != null)
+                    return resolved;
+            }
+            catch { }
+
+            try
+            {
+                GrowContainer child = component.GetComponentInChildren<GrowContainer>(true);
                 if (child != null)
                     return child;
             }
@@ -935,13 +1146,69 @@ namespace NugzzMenu.Services
             try
             {
                 MushroomBedInteraction interaction =
-                    collider.GetComponentInChildren<MushroomBedInteraction>(true);
-                return interaction?._bed;
+                    component.GetComponentInChildren<MushroomBedInteraction>(true);
+                if (interaction != null && interaction._bed != null)
+                    return interaction._bed;
             }
-            catch
+            catch { }
+
+            try
             {
-                return null;
+                Transform cursor = component.transform;
+                for (int depth = 0; cursor != null && depth < 6; depth++, cursor = cursor.parent)
+                {
+                    GrowContainer sibling = cursor.GetComponentInChildren<GrowContainer>(true);
+                    if (sibling != null)
+                        return sibling;
+
+                    GrowContainerInteraction interaction =
+                        cursor.GetComponentInChildren<GrowContainerInteraction>(true);
+                    GrowContainer resolved = ResolveInteractionContainer(interaction);
+                    if (resolved != null)
+                        return resolved;
+                }
             }
+            catch { }
+
+            return null;
+        }
+
+        private static GrowContainer ResolveInteractionContainer(
+            GrowContainerInteraction interaction)
+        {
+            if (interaction == null)
+                return null;
+
+            try
+            {
+                Type type = interaction.GetType();
+                while (type != null && type != typeof(MonoBehaviour))
+                {
+                    FieldInfo[] fields = type.GetFields(
+                        BindingFlags.Instance |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic |
+                        BindingFlags.DeclaredOnly);
+                    for (int i = 0; i < fields.Length; i++)
+                    {
+                        FieldInfo field = fields[i];
+                        if (field == null ||
+                            !typeof(GrowContainer).IsAssignableFrom(field.FieldType))
+                        {
+                            continue;
+                        }
+
+                        GrowContainer container = field.GetValue(interaction) as GrowContainer;
+                        if (container != null)
+                            return container;
+                    }
+
+                    type = type.BaseType;
+                }
+            }
+            catch { }
+
+            return null;
         }
 
         private static Camera GetCamera()
@@ -969,9 +1236,18 @@ namespace NugzzMenu.Services
             }
             catch { }
 
-            string typeName = pourable.GetType().Name;
-            return typeName.IndexOf("WaterContainer", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                typeName.IndexOf("Watering", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (TryCastItemInstance<WaterContainerInstance>(
+                    GetHeldItemInstance(pourable)) != null)
+            {
+                return true;
+            }
+
+            string key = GetHeldDefinitionKey(pourable);
+            string typeName = NormalizeKey(pourable.GetType().Name);
+            return typeName.Contains("watercontainer") ||
+                typeName.Contains("watering") ||
+                key.Contains("wateringcan") ||
+                key.Contains("watercontainer");
         }
 
         private static bool IsSoilTool(Equippable_Pourable pourable)
@@ -982,12 +1258,15 @@ namespace NugzzMenu.Services
             if (IsMushroomSubstrateTool(pourable))
                 return true;
 
-            string toolName = SafeName(pourable);
-            string typeName = pourable.GetType().Name;
-            return toolName.IndexOf("Soil", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                toolName.IndexOf("Substrate", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                typeName.IndexOf("Substrate", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                typeName.IndexOf("Soil", StringComparison.OrdinalIgnoreCase) >= 0;
+            ItemDefinition definition = GetHeldItemInstance(pourable)?.Definition;
+            if (TryCastDefinition<SoilDefinition>(definition) != null)
+                return true;
+
+            string key = GetHeldDefinitionKey(pourable);
+            string typeName = NormalizeKey(pourable.GetType().Name);
+            return key.Contains("soil") || key.Contains("substrate") ||
+                key.Contains("myco") || typeName.Contains("substrate") ||
+                typeName.Contains("soil");
         }
 
         private static bool IsMushroomSubstrateTool(Equippable_Pourable pourable)
@@ -995,9 +1274,11 @@ namespace NugzzMenu.Services
             if (pourable == null)
                 return false;
 
-            string key = NormalizeKey(SafeName(pourable));
+            string key = GetHeldDefinitionKey(pourable);
             if (key.StartsWith("msequippable", StringComparison.Ordinal) ||
-                key.Contains("mushroomsubstrate"))
+                key.Contains("mushroomsubstrate") ||
+                key.Contains("substrate") ||
+                key.Contains("myco"))
             {
                 return true;
             }
@@ -1026,11 +1307,39 @@ namespace NugzzMenu.Services
             }
             catch { }
 
-            string toolName = SafeName(pourable);
-            return toolName.IndexOf("Fertilizer", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                toolName.IndexOf("PGR", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                toolName.IndexOf("SpeedGrow", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                toolName.IndexOf("Speed Grow", StringComparison.OrdinalIgnoreCase) >= 0;
+            ItemDefinition definition = GetHeldItemInstance(pourable)?.Definition;
+            if (TryCastDefinition<AdditiveDefinition>(definition) != null)
+                return true;
+
+            string key = GetHeldDefinitionKey(pourable);
+            return key.Contains("fertilizer") || key.Contains("pgr") ||
+                key.Contains("speedgrow");
+        }
+
+        private static string GetHeldDefinitionKey(Equippable tool)
+        {
+            try
+            {
+                ItemDefinition definition = GetHeldItemInstance(tool)?.Definition;
+                string id = GetDefinitionId(definition);
+                string name = definition?.name ?? string.Empty;
+                string type = definition?.GetType().Name ?? string.Empty;
+                return NormalizeKey(id + " " + name + " " + type + " " + SafeName(tool));
+            }
+            catch
+            {
+                return NormalizeKey(SafeName(tool));
+            }
+        }
+
+        private static T TryCastEquippable<T>(Equippable equippable)
+            where T : Equippable
+        {
+            if (equippable == null)
+                return null;
+
+            try { return equippable.TryCast<T>(); }
+            catch { return equippable as T; }
         }
 
         private static bool IsUsableToolObject(Equippable tool)

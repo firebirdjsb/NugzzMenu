@@ -10,7 +10,7 @@ namespace NugzzMenu.Services
 {
     /// <summary>
     /// Stores independent tuning for every skateboard used during the session.
-    /// Shared vanilla settings are changed only while the active board processes input.
+    /// Each board receives its own runtime settings clone so tuning never leaks to another board.
     /// </summary>
     public sealed class SkateboardTuneService
     {
@@ -49,12 +49,6 @@ namespace NugzzMenu.Services
 
             if (current != _board)
                 SelectBoard(current);
-
-            if (_profile == null || _board == null)
-                return;
-
-            SaveControls(_profile);
-            ApplyToBoard(_profile);
         }
 
         public void ApplyNow()
@@ -107,38 +101,6 @@ namespace NugzzMenu.Services
             SetDefaultControls();
         }
 
-        internal bool TryApplyInputSettings(
-            Skateboard board, out SkateboardSettingsSnapshot snapshot)
-        {
-            snapshot = default;
-            if (board == null || _profile == null || board != _board ||
-                _profile.Board != board)
-                return false;
-
-            SkateboardSettings settings = null;
-            try { settings = board.CurentSettings; }
-            catch { }
-
-            if (settings == null)
-                return false;
-
-            SaveControls(_profile);
-            snapshot = SkateboardSettingsSnapshot.Capture(settings);
-            TunedValues values = GetValues(_profile);
-            values.Apply(settings, _profile.Baseline.PushDuration);
-            return true;
-        }
-
-        internal static void RestoreInputSettings(
-            SkateboardSettingsSnapshot snapshot, Skateboard board)
-        {
-            if (!snapshot.Valid || board == null)
-                return;
-
-            try { snapshot.Restore(board.CurentSettings); }
-            catch { }
-        }
-
         private void SelectBoard(Skateboard board)
         {
             if (_profile != null)
@@ -171,6 +133,12 @@ namespace NugzzMenu.Services
 
             TunedValues values = GetValues(profile);
             values.Apply(profile.Board, profile.Baseline.PushDuration);
+            try
+            {
+                SkateboardSettings settings = profile.Settings ?? profile.Board.CurentSettings;
+                values.Apply(settings, profile.Baseline.PushDuration);
+            }
+            catch { }
         }
 
         private static TunedValues GetValues(BoardProfile profile)
@@ -227,9 +195,18 @@ namespace NugzzMenu.Services
             {
                 Board = board;
                 Baseline = Baseline.Capture(board);
+                try
+                {
+                    SkateboardSettings current = board?.CurentSettings;
+                    Settings = current?.Clone() ?? current;
+                    if (board != null && Settings != null)
+                        board._settings = Settings;
+                }
+                catch { }
             }
 
             public Skateboard Board;
+            public SkateboardSettings Settings;
             public Baseline Baseline;
             public float Speed = 1f;
             public float Turn = 1f;
@@ -343,83 +320,27 @@ namespace NugzzMenu.Services
                 board.BrakeForce = BrakeForce;
                 board.LongitudinalFrictionMultiplier = LongitudinalFriction;
                 board.LateralFrictionForceMultiplier = LateralFriction;
+
+                try
+                {
+                    SkateboardSettings settings = board.CurentSettings;
+                    if (settings == null)
+                        return;
+                    settings.TopSpeed_Kmh = TopSpeed;
+                    settings.ReverseTopSpeed_Kmh = ReverseSpeed;
+                    settings.TurnForce = TurnForce;
+                    settings.TurnChangeRate = TurnChangeRate;
+                    settings.TurnReturnToRestRate = TurnReturnRate;
+                    settings.TurnSpeedBoost = TurnSpeedBoost;
+                    settings.PushForceMultiplier = PushForce;
+                    settings.PushForceDuration = PushDuration;
+                    settings.PushDelay = PushDelay;
+                    settings.BrakeForce = BrakeForce;
+                    settings.LongitudinalFrictionMultiplier = LongitudinalFriction;
+                    settings.LateralFrictionForceMultiplier = LateralFriction;
+                }
+                catch { }
             }
-        }
-    }
-
-    internal struct SkateboardSettingsSnapshot
-    {
-        public bool Valid;
-        public float TopSpeed;
-        public float ReverseSpeed;
-        public float TurnForce;
-        public float TurnChangeRate;
-        public float TurnReturnRate;
-        public float TurnSpeedBoost;
-        public float PushForce;
-        public float PushDuration;
-        public float PushDelay;
-        public float BrakeForce;
-        public float LongitudinalFriction;
-        public float LateralFriction;
-
-        public static SkateboardSettingsSnapshot Capture(SkateboardSettings settings)
-        {
-            if (settings == null)
-                return default;
-
-            return new SkateboardSettingsSnapshot
-            {
-                Valid = true,
-                TopSpeed = settings.TopSpeed_Kmh,
-                ReverseSpeed = settings.ReverseTopSpeed_Kmh,
-                TurnForce = settings.TurnForce,
-                TurnChangeRate = settings.TurnChangeRate,
-                TurnReturnRate = settings.TurnReturnToRestRate,
-                TurnSpeedBoost = settings.TurnSpeedBoost,
-                PushForce = settings.PushForceMultiplier,
-                PushDuration = settings.PushForceDuration,
-                PushDelay = settings.PushDelay,
-                BrakeForce = settings.BrakeForce,
-                LongitudinalFriction = settings.LongitudinalFrictionMultiplier,
-                LateralFriction = settings.LateralFrictionForceMultiplier
-            };
-        }
-
-        public void Restore(SkateboardSettings settings)
-        {
-            if (!Valid || settings == null)
-                return;
-
-            settings.TopSpeed_Kmh = TopSpeed;
-            settings.ReverseTopSpeed_Kmh = ReverseSpeed;
-            settings.TurnForce = TurnForce;
-            settings.TurnChangeRate = TurnChangeRate;
-            settings.TurnReturnToRestRate = TurnReturnRate;
-            settings.TurnSpeedBoost = TurnSpeedBoost;
-            settings.PushForceMultiplier = PushForce;
-            settings.PushForceDuration = PushDuration;
-            settings.PushDelay = PushDelay;
-            settings.BrakeForce = BrakeForce;
-            settings.LongitudinalFrictionMultiplier = LongitudinalFriction;
-            settings.LateralFrictionForceMultiplier = LateralFriction;
-        }
-    }
-
-    [HarmonyPatch(typeof(Skateboard), "ApplyInput")]
-    internal static class SkateboardTunedInputPatch
-    {
-        private static void Prefix(
-            Skateboard __instance, out SkateboardSettingsSnapshot __state)
-        {
-            SkateboardTuneService.Instance.TryApplyInputSettings(
-                __instance, out __state);
-        }
-
-        private static void Postfix(
-            Skateboard __instance, SkateboardSettingsSnapshot __state)
-        {
-            SkateboardTuneService.RestoreInputSettings(__state, __instance);
         }
     }
 

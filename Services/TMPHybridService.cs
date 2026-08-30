@@ -31,7 +31,8 @@ namespace NugzzMenu.Services
             GUIStyle guiStyle;
             if (!_styles.TryGetValue(key, out guiStyle))
             {
-                guiStyle = new GUIStyle(GUISystemService.Instance.LabelStyle ?? GUI.skin.label);
+                GUIStyle sourceStyle = GUISystemService.Instance.LabelStyle;
+                guiStyle = sourceStyle != null ? new GUIStyle(sourceStyle) : new GUIStyle();
                 guiStyle.normal.textColor = color;
                 guiStyle.fontSize = (int)fontSize;
                 guiStyle.alignment = alignment;

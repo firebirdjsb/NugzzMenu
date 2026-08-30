@@ -8,38 +8,51 @@ using UnityEngine;
 namespace NugzzMenu.Services
 {
     /// <summary>
-    /// Blocks players with detached kinematic vehicle shells. The real vehicle colliders are
-    /// ignored only for players, so player movement cannot add force or weight to the car.
+    /// Prevents player physics capsules from adding force to vehicles while retaining
+    /// character-controller blocking against each client's networked vehicle colliders.
     /// </summary>
     public sealed class VehicleCollisionService
     {
         private static readonly VehicleCollisionService _instance = new VehicleCollisionService();
         public static VehicleCollisionService Instance => _instance;
 
-        private readonly Dictionary<int, VehicleProxy> _proxies = new Dictionary<int, VehicleProxy>();
-        private readonly Dictionary<long, CollisionPair> _ignoredPairs = new Dictionary<long, CollisionPair>();
-        private readonly Dictionary<long, bool> _proxyPairStates = new Dictionary<long, bool>();
+        private readonly Dictionary<int, VehicleEntry> _vehicles =
+            new Dictionary<int, VehicleEntry>();
+        private readonly Dictionary<long, CollisionPair> _pairs =
+            new Dictionary<long, CollisionPair>();
+        private readonly Dictionary<int, int> _playerVehicleStates =
+            new Dictionary<int, int>();
         private readonly HashSet<int> _seenVehicleKeys = new HashSet<int>();
-        private readonly List<int> _deadProxyKeys = new List<int>();
+        private readonly HashSet<int> _seenPlayerKeys = new HashSet<int>();
+        private readonly List<int> _deadVehicleKeys = new List<int>();
+        private readonly List<int> _deadPlayerKeys = new List<int>();
         private readonly List<long> _deadPairKeys = new List<long>();
+        private readonly List<LandVehicle> _parkedSyncQueue = new List<LandVehicle>();
+
         private bool _initialized;
         private float _readyTime;
         private float _nextRefreshTime;
-        private float _nextStateCheckTime;
+        private float _nextOccupancyCheckTime;
+        private float _nextParkedSyncTime;
+        private int _parkedSyncIndex;
 
-        private sealed class VehicleProxy
+        private sealed class VehicleEntry
         {
             public LandVehicle Vehicle;
-            public BoxCollider Source;
-            public GameObject Object;
-            public BoxCollider Collider;
+            public Collider[] Colliders;
+            public int NetworkObjectId;
         }
 
         private sealed class CollisionPair
         {
+            public Player Player;
             public Collider PlayerCollider;
             public Collider VehicleCollider;
+            public int PlayerKey;
             public int VehicleKey;
+            public int VehicleNetworkObjectId;
+            public bool FollowsOccupancy;
+            public bool Ignored;
         }
 
         private VehicleCollisionService() { }
@@ -49,38 +62,27 @@ namespace NugzzMenu.Services
             _initialized = true;
             _readyTime = Time.unscaledTime + 1f;
             _nextRefreshTime = _readyTime;
-            _nextStateCheckTime = _readyTime;
+            _nextOccupancyCheckTime = _readyTime;
+            _nextParkedSyncTime = _readyTime + 1f;
         }
 
         public void Reset()
         {
             _initialized = false;
 
-            foreach (CollisionPair pair in _ignoredPairs.Values)
-            {
-                try
-                {
-                    if (pair?.PlayerCollider != null && pair.VehicleCollider != null)
-                        Physics.IgnoreCollision(pair.PlayerCollider, pair.VehicleCollider, false);
-                }
-                catch { }
-            }
-            _ignoredPairs.Clear();
-            _proxyPairStates.Clear();
-            _seenVehicleKeys.Clear();
-            _deadProxyKeys.Clear();
-            _deadPairKeys.Clear();
+            foreach (CollisionPair pair in _pairs.Values)
+                RestorePair(pair);
 
-            foreach (VehicleProxy proxy in _proxies.Values)
-            {
-                try
-                {
-                    if (proxy?.Object != null)
-                        UnityEngine.Object.Destroy(proxy.Object);
-                }
-                catch { }
-            }
-            _proxies.Clear();
+            _pairs.Clear();
+            _vehicles.Clear();
+            _playerVehicleStates.Clear();
+            _seenVehicleKeys.Clear();
+            _seenPlayerKeys.Clear();
+            _deadVehicleKeys.Clear();
+            _deadPlayerKeys.Clear();
+            _deadPairKeys.Clear();
+            _parkedSyncQueue.Clear();
+            _parkedSyncIndex = 0;
         }
 
         public void Update()
@@ -90,21 +92,17 @@ namespace NugzzMenu.Services
 
             if (Time.unscaledTime >= _nextRefreshTime)
             {
-                _nextRefreshTime = Time.unscaledTime + 2f;
+                _nextRefreshTime = Time.unscaledTime + 5f;
                 RefreshAll();
             }
 
-            if (Time.unscaledTime >= _nextStateCheckTime)
+            if (Time.unscaledTime >= _nextOccupancyCheckTime)
             {
-                _nextStateCheckTime = Time.unscaledTime + 0.25f;
-                RefreshProxyStates();
+                _nextOccupancyCheckTime = Time.unscaledTime + 0.2f;
+                RefreshOccupancyStates();
             }
-        }
 
-        public void FixedUpdate()
-        {
-            if (_initialized)
-                SyncProxies();
+            UpdateParkedVehicleSync();
         }
 
         public void RefreshAll()
@@ -124,7 +122,8 @@ namespace NugzzMenu.Services
                         if (vehicle == null)
                             continue;
 
-                        _seenVehicleKeys.Add(vehicle.GetInstanceID());
+                        int key = vehicle.GetInstanceID();
+                        _seenVehicleKeys.Add(key);
                         ApplyVehicle(vehicle);
                     }
                 }
@@ -134,37 +133,38 @@ namespace NugzzMenu.Services
                 DebugLogService.Instance.VerboseException("Vehicle collision refresh failed", ex);
             }
 
-            _deadProxyKeys.Clear();
-            foreach (KeyValuePair<int, VehicleProxy> entry in _proxies)
+            _deadVehicleKeys.Clear();
+            foreach (KeyValuePair<int, VehicleEntry> entry in _vehicles)
             {
-                if (!_seenVehicleKeys.Contains(entry.Key))
-                    _deadProxyKeys.Add(entry.Key);
+                if (!_seenVehicleKeys.Contains(entry.Key) || !IsVehicleUsable(entry.Value?.Vehicle))
+                    _deadVehicleKeys.Add(entry.Key);
             }
 
-            for (int i = 0; i < _deadProxyKeys.Count; i++)
-                RemoveProxy(_deadProxyKeys[i]);
+            for (int i = 0; i < _deadVehicleKeys.Count; i++)
+                RemoveVehicle(_deadVehicleKeys[i]);
+
+            RemoveDeadPairs();
         }
 
         public void ApplyVehicle(LandVehicle vehicle)
         {
-            if (!_initialized || vehicle == null)
+            if (!_initialized || !IsVehicleUsable(vehicle) || Time.unscaledTime < _readyTime)
                 return;
 
             try
             {
                 int vehicleKey = vehicle.GetInstanceID();
-                VehicleProxy proxy = EnsureProxy(vehicle);
-                if (proxy == null)
+                if (!_vehicles.TryGetValue(vehicleKey, out VehicleEntry entry) ||
+                    entry == null || entry.Vehicle != vehicle || entry.Colliders == null)
                 {
-                    RestoreVehiclePairs(vehicleKey);
-                    return;
+                    entry = new VehicleEntry
+                    {
+                        Vehicle = vehicle,
+                        Colliders = vehicle.GetComponentsInChildren<Collider>(true),
+                        NetworkObjectId = GetVehicleNetworkObjectId(vehicle)
+                    };
+                    _vehicles[vehicleKey] = entry;
                 }
-
-                SyncProxy(proxy);
-                proxy.Collider.enabled = true;
-
-                Collider[] vehicleColliders = vehicle.GetComponentsInChildren<Collider>(true);
-                IgnoreProxyAgainstVehicle(proxy.Collider, vehicleColliders);
 
                 var players = Player.PlayerList;
                 if (players == null)
@@ -174,7 +174,7 @@ namespace NugzzMenu.Services
                 {
                     Player player = players[i];
                     if (player != null)
-                        ConfigurePlayerAgainstVehicle(player, vehicle, proxy, vehicleColliders);
+                        ConfigurePlayerAgainstVehicle(player, vehicleKey, entry);
                 }
             }
             catch (Exception ex)
@@ -185,29 +185,15 @@ namespace NugzzMenu.Services
 
         public void ApplyPlayer(Player player)
         {
-            if (!_initialized || player == null)
+            if (!_initialized || player == null || Time.unscaledTime < _readyTime)
                 return;
 
             try
             {
-                var vehicles = ManagerCacheService.Instance.VehicleManager?.AllVehicles;
-                if (vehicles == null)
-                    return;
+                foreach (KeyValuePair<int, VehicleEntry> entry in _vehicles)
+                    ConfigurePlayerAgainstVehicle(player, entry.Key, entry.Value);
 
-                for (int i = 0; i < vehicles.Count; i++)
-                {
-                    LandVehicle vehicle = vehicles[i];
-                    if (vehicle == null)
-                        continue;
-
-                    VehicleProxy proxy = EnsureProxy(vehicle);
-                    if (proxy != null)
-                    {
-                        Collider[] vehicleColliders = vehicle.GetComponentsInChildren<Collider>(true);
-                        ConfigurePlayerAgainstVehicle(
-                            player, vehicle, proxy, vehicleColliders);
-                    }
-                }
+                _playerVehicleStates[player.GetInstanceID()] = GetCurrentVehicleObjectId(player);
             }
             catch (Exception ex)
             {
@@ -215,282 +201,263 @@ namespace NugzzMenu.Services
             }
         }
 
-        private VehicleProxy EnsureProxy(LandVehicle vehicle)
+        private void ConfigurePlayerAgainstVehicle(
+            Player player, int vehicleKey, VehicleEntry entry)
         {
-            if (vehicle == null || Time.unscaledTime < _readyTime)
-                return null;
+            if (player == null || entry?.Vehicle == null || entry.Colliders == null)
+                return;
 
-            int key = vehicle.GetInstanceID();
-            if (!IsVehicleUsable(vehicle))
+            Collider capsule = player.CapCol;
+            Collider controller = player.CharacterController;
+            int playerKey = player.GetInstanceID();
+            int currentVehicleId = GetCurrentVehicleObjectId(player);
+            bool seatedInThisVehicle = currentVehicleId >= 0 &&
+                currentVehicleId == entry.NetworkObjectId;
+
+            for (int i = 0; i < entry.Colliders.Length; i++)
             {
-                RemoveProxy(key);
-                return null;
-            }
-
-            BoxCollider source = vehicle.boundingBox;
-            if (source == null)
-            {
-                BoxCollider[] boxes = vehicle.GetComponentsInChildren<BoxCollider>(true);
-                if (boxes != null && boxes.Length > 0)
-                    source = boxes[0];
-            }
-            if (source == null)
-            {
-                DebugLogService.Instance.VerboseWarning("No vehicle bounding box available for " + vehicle.name);
-                RemoveProxy(key);
-                return null;
-            }
-
-            if (_proxies.TryGetValue(key, out VehicleProxy existing) && existing != null)
-            {
-                if (existing.Vehicle == vehicle && existing.Source == source && existing.Object != null &&
-                    existing.Collider != null)
-                {
-                    return existing;
-                }
-
-                RemoveProxy(key);
-            }
-
-            var proxyObject = new GameObject("Nugzz_VehiclePlayerBlocker_" + key);
-            proxyObject.layer = source.gameObject.layer;
-            var rigidbody = proxyObject.AddComponent<Rigidbody>();
-            rigidbody.isKinematic = true;
-            rigidbody.useGravity = false;
-            rigidbody.detectCollisions = true;
-
-            var proxyCollider = proxyObject.AddComponent<BoxCollider>();
-            proxyCollider.center = source.center;
-            proxyCollider.size = source.size;
-            proxyCollider.isTrigger = false;
-            proxyCollider.enabled = true;
-
-            var proxy = new VehicleProxy
-            {
-                Vehicle = vehicle,
-                Source = source,
-                Object = proxyObject,
-                Collider = proxyCollider
-            };
-            _proxies[key] = proxy;
-            SyncProxy(proxy);
-            DebugLogService.Instance.Verbose("Created force-isolated vehicle blocker for " + vehicle.name);
-            return proxy;
-        }
-
-        private void RefreshProxyStates()
-        {
-            _deadProxyKeys.Clear();
-            foreach (KeyValuePair<int, VehicleProxy> entry in _proxies)
-            {
-                VehicleProxy proxy = entry.Value;
-                if (!IsProxyUsable(proxy))
-                {
-                    _deadProxyKeys.Add(entry.Key);
+                Collider vehicleCollider = entry.Colliders[i];
+                if (vehicleCollider == null || vehicleCollider.isTrigger)
                     continue;
+
+                SetPair(player, capsule, vehicleCollider, playerKey, vehicleKey,
+                    entry.NetworkObjectId, false, true);
+
+                if (controller != null && controller != capsule)
+                {
+                    SetPair(player, controller, vehicleCollider, playerKey, vehicleKey,
+                        entry.NetworkObjectId, true, seatedInThisVehicle);
                 }
-
-                proxy.Collider.enabled = true;
-                SyncProxy(proxy);
-                UpdatePlayerProxyPairs(proxy);
-            }
-
-            for (int i = 0; i < _deadProxyKeys.Count; i++)
-                RemoveProxy(_deadProxyKeys[i]);
-        }
-
-        private static bool IsVehicleUsable(LandVehicle vehicle)
-        {
-            if (vehicle == null || vehicle.gameObject == null || !vehicle.gameObject.activeInHierarchy)
-                return false;
-
-            try
-            {
-                if (!vehicle.IsVisible)
-                    return false;
-            }
-            catch { }
-
-            return true;
-        }
-
-        private static bool IsProxyUsable(VehicleProxy proxy)
-        {
-            return proxy != null && IsVehicleUsable(proxy.Vehicle) && proxy.Source != null &&
-                   proxy.Source.gameObject != null && proxy.Source.gameObject.activeInHierarchy &&
-                   proxy.Object != null && proxy.Collider != null;
-        }
-
-        private void SyncProxies()
-        {
-            foreach (VehicleProxy proxy in _proxies.Values)
-            {
-                if (IsProxyUsable(proxy) && proxy.Collider.enabled)
-                    SyncProxy(proxy);
             }
         }
 
-        private static void SyncProxy(VehicleProxy proxy)
-        {
-            Transform source = proxy.Source.transform;
-            Transform target = proxy.Object.transform;
-            Vector3 position = source.position;
-            Quaternion rotation = source.rotation;
-            Vector3 scale = source.lossyScale;
-
-            if ((target.position - position).sqrMagnitude > 0.000001f)
-                target.position = position;
-            if (1f - Mathf.Abs(Quaternion.Dot(target.rotation, rotation)) > 0.000001f)
-                target.rotation = rotation;
-            if ((target.localScale - scale).sqrMagnitude > 0.000001f)
-                target.localScale = scale;
-
-            int layer = proxy.Source.gameObject.layer;
-            if (proxy.Object.layer != layer)
-                proxy.Object.layer = layer;
-        }
-
-        private void UpdatePlayerProxyPairs(VehicleProxy proxy)
+        private void RefreshOccupancyStates()
         {
             var players = Player.PlayerList;
             if (players == null)
                 return;
 
+            _seenPlayerKeys.Clear();
             for (int i = 0; i < players.Count; i++)
             {
                 Player player = players[i];
                 if (player == null)
                     continue;
 
-                UpdatePlayerProxyPair(player, proxy);
-            }
-        }
-
-        private void ConfigurePlayerAgainstVehicle(
-            Player player,
-            LandVehicle vehicle,
-            VehicleProxy proxy,
-            Collider[] vehicleColliders)
-        {
-            Collider capsule = player.CapCol;
-            Collider controller = player.CharacterController;
-
-            if (vehicleColliders != null)
-            {
-                for (int i = 0; i < vehicleColliders.Length; i++)
+                int playerKey = player.GetInstanceID();
+                int currentVehicleId = GetCurrentVehicleObjectId(player);
+                _seenPlayerKeys.Add(playerKey);
+                if (_playerVehicleStates.TryGetValue(playerKey, out int previousVehicleId) &&
+                    previousVehicleId == currentVehicleId)
                 {
-                    Collider vehicleCollider = vehicleColliders[i];
-                    if (vehicleCollider == null || vehicleCollider.isTrigger ||
-                        vehicleCollider == proxy.Collider)
-                        continue;
+                    continue;
+                }
 
-                    IgnorePair(capsule, vehicleCollider, vehicle.GetInstanceID());
-                    if (controller != capsule)
-                        IgnorePair(controller, vehicleCollider, vehicle.GetInstanceID());
+                _playerVehicleStates[playerKey] = currentVehicleId;
+                foreach (CollisionPair pair in _pairs.Values)
+                {
+                    if (pair == null || !pair.FollowsOccupancy || pair.PlayerKey != playerKey)
+                        continue;
+                    SetIgnored(pair, currentVehicleId >= 0 &&
+                        currentVehicleId == pair.VehicleNetworkObjectId);
                 }
             }
 
-            UpdatePlayerProxyPair(player, proxy);
+            _deadPlayerKeys.Clear();
+            foreach (int playerKey in _playerVehicleStates.Keys)
+            {
+                if (!_seenPlayerKeys.Contains(playerKey))
+                    _deadPlayerKeys.Add(playerKey);
+            }
+            for (int i = 0; i < _deadPlayerKeys.Count; i++)
+                _playerVehicleStates.Remove(_deadPlayerKeys[i]);
         }
 
-        private static void IgnoreProxyAgainstVehicle(Collider proxy, Collider[] vehicleColliders)
+        private void UpdateParkedVehicleSync()
         {
-            if (proxy == null || vehicleColliders == null)
+            if (!LobbyService.Instance.IsHost())
+            {
+                _parkedSyncQueue.Clear();
+                _parkedSyncIndex = 0;
+                return;
+            }
+
+            if (Time.unscaledTime >= _nextParkedSyncTime)
+            {
+                _nextParkedSyncTime = Time.unscaledTime + 5f;
+                _parkedSyncQueue.Clear();
+                _parkedSyncIndex = 0;
+                foreach (VehicleEntry entry in _vehicles.Values)
+                {
+                    if (IsStableParkedVehicle(entry?.Vehicle))
+                        _parkedSyncQueue.Add(entry.Vehicle);
+                }
+            }
+
+            if (_parkedSyncIndex >= _parkedSyncQueue.Count)
                 return;
 
-            for (int i = 0; i < vehicleColliders.Length; i++)
-            {
-                Collider vehicleCollider = vehicleColliders[i];
-                if (vehicleCollider == null || vehicleCollider == proxy)
-                    continue;
-                try { Physics.IgnoreCollision(proxy, vehicleCollider, true); } catch { }
-            }
-        }
+            LandVehicle vehicle = _parkedSyncQueue[_parkedSyncIndex++];
+            if (!IsStableParkedVehicle(vehicle))
+                return;
 
-        private void UpdatePlayerProxyPair(Player player, VehicleProxy proxy)
-        {
-            bool seatedInVehicle = false;
             try
             {
-                seatedInVehicle = player.IsInVehicle &&
-                    player.CurrentVehicle != null &&
-                    proxy.Vehicle.NetworkObject != null &&
-                    player.CurrentVehicle == proxy.Vehicle.NetworkObject;
+                vehicle.SetTransform_Server(vehicle.transform.position, vehicle.transform.rotation);
             }
-            catch { }
-
-            SetProxyCollision(player.CapCol, proxy.Collider, !seatedInVehicle);
-            if (player.CharacterController != player.CapCol)
-                SetProxyCollision(player.CharacterController, proxy.Collider, !seatedInVehicle);
+            catch (Exception ex)
+            {
+                DebugLogService.Instance.VerboseWarning(
+                    "Parked vehicle transform sync failed: " + ex.Message);
+            }
         }
 
-        private void SetProxyCollision(Collider playerCollider, Collider proxyCollider, bool collide)
-        {
-            if (playerCollider == null || proxyCollider == null)
-                return;
-
-            long key = ((long)(uint)playerCollider.GetInstanceID() << 32) |
-                (uint)proxyCollider.GetInstanceID();
-            if (_proxyPairStates.TryGetValue(key, out bool previous) && previous == collide)
-                return;
-
-            try { Physics.IgnoreCollision(playerCollider, proxyCollider, !collide); } catch { }
-            _proxyPairStates[key] = collide;
-        }
-
-        private void IgnorePair(Collider playerCollider, Collider vehicleCollider, int vehicleKey)
+        private void SetPair(
+            Player player,
+            Collider playerCollider,
+            Collider vehicleCollider,
+            int playerKey,
+            int vehicleKey,
+            int vehicleNetworkObjectId,
+            bool followsOccupancy,
+            bool ignored)
         {
             if (playerCollider == null || vehicleCollider == null)
                 return;
 
-            long key = ((long)(uint)playerCollider.GetInstanceID() << 32) |
-                (uint)vehicleCollider.GetInstanceID();
-            if (_ignoredPairs.ContainsKey(key))
-                return;
-
-            Physics.IgnoreCollision(playerCollider, vehicleCollider, true);
-            _ignoredPairs[key] = new CollisionPair
+            long key = PairKey(playerCollider, vehicleCollider);
+            if (!_pairs.TryGetValue(key, out CollisionPair pair) || pair == null)
             {
-                PlayerCollider = playerCollider,
-                VehicleCollider = vehicleCollider,
-                VehicleKey = vehicleKey
-            };
+                pair = new CollisionPair
+                {
+                    Player = player,
+                    PlayerCollider = playerCollider,
+                    VehicleCollider = vehicleCollider,
+                    PlayerKey = playerKey,
+                    VehicleKey = vehicleKey,
+                    VehicleNetworkObjectId = vehicleNetworkObjectId,
+                    FollowsOccupancy = followsOccupancy,
+                    Ignored = !ignored
+                };
+                _pairs[key] = pair;
+            }
+
+            SetIgnored(pair, ignored);
         }
 
-        private void RestoreVehiclePairs(int vehicleKey)
+        private static void SetIgnored(CollisionPair pair, bool ignored)
+        {
+            if (pair == null || pair.Ignored == ignored || pair.PlayerCollider == null ||
+                pair.VehicleCollider == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Physics.IgnoreCollision(pair.PlayerCollider, pair.VehicleCollider, ignored);
+                pair.Ignored = ignored;
+            }
+            catch { }
+        }
+
+        private void RemoveDeadPairs()
         {
             _deadPairKeys.Clear();
-            foreach (KeyValuePair<long, CollisionPair> entry in _ignoredPairs)
+            foreach (KeyValuePair<long, CollisionPair> entry in _pairs)
+            {
+                CollisionPair pair = entry.Value;
+                if (pair == null || pair.Player == null || pair.PlayerCollider == null ||
+                    pair.VehicleCollider == null)
+                {
+                    RestorePair(pair);
+                    _deadPairKeys.Add(entry.Key);
+                }
+            }
+
+            for (int i = 0; i < _deadPairKeys.Count; i++)
+                _pairs.Remove(_deadPairKeys[i]);
+        }
+
+        private void RemoveVehicle(int vehicleKey)
+        {
+            _deadPairKeys.Clear();
+            foreach (KeyValuePair<long, CollisionPair> entry in _pairs)
             {
                 CollisionPair pair = entry.Value;
                 if (pair == null || pair.VehicleKey != vehicleKey)
                     continue;
 
-                try
-                {
-                    if (pair.PlayerCollider != null && pair.VehicleCollider != null)
-                        Physics.IgnoreCollision(pair.PlayerCollider, pair.VehicleCollider, false);
-                }
-                catch { }
-
+                RestorePair(pair);
                 _deadPairKeys.Add(entry.Key);
             }
 
             for (int i = 0; i < _deadPairKeys.Count; i++)
-                _ignoredPairs.Remove(_deadPairKeys[i]);
+                _pairs.Remove(_deadPairKeys[i]);
+            _vehicles.Remove(vehicleKey);
         }
 
-        private void RemoveProxy(int vehicleKey)
+        private static void RestorePair(CollisionPair pair)
         {
-            RestoreVehiclePairs(vehicleKey);
-
-            if (_proxies.TryGetValue(vehicleKey, out VehicleProxy proxy) && proxy?.Object != null)
+            if (pair == null || !pair.Ignored || pair.PlayerCollider == null ||
+                pair.VehicleCollider == null)
             {
-                try { UnityEngine.Object.Destroy(proxy.Object); } catch { }
+                return;
             }
 
-            _proxies.Remove(vehicleKey);
-            _proxyPairStates.Clear();
+            try
+            {
+                Physics.IgnoreCollision(pair.PlayerCollider, pair.VehicleCollider, false);
+                pair.Ignored = false;
+            }
+            catch { }
+        }
+
+        private static bool IsVehicleUsable(LandVehicle vehicle)
+        {
+            return vehicle != null && vehicle.gameObject != null &&
+                vehicle.gameObject.activeInHierarchy;
+        }
+
+        private static bool IsStableParkedVehicle(LandVehicle vehicle)
+        {
+            if (!IsVehicleUsable(vehicle))
+                return false;
+
+            try
+            {
+                if (vehicle.IsOccupied)
+                    return false;
+
+                Rigidbody body = vehicle.Rb;
+                return body == null || body.IsSleeping() ||
+                    (body.velocity.sqrMagnitude <= 0.25f &&
+                     body.angularVelocity.sqrMagnitude <= 0.25f);
+            }
+            catch { return false; }
+        }
+
+        private static int GetVehicleNetworkObjectId(LandVehicle vehicle)
+        {
+            try { return vehicle?.NetworkObject?.GetInstanceID() ?? -1; }
+            catch { return -1; }
+        }
+
+        private static int GetCurrentVehicleObjectId(Player player)
+        {
+            try
+            {
+                if (player == null || !player.IsInVehicle || player.CurrentVehicle == null)
+                    return -1;
+                return player.CurrentVehicle.GetInstanceID();
+            }
+            catch { return -1; }
+        }
+
+        private static long PairKey(Collider playerCollider, Collider vehicleCollider)
+        {
+            return ((long)(uint)playerCollider.GetInstanceID() << 32) |
+                (uint)vehicleCollider.GetInstanceID();
         }
     }
 

@@ -67,6 +67,10 @@ namespace NugzzMenu.Services
 
         private void DrawInternal(bool menuOpen)
         {
+            Event currentEvent = Event.current;
+            if (currentEvent == null || currentEvent.type != EventType.Repaint)
+                return;
+
             if (menuOpen || !_enabled || ManagerCacheService.Instance.LocalPlayer == null ||
                 GameplayStateGateService.Instance.IsModControlBlocked(out _))
                 return;

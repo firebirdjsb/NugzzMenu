@@ -23,12 +23,30 @@ namespace NugzzMenu.Services
         private CharacterDisplay _characterDisplay;
         private Phone _phone;
         private bool _closingPhoneApp;
+        private int _lastEvaluationFrame = -1;
+        private bool _lastBlocked;
+        private string _lastReason;
 
         public static NativeActivityGateService Instance => _instance;
 
         private NativeActivityGateService() { }
 
         public bool TryGetBlockReason(out string reason)
+        {
+            int frame = UnityEngine.Time.frameCount;
+            if (_lastEvaluationFrame == frame)
+            {
+                reason = _lastReason;
+                return _lastBlocked;
+            }
+
+            _lastEvaluationFrame = frame;
+            _lastBlocked = EvaluateBlockReason(out _lastReason);
+            reason = _lastReason;
+            return _lastBlocked;
+        }
+
+        private bool EvaluateBlockReason(out string reason)
         {
             if (IsOpen(ref _characterInterface) || IsOpen(ref _characterDisplay))
             {
@@ -70,44 +88,71 @@ namespace NugzzMenu.Services
             return false;
         }
 
-        internal void SetTV(TVInterface value) => _tv = value;
-        internal void SetJukebox(JukeboxInterface value) => _jukebox = value;
-        internal void SetBlackjack(BlackjackInterface value) => _blackjack = value;
-        internal void SetRTB(RTBInterface value) => _rtb = value;
+        internal void SetTV(TVInterface value) { _tv = value; Invalidate(); }
+        internal void SetJukebox(JukeboxInterface value) { _jukebox = value; Invalidate(); }
+        internal void SetBlackjack(BlackjackInterface value) { _blackjack = value; Invalidate(); }
+        internal void SetRTB(RTBInterface value) { _rtb = value; Invalidate(); }
         internal void SetCharacterInterface(CharacterInterface value) =>
-            _characterInterface = value;
+            SetCharacterInterfaceValue(value);
         internal void SetCharacterDisplay(CharacterDisplay value) =>
+            SetCharacterDisplayValue(value);
+        internal void SetPhoneState(Phone value) { _phone = value; Invalidate(); }
+
+        private void SetCharacterInterfaceValue(CharacterInterface value)
+        {
+            _characterInterface = value;
+            Invalidate();
+        }
+
+        private void SetCharacterDisplayValue(CharacterDisplay value)
+        {
             _characterDisplay = value;
-        internal void SetPhoneState(Phone value) => _phone = value;
+            Invalidate();
+        }
 
         internal void ClearTV(TVInterface value)
         {
             if (_tv == value)
+            {
                 _tv = null;
+                Invalidate();
+            }
         }
 
         internal void ClearJukebox(JukeboxInterface value)
         {
             if (_jukebox == value)
+            {
                 _jukebox = null;
+                Invalidate();
+            }
         }
 
         internal void ClearBlackjack(BlackjackInterface value)
         {
             if (_blackjack == value)
+            {
                 _blackjack = null;
+                Invalidate();
+            }
         }
 
         internal void ClearRTB(RTBInterface value)
         {
             if (_rtb == value)
+            {
                 _rtb = null;
+                Invalidate();
+            }
         }
 
         internal void ClearCharacterInterface(CharacterInterface value)
         {
             if (_characterInterface == value)
+            {
                 _characterInterface = null;
+                Invalidate();
+            }
         }
 
         internal void CloseStalePhoneApp(Phone phone, bool isOpen)
@@ -124,7 +169,13 @@ namespace NugzzMenu.Services
             finally
             {
                 _closingPhoneApp = false;
+                Invalidate();
             }
+        }
+
+        private void Invalidate()
+        {
+            _lastEvaluationFrame = -1;
         }
 
         private static bool IsOpen(ref TVInterface value)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using NugzzMenu.Services;
 using UnityEngine;
 
@@ -24,6 +25,10 @@ namespace NugzzMenu.UI
         private static GUIStyle _itemButton;
         private static GUIStyle _mixtureItemButton;
         private static GUIStyle _selectedMixtureItemButton;
+        private static readonly Dictionary<string, string> FittedLabelCache =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly GUIContent LabelMeasurement = new GUIContent();
+        private static float _fittedLabelWidth = -1f;
 
         public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
             ItemService service, ItemsState state,
@@ -396,6 +401,8 @@ namespace NugzzMenu.UI
             _selectedMixtureItemButton.hover.textColor = Color.yellow;
             _selectedMixtureItemButton.active.textColor = Color.yellow;
             _selectedMixtureItemButton.fontStyle = FontStyle.Bold;
+            FittedLabelCache.Clear();
+            _fittedLabelWidth = -1f;
         }
 
         private static void DrawShapeSpawner(ref float y, float w, GUIStyle buttonStyle,
@@ -561,25 +568,42 @@ namespace NugzzMenu.UI
         private static string FitButtonText(string text, GUIStyle style, float maxWidth)
         {
             if (string.IsNullOrEmpty(text)) return text;
+            if (Mathf.Abs(_fittedLabelWidth - maxWidth) > 0.5f)
+            {
+                FittedLabelCache.Clear();
+                _fittedLabelWidth = maxWidth;
+            }
+            if (FittedLabelCache.TryGetValue(text, out string fitted))
+                return fitted;
+
             try
             {
-                if (style.CalcSize(new GUIContent(text)).x <= maxWidth)
-                    return text;
+                LabelMeasurement.text = text;
+                if (style.CalcSize(LabelMeasurement).x <= maxWidth)
+                    return CacheFittedLabel(text, text);
 
                 string compact = text.Replace(" ", "").Replace("_", "");
-                if (compact.Length > 0 && style.CalcSize(new GUIContent(compact)).x <= maxWidth)
-                    return compact;
+                LabelMeasurement.text = compact;
+                if (compact.Length > 0 && style.CalcSize(LabelMeasurement).x <= maxWidth)
+                    return CacheFittedLabel(text, compact);
 
                 for (int len = compact.Length - 1; len > 3; len--)
                 {
                     string candidate = compact.Substring(0, len) + "..";
-                    if (style.CalcSize(new GUIContent(candidate)).x <= maxWidth)
-                        return candidate;
+                    LabelMeasurement.text = candidate;
+                    if (style.CalcSize(LabelMeasurement).x <= maxWidth)
+                        return CacheFittedLabel(text, candidate);
                 }
             }
             catch { }
 
-            return TruncateText(text, 10);
+            return CacheFittedLabel(text, TruncateText(text, 10));
+        }
+
+        private static string CacheFittedLabel(string source, string fitted)
+        {
+            FittedLabelCache[source] = fitted;
+            return fitted;
         }
     }
 }

@@ -82,10 +82,10 @@ namespace NugzzMenu
         private Vector2 _windowDragOffset;
         private long _nextGuiExceptionLogAtMs;
         private bool _keybindOverlayRuntimeSupported = true;
-        private bool _skinApplicationSupported = true;
 
         public override void OnInitializeMelon()
         {
+            GameplayStateGateService.Instance.Initialize();
             GameplayStateGateService.Instance.SetMenuOpen(false);
             SessionAuthorityService.Instance.Initialize();
             _preferences = MelonPreferences.CreateCategory("Nugzz", "Nugzz Settings");
@@ -144,6 +144,7 @@ namespace NugzzMenu
             _menuVisualProgress = 0f;
             ControllerInputService.Instance.SetMenuOpen(false, false);
             GameplayStateGateService.Instance.SetMenuOpen(false);
+            GameplayStateGateService.Instance.Shutdown();
             UnsubscribeS1ApiEvents();
             DebugTestRoomService.Instance.ClearRoom();
             VehicleCollisionService.Instance.Reset();
@@ -296,19 +297,25 @@ namespace NugzzMenu
                 FlyingService.Instance.ApplyPostMovementLock();
         }
 
-        public override void OnFixedUpdate()
-        {
-            if (!SessionAuthorityService.Instance.FeaturesAllowed)
-                return;
-            VehicleCollisionService.Instance.FixedUpdate();
-        }
-
         public override void OnGUI()
         {
-            DrawKeybindOverlay();
+            Event currentEvent = Event.current;
+            // Nugzz uses explicit Rect controls exclusively, so Unity's layout pass does no
+            // useful work. Input and repaint events still run normally.
+            if (currentEvent != null && currentEvent.type == EventType.Layout)
+                return;
+
+            Color previousColor = GUI.color;
+            Color previousBackgroundColor = GUI.backgroundColor;
+            Color previousContentColor = GUI.contentColor;
+            Matrix4x4 previousMatrix = GUI.matrix;
+            bool previousEnabled = GUI.enabled;
+            int previousDepth = GUI.depth;
+            bool previousChanged = GUI.changed;
 
             try
             {
+                DrawKeybindOverlay();
                 OnGUIInternal();
             }
             catch (System.NotSupportedException ex)
@@ -321,6 +328,16 @@ namespace NugzzMenu
                 if (ShouldLogGuiException())
                     LoggerInstance.Warning("[Nugzz] OnGUI failed: " + ex);
             }
+            finally
+            {
+                GUI.color = previousColor;
+                GUI.backgroundColor = previousBackgroundColor;
+                GUI.contentColor = previousContentColor;
+                GUI.matrix = previousMatrix;
+                GUI.enabled = previousEnabled;
+                GUI.depth = previousDepth;
+                GUI.changed = previousChanged;
+            }
         }
 
         private void OnGUIInternal()
@@ -328,9 +345,6 @@ namespace NugzzMenu
             var gui = GUISystemService.Instance;
             var notifications = NotificationService.Instance;
             var text = TMPHybridService.Instance;
-
-            if (_isMenuOpen || _menuVisualProgress > 0.001f || notifications.HasNotification)
-                TryApplyFontToSkin(gui);
 
             if (notifications.HasNotification)
             {
@@ -424,27 +438,6 @@ namespace NugzzMenu
             {
                 _keybindOverlayRuntimeSupported = false;
                 LoggerInstance.Warning("[Nugzz] Optional keybind overlay disabled: " + ex.Message);
-            }
-        }
-
-        private void TryApplyFontToSkin(GUISystemService gui)
-        {
-            if (!_skinApplicationSupported)
-                return;
-
-            try
-            {
-                gui.ApplyFontToSkin();
-            }
-            catch (System.NotSupportedException ex)
-            {
-                _skinApplicationSupported = false;
-                LoggerInstance.Warning("[Nugzz] Optional GUI skin disabled after game update: " + ex.Message);
-            }
-            catch (Exception ex)
-            {
-                _skinApplicationSupported = false;
-                LoggerInstance.Warning("[Nugzz] Optional GUI skin disabled: " + ex.Message);
             }
         }
 
