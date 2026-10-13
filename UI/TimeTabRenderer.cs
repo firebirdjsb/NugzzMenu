@@ -26,6 +26,7 @@ namespace NugzzMenu.UI
 
         public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
             Action<float> setTimeSpeed, Action<int> setTimeOfDay,
+            Action<string> setWeather, Action triggerLightning,
             Action growAllPlants, Action waterAllPlants, Action fillAllPotsWithSoil,
             Action completeDryingRacks, Action completeChemistryStations,
             Action completeLabOvens, Action completeMixingStations,
@@ -81,6 +82,24 @@ namespace NugzzMenu.UI
             }
 
             y += 58f;
+
+            TMPHybridService.Instance.Label(4f, y, w, 18f, "WEATHER",
+                GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
+                GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
+            y += 20f;
+
+            GUIFit.Panel(new Rect(0f, y, w, 86f), boxStyle);
+            rowY = y + 3f;
+            float weatherButtonWidth = (w - 8f) / 2f;
+            if (GUIFit.Button(new Rect(4f, rowY, weatherButtonWidth, 22f), "Clear", buttonStyle)) setWeather?.Invoke("clear");
+            if (GUIFit.Button(new Rect(8f + weatherButtonWidth, rowY, weatherButtonWidth, 22f), "Fog", buttonStyle)) setWeather?.Invoke("foggy");
+            if (GUIFit.Button(new Rect(4f, rowY + 28f, weatherButtonWidth, 22f), "Light Rain", buttonStyle)) setWeather?.Invoke("lightrain");
+            if (GUIFit.Button(new Rect(8f + weatherButtonWidth, rowY + 28f, weatherButtonWidth, 22f), "Storm (Heavy Rain)", buttonStyle)) setWeather?.Invoke("heavyrain");
+            if (GUIFit.Button(new Rect(4f, rowY + 56f, w - 8f, 22f), "Trigger Lightning Strike", buttonStyle)) triggerLightning?.Invoke();
+
+            y += 92f;
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "WORLD TIME CHEATS",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),

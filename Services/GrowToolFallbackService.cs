@@ -28,17 +28,12 @@ namespace NugzzMenu.Services
             new RaycastHit[InteractionHitCapacity];
         public static GrowToolFallbackService Instance => _instance;
 
-        private static FieldInfo _equippableItemInstanceField;
-        private static bool _equippableItemInstanceFieldSearched;
-        private static MethodInfo _sprayBottleCanSprayMethod;
-        private static FieldInfo _sprayBottleWaterField;
-        private static FieldInfo _sprayBottlePrefabField;
         private float _nextTrimmerDiagnosticTime;
         private float _nextPourableDiagnosticTime;
         private float _nextSeedDiagnosticTime;
         private float _nextMushroomSpawnDiagnosticTime;
         private float _nextActionStatusTime;
-        private float _nextPromptScanTime;
+        private int _promptScanFrame = -1;
         private Equippable _promptTool;
         private GrowContainer _promptContainer;
         private RaycastHit _promptHit;
@@ -53,11 +48,17 @@ namespace NugzzMenu.Services
 
         public void RefreshPromptForEquippedTool()
         {
-            if (_queuedPrompt && _queuedPromptFrame == Time.frameCount)
-                return;
-
             try
             {
+                // Validate again after all Update calls. A queued prompt may belong
+                // to a tool or target the player has already moved away from.
+                ClearQueuedPrompt();
+                GrowPromptOwnershipService.Clear();
+                _promptScanFrame = -1;
+                if (!SessionAuthorityService.Instance.FeaturesAllowed ||
+                    GameplayStateGateService.Instance.AreFeatureHotkeysBlocked())
+                    return;
+
                 Equippable equipped = ManagerCacheService.Instance.PlayerInventory?.Equippable;
                 if (!IsUsableToolObject(equipped))
                     return;
@@ -112,6 +113,8 @@ namespace NugzzMenu.Services
 
         public bool RunTrimmersUpdate(Equippable_Trimmers trimmers)
         {
+            if (GameplayStateGateService.Instance.AreFeatureHotkeysBlocked())
+                return true;
             if (trimmers == null || !IsUsableToolObject(trimmers))
                 return false;
 
@@ -173,6 +176,8 @@ namespace NugzzMenu.Services
 
         public bool RunPourableUpdate(Equippable_Pourable pourable)
         {
+            if (GameplayStateGateService.Instance.AreFeatureHotkeysBlocked())
+                return true;
             if (!IsUsableToolObject(pourable))
                 return false;
 
@@ -188,6 +193,8 @@ namespace NugzzMenu.Services
 
         public bool RunSeedUpdate(Equippable_Seed seedTool)
         {
+            if (GameplayStateGateService.Instance.AreFeatureHotkeysBlocked())
+                return true;
             if (seedTool == null || !IsUsableToolObject(seedTool))
                 return false;
 
@@ -235,7 +242,11 @@ namespace NugzzMenu.Services
                     return true;
                 }
 
-                pot.PlantSeed_Server(seed.name, 0f);
+                if (!GrowActionService.Plant(pot, seed, out reason))
+                {
+                    StatusThrottled(reason ?? "Could not plant seed");
+                    return true;
+                }
                 SpendOneEquippedStack(
                     seed,
                     seedTool,
@@ -252,6 +263,8 @@ namespace NugzzMenu.Services
 
         public bool RunMushroomSpawnUpdate(MushroomSpawnEquipped spawnTool)
         {
+            if (GameplayStateGateService.Instance.AreFeatureHotkeysBlocked())
+                return true;
             if (spawnTool == null || !IsUsableToolObject(spawnTool))
                 return false;
 
@@ -324,6 +337,8 @@ namespace NugzzMenu.Services
 
         public bool RunSprayBottleUpdate(Equippable_SprayBottle sprayBottle)
         {
+            if (GameplayStateGateService.Instance.AreFeatureHotkeysBlocked())
+                return true;
             if (sprayBottle == null || !IsUsableToolObject(sprayBottle))
                 return false;
 
@@ -366,33 +381,19 @@ namespace NugzzMenu.Services
                     return true;
                 }
 
-                float capacity = bed.MoistureCapacity;
-                if (capacity <= 0f)
-                    capacity = 1f;
-
-                float missingMoisture = Mathf.Clamp01(
-                    1f - GetNormalizedMoistureAmount(bed));
-                if (missingMoisture <= 1f - FullContainerThreshold)
+                if (!GrowActionService.Water(bed, water, out reason))
                 {
-                    StatusThrottled("Mushroom bed is already moist");
+                    StatusThrottled(reason ?? "Could not mist mushroom bed");
                     return true;
                 }
-
-                float waterUse = capacity * Mathf.Clamp(missingMoisture, 0.05f, 0.2f);
-                if (!TrySpendWater(water, waterUse))
-                {
-                    StatusThrottled("Spray bottle empty");
-                    return true;
-                }
-
-                bed.SetMoistureAmount(capacity);
-                try { bed.SyncMoistureData(); } catch { }
+                ReplicateEquippedSlot();
 
                 NotificationService.Instance.Status("Misted mushroom bed");
             }
             catch (Exception ex)
             {
                 DebugLogService.Instance.VerboseException("Spray bottle fallback failed", ex);
+                StatusThrottled("Misting failed; check the mod log");
             }
 
             return true;
@@ -432,6 +433,7 @@ namespace NugzzMenu.Services
             {
                 if (IsTaskActive() ||
                     !TryGetPromptTarget(pourable, out GrowContainer container, out RaycastHit hit) ||
+                    !container.IsClientInitialized || GrowActionService.IsBusy(container) ||
                     GetNormalizedMoistureAmount(container) >= FullContainerThreshold ||
                     !HasWater(pourable))
                 {
@@ -508,7 +510,8 @@ namespace NugzzMenu.Services
                 SeedDefinition seed = seedTool.Seed ?? ResolveSeedDefinition(seedTool);
                 string reason;
                 if (pot == null ||
-                    seed == null ||
+                    seed == null || string.IsNullOrWhiteSpace(seed.ID) ||
+                    !pot.IsClientInitialized || GrowActionService.IsBusy(pot) ||
                     !pot.CanAcceptSeed(out reason) ||
                     !CanSpendEquippedStack(seed, seedTool))
                 {
@@ -566,6 +569,7 @@ namespace NugzzMenu.Services
                 WaterContainerInstance water = GetSprayBottleWater(sprayBottle);
                 string reason;
                 if (bed != null &&
+                    bed.IsClientInitialized && !GrowActionService.IsBusy(bed) &&
                     water != null &&
                     water.CurrentFillAmount > EmptyContainerThreshold &&
                     CanSpray(sprayBottle, bed, out reason))
@@ -584,11 +588,11 @@ namespace NugzzMenu.Services
             out GrowContainer container,
             out RaycastHit hit)
         {
-            float now = Time.realtimeSinceStartup;
-            if (_promptTool != tool || now >= _nextPromptScanTime)
+            int frame = Time.frameCount;
+            if (_promptTool != tool || _promptScanFrame != frame)
             {
                 _promptTool = tool;
-                _nextPromptScanTime = now + 0.05f;
+                _promptScanFrame = frame;
                 _hasPromptTarget = TryGetHoveredGrowContainer(
                     out _promptContainer,
                     out _promptHit);
@@ -611,6 +615,7 @@ namespace NugzzMenu.Services
                 _queuedPromptMessage = message;
                 _queuedPromptFrame = Time.frameCount;
                 _queuedPrompt = true;
+                GrowPromptOwnershipService.Claim(_promptContainer, message);
             }
             catch (Exception ex)
             {
@@ -624,7 +629,7 @@ namespace NugzzMenu.Services
                 return;
 
             int age = Time.frameCount - _queuedPromptFrame;
-            if (age < 0 || age > 1)
+            if (age != 0)
             {
                 ClearQueuedPrompt();
                 return;
@@ -651,16 +656,15 @@ namespace NugzzMenu.Services
                     iconSize = new Vector2(44f, 32f);
                 }
 
-                canvas.EnableInteractionDisplay(
+                InteractionPromptDisplayService.ShowForCurrentFrame(
+                    canvas,
                     _queuedPromptPosition,
                     _queuedPromptMessage ?? string.Empty,
                     canvas.DefaultMessageColor,
                     icon,
                     canvas.DefaultIconColor,
                     iconText,
-                    1f,
-                    iconSize,
-                    true);
+                    iconSize);
             }
             catch (Exception ex)
             {
@@ -705,32 +709,21 @@ namespace NugzzMenu.Services
                     return true;
                 }
 
-                float capacity = container.MoistureCapacity;
-                if (capacity <= 0f)
-                    capacity = 1f;
-
-                float missingMoisture = Mathf.Clamp01(1f - GetNormalizedMoistureAmount(container));
-                if (missingMoisture <= 1f - FullContainerThreshold)
+                WaterContainerInstance water = TryCastItemInstance<WaterContainerInstance>(GetHeldItemInstance(pourable)) ??
+                    TryCastItemInstance<WaterContainerInstance>(GetItemInstance(pourable));
+                if (!GrowActionService.Water(container, water, out string reason))
                 {
-                    StatusThrottled("Already fully watered");
+                    StatusThrottled(reason ?? "Could not water target");
                     return true;
                 }
-
-                float waterUse = capacity * Mathf.Clamp(missingMoisture, 0.05f, 0.2f);
-                if (!TrySpendWater(pourable, waterUse))
-                {
-                    StatusThrottled("Watering can empty");
-                    return true;
-                }
-
-                container.SetMoistureAmount(capacity);
-                try { container.SyncMoistureData(); } catch { }
+                ReplicateEquippedSlot();
 
                 NotificationService.Instance.Status("Watered target");
             }
             catch (Exception ex)
             {
                 DebugLogService.Instance.VerboseException("Watering fallback failed", ex);
+                StatusThrottled("Watering failed; check the mod log");
             }
 
             return true;
@@ -1184,6 +1177,17 @@ namespace NugzzMenu.Services
                 Type type = interaction.GetType();
                 while (type != null && type != typeof(MonoBehaviour))
                 {
+                    // Native fields are generated as properties in IL2CPP. Read
+                    // the interaction's own container before any sibling search.
+                    foreach (PropertyInfo property in type.GetProperties(
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic |
+                        BindingFlags.DeclaredOnly))
+                    {
+                        if (property.GetIndexParameters().Length == 0 && property.CanRead &&
+                            typeof(GrowContainer).IsAssignableFrom(property.PropertyType) &&
+                            property.GetValue(interaction) is GrowContainer container)
+                            return container;
+                    }
                     FieldInfo[] fields = type.GetFields(
                         BindingFlags.Instance |
                         BindingFlags.Public |
@@ -1399,17 +1403,10 @@ namespace NugzzMenu.Services
 
             try
             {
-                if (_sprayBottleWaterField == null)
-                {
-                    _sprayBottleWaterField = typeof(Equippable_SprayBottle).GetField(
-                        "_waterContainerInstance",
-                        BindingFlags.Instance | BindingFlags.NonPublic);
-                }
-
                 if (water == null)
-                    water = _sprayBottleWaterField?.GetValue(sprayBottle) as WaterContainerInstance;
+                    water = sprayBottle._waterContainerInstance;
                 else
-                    _sprayBottleWaterField?.SetValue(sprayBottle, water);
+                    sprayBottle._waterContainerInstance = water;
             }
             catch { }
 
@@ -1420,14 +1417,7 @@ namespace NugzzMenu.Services
         {
             try
             {
-                if (_sprayBottlePrefabField == null)
-                {
-                    _sprayBottlePrefabField = typeof(Equippable_SprayBottle).GetField(
-                        "_sprayablePrefab",
-                        BindingFlags.Instance | BindingFlags.NonPublic);
-                }
-
-                return _sprayBottlePrefabField?.GetValue(sprayBottle) as GameObject;
+                return sprayBottle._sprayablePrefab;
             }
             catch
             {
@@ -1443,72 +1433,13 @@ namespace NugzzMenu.Services
             reason = string.Empty;
             try
             {
-                if (_sprayBottleCanSprayMethod == null)
-                {
-                    _sprayBottleCanSprayMethod = typeof(Equippable_SprayBottle).GetMethod(
-                        "CanSpray",
-                        BindingFlags.Instance | BindingFlags.NonPublic);
-                }
-
-                if (_sprayBottleCanSprayMethod == null)
-                    return bed != null;
-
-                object[] arguments = { bed, null };
-                bool canSpray = (bool)_sprayBottleCanSprayMethod.Invoke(
-                    sprayBottle,
-                    arguments);
-                reason = arguments[1] as string ?? string.Empty;
-                return canSpray;
+                // IL2CPP exposes native fields and protected methods as public
+                // wrapper members; NonPublic-only reflection silently missed them.
+                return sprayBottle.CanSpray(bed, out reason);
             }
             catch
             {
                 return bed != null;
-            }
-        }
-
-        private static bool TrySpendWater(Equippable_Pourable pourable, float amount)
-        {
-            try
-            {
-                WaterContainerInstance water =
-                    TryCastItemInstance<WaterContainerInstance>(GetHeldItemInstance(pourable));
-                if (water == null)
-                    water = TryCastItemInstance<WaterContainerInstance>(GetItemInstance(pourable));
-                if (water == null || water.CurrentFillAmount <= 0.001f)
-                    return false;
-
-                float spend = Mathf.Max(0.05f, amount);
-                if (water.CurrentFillAmount < spend)
-                    spend = water.CurrentFillAmount;
-
-                water.ChangeFillAmount(-spend);
-                ReplicateEquippedSlot();
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static bool TrySpendWater(WaterContainerInstance water, float amount)
-        {
-            try
-            {
-                if (water == null || water.CurrentFillAmount <= EmptyContainerThreshold)
-                    return false;
-
-                float spend = Mathf.Max(0.05f, amount);
-                if (water.CurrentFillAmount < spend)
-                    spend = water.CurrentFillAmount;
-
-                water.ChangeFillAmount(-spend);
-                ReplicateEquippedSlot();
-                return true;
-            }
-            catch
-            {
-                return false;
             }
         }
 
@@ -1788,8 +1719,7 @@ namespace NugzzMenu.Services
                     position,
                     rotation,
                     velocity,
-                    string.Empty,
-                    false);
+                    string.Empty);
             }
             catch (Exception ex)
             {
@@ -1935,52 +1865,12 @@ namespace NugzzMenu.Services
 
             try
             {
-                FieldInfo field = GetEquippableItemInstanceField();
-                return field?.GetValue(tool) as ItemInstance;
+                return tool.itemInstance;
             }
             catch
             {
                 return null;
             }
-        }
-
-        private static FieldInfo GetEquippableItemInstanceField()
-        {
-            if (_equippableItemInstanceFieldSearched)
-                return _equippableItemInstanceField;
-
-            _equippableItemInstanceFieldSearched = true;
-
-            try
-            {
-                for (Type type = typeof(Equippable);
-                     type != null && type != typeof(MonoBehaviour);
-                     type = type.BaseType)
-                {
-                    FieldInfo[] fields = type.GetFields(
-                        BindingFlags.Instance |
-                        BindingFlags.Public |
-                        BindingFlags.NonPublic |
-                        BindingFlags.DeclaredOnly);
-
-                    for (int i = 0; i < fields.Length; i++)
-                    {
-                        FieldInfo field = fields[i];
-                        if (field == null)
-                            continue;
-
-                        if (typeof(ItemInstance).IsAssignableFrom(field.FieldType) ||
-                            field.Name.IndexOf("itemInstance", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            _equippableItemInstanceField = field;
-                            return field;
-                        }
-                    }
-                }
-            }
-            catch { }
-
-            return null;
         }
 
         private static T TryCastComponent<T>(GrowContainer container)

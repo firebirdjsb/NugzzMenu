@@ -1,0 +1,85 @@
+{
+  "origin": "Original procedural sound authored for NugzzMenu; no recorded samples",
+  "generator": "scripts/Generate-MotorcycleAudio.py",
+  "generatorSha256": "f705877e98a8b73c8211321b444d2e04a21bc49dae4e9371565373a7130bd9d0",
+  "idlePlaybackRpm": 1000,
+  "maximumPlaybackRpm": 3000,
+  "firingDegrees": [
+    315,
+    405
+  ],
+  "loops": [
+    {
+      "asset": "Assets/Audio/VTwinIdle.pcm",
+      "sha256": "bae09a8a9b946a037e2aa820f0f005213429cdc834e01f925e9c1ea4a8fa1e27",
+      "sampleRate": 24000,
+      "channels": 1,
+      "format": "signed 16-bit little-endian PCM",
+      "samples": 144000,
+      "durationSeconds": 6,
+      "baseRpm": 1200,
+      "firingDegrees": [
+        315,
+        405
+      ],
+      "firstFiringOffsetsSamples": [
+        0,
+        1050,
+        2400,
+        3450
+      ],
+      "firingGapsSamples": [
+        1050,
+        1350,
+        1050
+      ],
+      "peak": 0.70562744140625,
+      "rms": 0.2149934436462202,
+      "dcOffset": -1.2291802300347222e-08,
+      "seamDelta": 0.002685546875,
+      "p999SampleDelta": 0.06134069824218891,
+      "energyBelow300Hz": 0.9879273871151958,
+      "energyAbove800Hz": 0.0047073418782143895,
+      "gain": 0.8964185837183097,
+      "pulseCount": 120
+    },
+    {
+      "asset": "Assets/Audio/VTwinLoad.pcm",
+      "sha256": "c7d9def6a8b9f1ee9cf49524e061ba8c56bc39574f2af22010f999e6dfe4a222",
+      "sampleRate": 24000,
+      "channels": 1,
+      "format": "signed 16-bit little-endian PCM",
+      "samples": 144000,
+      "durationSeconds": 6,
+      "baseRpm": 2400,
+      "firingDegrees": [
+        315,
+        405
+      ],
+      "firstFiringOffsetsSamples": [
+        0,
+        525,
+        1200,
+        1725
+      ],
+      "firingGapsSamples": [
+        525,
+        675,
+        525
+      ],
+      "peak": 0.479278564453125,
+      "rms": 0.22499310433484943,
+      "dcOffset": -2.9669867621527776e-09,
+      "seamDelta": 0.00848388671875,
+      "p999SampleDelta": 0.15124517822265648,
+      "energyBelow300Hz": 0.9095342576355695,
+      "energyAbove800Hz": 0.048020900404495845,
+      "gain": 0.49634398281606157,
+      "pulseCount": 240
+    }
+  ],
+  "gameAudioAssetsIncluded": false,
+  "externalRecordingsIncluded": false,
+  "runtimeAudioCallbacks": false,
+  "perceptualAndInGameQA": "pending"
+}

@@ -49,8 +49,8 @@ namespace NugzzMenu.Services
         }
     }
 
-    [HarmonyPatch(typeof(VehicleLights), "Method_Private_Void_PDM_0")]
-    internal static class PoliceSirenSyncVarChangedPatch
+    [HarmonyPatch(typeof(VehicleLights), nameof(VehicleLights.Awake))]
+    internal static class PoliceSirenAwakePatch
     {
         private static void Postfix(VehicleLights __instance)
         {

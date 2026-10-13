@@ -6,14 +6,15 @@ world and inventory utilities, multiplayer-aware vehicle features, quest and
 save recovery, performance tuning, and developer-friendly diagnostics in one
 menu.
 
-Current release: [v1.0.0](RELEASE_NOTES_v1.0.0.md)
+Current release: [v1.0.1](RELEASE_NOTES_v1.0.1.md)
 
 ## Features
 
 - Player cheats, movement tuning, fly mode, and an adjustable third-person
   camera.
 - Quality-aware item spawning, grow helpers, money/XP tools, teleports, time,
-  weather, property, business, and achievement controls.
+  on-demand weather presets and lightning, property, business, and achievement
+  controls.
 - Vehicle spawning, tuning, police sirens, vehicle flight, and multiplayer-aware
   synchronization where the game exposes a suitable network path.
 - Quest inspection and recovery controls, RV story safeguards, and a
@@ -32,54 +33,38 @@ Current release: [v1.0.0](RELEASE_NOTES_v1.0.0.md)
 - Full Xbox and PlayStation controller navigation with a polished animated menu
   shell, visible focus, contextual controls, and automatic scrolling.
 
-## Latest Changes
+## Latest Changes — v1.0.1
 
-### v1.0.0
+- Updated for Schedule I 0.4.7f12 and the Special Customers update, with S1API 3.2.1 included.
+- Added all four visiting groups and 31 visitors to Relations, with next-day arrival controls.
+- Added rideable session motorcycles with visible riders, smoother steering, better hill stability, easier stopping and original chopper audio.
+- Added eight player animations under Lobby > Local Effects, with temporary props and effects.
+- Added clear, fog, light rain, storm/heavy rain and lightning controls under Time.
+- Added saved startup preferences in `Mods/nuggzmenu-config.json` and a clearer clothing color picker with Native / No color defaults.
+- Improved Never Wanted for solo players, hosts and approved clients.
+- Addressed Phone/Character lockouts, conflicting grow prompts, quick planting/watering, color-picker errors and white skin after clearing effects.
 
-- Added full controller support for Xbox and PlayStation layouts across every
-  tab, option, slider, text field, and action in NugzzMenu.
-- Redesigned the shared menu shell with smooth open and close animation,
-  clearer focus states, contextual controller help, and automatic scrolling.
-- Preserved all existing tab names, features, mouse controls, keyboard controls,
-  multiplayer safeguards, and main-menu save tools.
-- Kept multiplayer authorization compatible with approved NugzzMenu R4 and
-  newer clients while advertising the current v1.0.0 build.
-
-#### Maintenance fixes
-
-- Restored the custom left-click interaction prompts and actions for weed,
-  mushrooms, watering, soil, substrate, and grow additives. Prompt discovery
-  now follows the game's active interactable and held-item definitions instead
-  of relying on a narrow physics-layer lookup.
-- Preserved the native cooking-station temperature minigame and added a focused
-  Bunsen burner input fallback for mouse and controller when the updated game
-  does not advance the dial itself.
-- Removed the large menu open/close hitch by keeping input patches installed,
-  skipping unused IMGUI layout work, caching fitted controls and diagnostics,
-  and drawing passive overlays only during repaint events.
-- Isolated NugzzMenu's GUI styles so opening the menu no longer replaces the
-  global Unity skin or changes the appearance of other mods.
-- Improved native-activity blocking, controller detection, console suggestion
-  cleanup, multiplayer session discovery, interactive shape prompts, and
-  per-skateboard tuning persistence.
-- Reworked multiplayer vehicle collision tracking and staggered parked-vehicle
-  transform synchronization to keep visible cars and their blocking colliders
-  aligned without doing expensive full refreshes every frame.
-
-Full release notes: [RELEASE_NOTES_v1.0.0.md](RELEASE_NOTES_v1.0.0.md)
-
-Release history: [CHANGELOG.md](CHANGELOG.md)
+[Full player-friendly v1.0.1 changelog](RELEASE_NOTES_v1.0.1.md) includes new items,
+all visitor names, multiplayer limits, upgrade guidance and remaining playtests.
+Earlier releases remain in [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 
-- Schedule I
+- Schedule I 0.4.7f12
 - MelonLoader IL2CPP
-- S1API
+- S1API 3.2.1 (included with the release)
 - .NET 6 SDK for local builds
 
 ## Build
 
 Reference assemblies are expected in `net6.0/`.
+
+The special customers compatibility pass pins S1API `3.2.1` in
+`S1API.lock.json`. Run `python scripts/update_s1api.py` to verify and stage that
+dependency and refresh the local IL2CPP build reference. The game installation
+is not modified by this command. See
+[the compatibility checklist](docs/SPECIAL_CUSTOMERS_COMPATIBILITY.md) for
+validation status and the required updated game assemblies.
 
 ```powershell
 dotnet build SeshMenu.csproj -c Release
@@ -89,7 +74,11 @@ The mod DLL is written to `bin/Release/net6.0/NugzzMenu.dll`.
 
 ## Install
 
-Place `NugzzMenu.dll` in the game's `Mods` directory.
+Close the game and back up the DLLs you replace outside Mods/Plugins. Extract the
+release ZIP's `Mods` and `Plugins` folders into the game folder, keeping one
+NugzzMenu DLL. Preserve your existing `nuggzmenu-config.json`; the example is
+reference only. Host and clients should use v1.0.1 for the new bikes and animations.
+Restore the backed-up DLLs with the game closed to roll back.
 
 ## Save Manager
 

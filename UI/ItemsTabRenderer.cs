@@ -17,6 +17,7 @@ namespace NugzzMenu.UI
 
     public static class ItemsTabRenderer
     {
+        private static long _nextErrorLogAtMs;
         private static readonly string[] QualityLabels = { "Trash", "Poor", "Std", "Prem", "Heaven" };
         private static GUIStyle _styleSource;
         private static GUIStyle _smallButton;
@@ -88,30 +89,7 @@ namespace NugzzMenu.UI
                 }
                 y += 36f;
 
-                TMPHybridService.Instance.Label(4f, y, w, 18f, "CLOTHING COLOR",
-                    GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
-                    GUISystemService.Instance.GetFontSizeForCategory(LabelCategory.Header),
-                    GUISystemService.Instance.GetAlignmentForCategory(LabelCategory.Header),
-                    GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
-                y += 20f;
-                GUIFit.Panel(new Rect(0f, y, w, 24f), boxStyle);
-                rowY = y + 3f;
-                float colorSideWidth = Mathf.Max(58f, w * 0.2f);
-                float colorLabelWidth = w - colorSideWidth * 2f - 16f;
-                if (GUIFit.Button(new Rect(4f, rowY, colorSideWidth, 18f), "Previous", _smallButton))
-                    service.CycleClothingColor(-1);
-                GUIFit.Button(
-                    new Rect(8f + colorSideWidth, rowY, colorLabelWidth, 18f),
-                    service.GetClothingColorLabel(),
-                    _selectedButton);
-                if (GUIFit.Button(
-                        new Rect(12f + colorSideWidth + colorLabelWidth, rowY, colorSideWidth, 18f),
-                        "Next",
-                        _smallButton))
-                {
-                    service.CycleClothingColor(1);
-                }
-                y += 34f;
+                ClothingColorPicker.Draw(ref y, w, buttonStyle, boxStyle, service, state.SpawnQuantity);
 
                 TMPHybridService.Instance.Label(4f, y, w, 18f, "CATEGORY",
                     GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
@@ -358,7 +336,12 @@ namespace NugzzMenu.UI
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogError("[Nugzz] ItemsTab error: " + ex);
+                long now = Environment.TickCount64;
+                if (now >= _nextErrorLogAtMs)
+                {
+                    _nextErrorLogAtMs = now + 5000L;
+                    UnityEngine.Debug.LogError("[Nugzz] ItemsTab error (repeat reports limited to once per 5 seconds): " + ex);
+                }
             }
         }
 

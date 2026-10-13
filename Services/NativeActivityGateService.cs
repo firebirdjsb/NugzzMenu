@@ -22,7 +22,7 @@ namespace NugzzMenu.Services
         private CharacterInterface _characterInterface;
         private CharacterDisplay _characterDisplay;
         private Phone _phone;
-        private bool _closingPhoneApp;
+        private GameplayMenu _gameplayMenu;
         private int _lastEvaluationFrame = -1;
         private bool _lastBlocked;
         private string _lastReason;
@@ -41,25 +41,31 @@ namespace NugzzMenu.Services
             }
 
             _lastEvaluationFrame = frame;
-            _lastBlocked = EvaluateBlockReason(out _lastReason);
+            _lastBlocked = EvaluateBlockReason(true, out _lastReason);
             reason = _lastReason;
             return _lastBlocked;
         }
 
-        private bool EvaluateBlockReason(out string reason)
+        public bool IsPhoneCharacterScreenOpen
         {
-            if (IsOpen(ref _characterInterface) || IsOpen(ref _characterDisplay))
+            get
             {
-                reason = "using the character screen";
-                return true;
+                try
+                {
+                    GameplayMenu screen = _gameplayMenu ?? GameplayMenu.Instance;
+                    return screen != null && screen.IsOpen;
+                }
+                catch { return false; }
             }
+        }
 
-            if (IsOpen(ref _phone))
-            {
-                reason = "using a phone app";
-                return true;
-            }
+        // The mod may overlay either native tab. World actions still use the
+        // stricter gate, so clicks in either menu cannot water/harvest or move.
+        public bool TryGetModBlockReason(out string reason) =>
+            EvaluateBlockReason(false, out reason);
 
+        private bool EvaluateBlockReason(bool includePhoneCharacter, out string reason)
+        {
             if (IsOpen(ref _tv))
             {
                 reason = "using the TV";
@@ -84,6 +90,26 @@ namespace NugzzMenu.Services
                 return true;
             }
 
+            if (includePhoneCharacter)
+            {
+                if (IsPhoneCharacterScreenOpen)
+                {
+                    reason = "using the phone or character screen";
+                    return true;
+                }
+
+                // The parent owns input/blur in 0.4.7. Child visibility can lag
+                // during its animation and must not keep the menu locked out.
+                bool hasParent;
+                try { hasParent = (_gameplayMenu ?? GameplayMenu.Instance) != null; }
+                catch { hasParent = false; }
+                if (!hasParent && (IsOpen(ref _characterInterface) || IsOpen(ref _characterDisplay) || IsOpen(ref _phone)))
+                {
+                    reason = "using a phone or character interface";
+                    return true;
+                }
+            }
+
             reason = null;
             return false;
         }
@@ -97,6 +123,7 @@ namespace NugzzMenu.Services
         internal void SetCharacterDisplay(CharacterDisplay value) =>
             SetCharacterDisplayValue(value);
         internal void SetPhoneState(Phone value) { _phone = value; Invalidate(); }
+        internal void SetGameplayMenu(GameplayMenu value) { _gameplayMenu = value; Invalidate(); }
 
         private void SetCharacterInterfaceValue(CharacterInterface value)
         {
@@ -155,22 +182,11 @@ namespace NugzzMenu.Services
             }
         }
 
-        internal void CloseStalePhoneApp(Phone phone, bool isOpen)
+        public void ResetForScene()
         {
-            if (isOpen || phone == null || Phone.ActiveApp == null || _closingPhoneApp)
-                return;
-
-            try
-            {
-                _closingPhoneApp = true;
-                phone.RequestCloseApp();
-            }
-            catch { }
-            finally
-            {
-                _closingPhoneApp = false;
-                Invalidate();
-            }
+            _tv = null; _jukebox = null; _blackjack = null; _rtb = null;
+            _characterInterface = null; _characterDisplay = null; _phone = null; _gameplayMenu = null;
+            Invalidate();
         }
 
         private void Invalidate()
@@ -288,8 +304,43 @@ namespace NugzzMenu.Services
         private static void Postfix(Phone __instance, bool o)
         {
             NativeActivityGateService.Instance.SetPhoneState(__instance);
-            NativeActivityGateService.Instance.CloseStalePhoneApp(__instance, o);
         }
+    }
+
+    [HarmonyPatch(typeof(GameplayMenu), "Update")]
+    internal static class NugzzGameplayMenuInputPatch
+    {
+        // 0.4.7 polls InputActionReference directly, bypassing GameInput callbacks.
+        // This Update handles input only; native state/animation cleanup continues.
+        private static bool Prefix() => !GameplayStateGateService.Instance.MenuOpen;
+    }
+
+    [HarmonyPatch(typeof(GameplayMenu), nameof(GameplayMenu.Open))]
+    internal static class NugzzGameplayMenuOpenPatch
+    {
+        private static bool Prefix() => !GameplayStateGateService.Instance.MenuOpen;
+    }
+
+    [HarmonyPatch(typeof(GameplayMenu), nameof(GameplayMenu.SetScreen))]
+    internal static class NugzzGameplayMenuTabPatch
+    {
+        private static bool Prefix() => !GameplayStateGateService.Instance.MenuOpen;
+    }
+
+    [HarmonyPatch(typeof(GameplayMenu), "OnClose")]
+    internal static class NugzzGameplayMenuCloseStatePatch
+    {
+        // Let the native parent/child stack restore HUD, blur and clothing slots.
+        // In particular, Phone.SetIsOpen(false) is also a normal tab transition.
+        private static void Postfix(GameplayMenu __instance) =>
+            NativeActivityGateService.Instance.SetGameplayMenu(__instance);
+    }
+
+    [HarmonyPatch(typeof(GameplayMenu), "OnOpen")]
+    internal static class NugzzGameplayMenuOpenStatePatch
+    {
+        private static void Postfix(GameplayMenu __instance) =>
+            NativeActivityGateService.Instance.SetGameplayMenu(__instance);
     }
 
     [HarmonyPatch(typeof(CharacterInterface), nameof(CharacterInterface.Open))]
@@ -304,6 +355,13 @@ namespace NugzzMenu.Services
     {
         private static void Postfix(CharacterInterface __instance) =>
             NativeActivityGateService.Instance.ClearCharacterInterface(__instance);
+    }
+
+    [HarmonyPatch(typeof(CharacterInterface), nameof(CharacterInterface.SetIsActiveGameplayScreen))]
+    internal static class NugzzCharacterInterfaceStatePatch
+    {
+        private static void Postfix(CharacterInterface __instance, bool isActive) =>
+            NativeActivityGateService.Instance.SetCharacterInterface(__instance);
     }
 
     [HarmonyPatch(typeof(CharacterDisplay), nameof(CharacterDisplay.SetOpen))]

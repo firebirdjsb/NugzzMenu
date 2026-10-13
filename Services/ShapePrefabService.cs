@@ -59,7 +59,6 @@ namespace NugzzMenu.Services
         private bool _snapshotRequested;
         private bool _promptFailureReported;
         private float _nextCleanup;
-        private float _nextPickupScan;
         private static Material _materialTemplate;
 
         private int _pendingId;
@@ -120,7 +119,6 @@ namespace NugzzMenu.Services
             _snapshotRequested = false;
             _nextId = 1000;
             _nextCleanup = 0f;
-            _nextPickupScan = 0f;
         }
 
         internal void RequestHostSnapshot()
@@ -168,20 +166,42 @@ namespace NugzzMenu.Services
                 return;
             }
 
-            if (Time.unscaledTime >= _nextPickupScan)
-            {
-                _nextPickupScan = Time.unscaledTime + 0.05f;
-                TryFindPickupTarget(out _hovered, out _hoveredHit);
-            }
-            if (_hovered?.Object == null)
-                return;
-
-            ShowPickupPrompt(_hovered, _hoveredHit);
             if (Input.GetKeyDown(KeyCode.E) || Input.GetMouseButtonDown(0))
             {
+                // Resolve at click time instead of acting on last frame's hover.
+                if (!TryFindPickupTarget(out _hovered, out _hoveredHit) ||
+                    _hovered?.Object == null)
+                    return;
+
                 int id = _hovered.Id;
                 _hovered = null;
                 RequestPickup(id);
+            }
+        }
+
+        internal void RefreshPickupPrompt()
+        {
+            try
+            {
+                _hovered = null;
+                if (_carried != null || _shapes.Count == 0 ||
+                    !SessionAuthorityService.Instance.FeaturesAllowed ||
+                    GameplayStateGateService.Instance.AreFeatureHotkeysBlocked())
+                    return;
+
+                // The canvas LateUpdate postfix owns display; use the current aim
+                // each frame so other Update calls cannot leave a stale prompt.
+                if (TryFindPickupTarget(out _hovered, out _hoveredHit) &&
+                    _hovered?.Object != null)
+                    ShowPickupPrompt(_hovered, _hoveredHit);
+            }
+            catch (Exception ex)
+            {
+                if (_promptFailureReported)
+                    return;
+                _promptFailureReported = true;
+                DebugLogService.Instance.VerboseWarning(
+                    "Shape hover refresh failed: " + ex.Message);
             }
         }
 
@@ -600,16 +620,15 @@ namespace NugzzMenu.Services
                 Vector3 position = hit.collider != null
                     ? (hit.distance <= 0.001f ? hit.collider.bounds.center : hit.point)
                     : record.Object.transform.position;
-                canvas.EnableInteractionDisplay(
+                InteractionPromptDisplayService.ShowForCurrentFrame(
+                    canvas,
                     position,
                     "Pick up " + ShapeNames[record.Type],
                     canvas.DefaultMessageColor,
                     icon,
                     canvas.DefaultKeyColor,
                     key,
-                    1f,
-                    new Vector2(32f, 32f),
-                    true);
+                    new Vector2(32f, 32f));
             }
             catch (Exception ex)
             {

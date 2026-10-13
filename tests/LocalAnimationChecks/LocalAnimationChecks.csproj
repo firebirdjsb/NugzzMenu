@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net6.0</TargetFramework><CheckEolTargetFramework>false</CheckEolTargetFramework><ImplicitUsings>enable</ImplicitUsings><EnableNETAnalyzers>false</EnableNETAnalyzers></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Services/LocalAnimationCatalog.cs" Link="LocalAnimationCatalog.cs"/>
+    <Compile Include="../../Services/LocalAnimationFxService.cs" Link="LocalAnimationFxService.cs"/>
+    <Compile Include="../../Services/EffectAppearanceResetService.cs" Link="EffectAppearanceResetService.cs"/>
+    <Compile Include="../../Services/EffectsService.cs" Link="EffectsService.cs"/>
+    <Compile Include="../../Services/LocalAnimationService.cs" Link="LocalAnimationService.cs"/>
+    <Compile Include="../../Services/LocalAnimationNetworkService.cs" Link="LocalAnimationNetworkService.cs"/>
+    <Compile Include="../../Services/LocalAnimationVisualService.cs" Link="LocalAnimationVisualService.cs"/>
+    <Compile Include="../../Services/LocalBodyAnimationService.cs" Link="LocalBodyAnimationService.cs"/>
+    <Compile Include="../../Services/LocalAnimationRenderService.cs" Link="LocalAnimationRenderService.cs"/>
+    <Compile Include="../../Services/LocalAnimationPlacementService.cs" Link="LocalAnimationPlacementService.cs"/>
+    <Compile Include="../../Services/NativeVisualCloneService.cs" Link="NativeVisualCloneService.cs"/>
+    <Compile Include="../../Services/MotorcycleService.cs" Link="MotorcycleService.cs"/>
+    <Compile Include="../../Services/MotorcycleNetworkService.cs" Link="MotorcycleNetworkService.cs"/>
+    <Compile Include="../../Services/MotorcycleChassisSnapshot.cs" Link="MotorcycleChassisSnapshot.cs"/>
+    <Compile Include="../../Services/MotorcycleHandling.cs" Link="MotorcycleHandling.cs"/>
+    <Compile Include="../../Services/MotorcycleStability.cs" Link="MotorcycleStability.cs"/>
+    <Compile Include="../../Services/MotorcycleGroundProbe.cs" Link="MotorcycleGroundProbe.cs"/>
+    <Compile Include="../../Services/MotorcyclePromptService.cs" Link="MotorcyclePromptService.cs"/>
+    <Compile Include="../../Services/MotorcycleRiderVisibility.cs" Link="MotorcycleRiderVisibility.cs"/>
+    <Compile Include="../../Services/MotorcycleEngineAudio.cs" Link="MotorcycleEngineAudio.cs"/>
+    <Compile Include="../../Services/MotorcycleEngineSamples.cs" Link="MotorcycleEngineSamples.cs"/>
+    <Compile Include="../../Services/MotorcycleEngineNote.cs" Link="MotorcycleEngineNote.cs"/>
+    <Compile Include="../../Services/MotorcycleGripTargets.cs" Link="MotorcycleGripTargets.cs"/>
+    <Compile Include="../../Services/MotorcycleHandPose.cs" Link="MotorcycleHandPose.cs"/>
+    <Compile Include="../../Services/MotorcycleFingerPose.cs" Link="MotorcycleFingerPose.cs"/>
+    <Compile Include="../../Services/MotorcycleLimbSolver.cs" Link="MotorcycleLimbSolver.cs"/>
+    <Compile Include="../../Services/MotorcycleLegPose.cs" Link="MotorcycleLegPose.cs"/>
+    <Compile Include="../../Services/MotorcycleRiderTargets.cs" Link="MotorcycleRiderTargets.cs"/>
+    <Compile Include="../../UI/LocalAnimationRenderer.cs" Link="LocalAnimationRenderer.cs"/>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../Assets/Audio/VTwinIdle.pcm" LogicalName="NugzzMenu.Audio.VTwinIdle.pcm" />
+    <EmbeddedResource Include="../../Assets/Audio/VTwinLoad.pcm" LogicalName="NugzzMenu.Audio.VTwinLoad.pcm" />
+    <EmbeddedResource Include="../../Assets/Audio/AUDIO-NOTES.md" LogicalName="NugzzMenu.Audio.AUDIO-NOTES.md" />
+  </ItemGroup>
+</Project>

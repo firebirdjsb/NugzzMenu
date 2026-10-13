@@ -16,7 +16,7 @@ namespace NugzzMenu
 {
     public class Core : MelonMod
     {
-        private const string Version = "1.0.0";
+        private const string Version = "1.0.1";
         private const int WindowId = 98765;
         private const float HeaderHeight = 56f;
         private const float TabStripHeight = 36f;
@@ -82,6 +82,8 @@ namespace NugzzMenu
         private Vector2 _windowDragOffset;
         private long _nextGuiExceptionLogAtMs;
         private bool _keybindOverlayRuntimeSupported = true;
+        private MenuConfig _configDefaults;
+        private bool _pendingConfigWorldDefaults;
 
         public override void OnInitializeMelon()
         {
@@ -103,8 +105,11 @@ namespace NugzzMenu
                 _menuKey = KeyCode.F8;
 
             LoggerInstance.Msg($"Nugzz v{Version} by XUnfairX | {_menuKeyPreference.Value} to open");
+            LoggerInstance.Msg("[Nugzz] Release build: v1.0.1 | Schedule I 0.4.7f12");
+            LoggerInstance.Msg("[Nugzz] S1API runtime: " + S1ApiService.Instance.GetLoadedVersion());
 
             GUISystemService.Instance.Initialize();
+            InitializeConfig();
             SubscribeS1ApiEvents();
             try
             {
@@ -123,22 +128,36 @@ namespace NugzzMenu
 
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
         {
+            NeverWantedNetworkService.Reset();
+            MotorcycleService.Instance.ResetForScene();
+            LocalAnimationService.Instance.ResetForScene();
             DebugTestRoomService.Instance.ResetForScene();
             ShapePrefabService.Instance.ResetForScene();
             SkateboardTuneService.Instance.ResetForScene();
             ConsoleAutocompleteService.Instance.ResetForScene();
             SaveManagementService.Instance.SetCurrentScene(sceneName);
             ManagerCacheService.Instance.Invalidate();
+            ItemService.Instance.ResetForScene();
+            RelationshipService.Instance.ResetForScene();
+            SpecialCustomerService.Instance.ResetForScene();
+            NativeActivityGateService.Instance.ResetForScene();
+            GrowPromptOwnershipService.Clear();
+            _itemCacheInitialized = false;
             TeleportService.Instance.MarkCatalogDirty();
 
             if (sceneName == "Main")
             {
                 InitializeGameplayServices();
+                _pendingConfigWorldDefaults = _configDefaults != null;
             }
         }
 
         public override void OnDeinitializeMelon()
         {
+            NeverWantedNetworkService.Reset();
+            MotorcycleService.Instance.ResetForScene();
+            LocalAnimationRenderService.Shutdown();
+            LocalAnimationService.Instance.ResetForScene();
             _isMenuOpen = false;
             _menuInputCaptured = false;
             _menuVisualProgress = 0f;
@@ -162,7 +181,15 @@ namespace NugzzMenu
 
         private void HandlePreSceneChange()
         {
+            NeverWantedNetworkService.Reset();
+            MotorcycleService.Instance.ResetForScene();
+            LocalAnimationService.Instance.ResetForScene();
             _itemCacheInitialized = false;
+            ItemService.Instance.ResetForScene();
+            RelationshipService.Instance.ResetForScene();
+            SpecialCustomerService.Instance.ResetForScene();
+            NativeActivityGateService.Instance.ResetForScene();
+            GrowPromptOwnershipService.Clear();
             DebugTestRoomService.Instance.ResetForScene();
             ShapePrefabService.Instance.ResetForScene();
             SkateboardTuneService.Instance.ResetForScene();
@@ -222,6 +249,13 @@ namespace NugzzMenu
             }
 
             bool hotkeysBlocked = GameplayStateGateService.Instance.AreFeatureHotkeysBlocked();
+            if (_pendingConfigWorldDefaults && featuresAllowed && !hotkeysBlocked &&
+                ManagerCacheService.Instance.LocalPlayer != null && !_menuInputCaptured)
+            {
+                _pendingConfigWorldDefaults = false;
+                if (_configDefaults.ThirdPerson) ToggleCamera(true);
+                if (_configDefaults.FlyEnabled) ToggleFly(true);
+            }
             if (menuKeyPressed)
             {
                 if (_isMenuOpen)
@@ -233,7 +267,7 @@ namespace NugzzMenu
                 {
                     SetMenuOpen(true, controllerMenuPressed);
                 }
-                else if (mainMenuSaveMode || (!nativeUiBlocked && !hotkeysBlocked))
+                else if (mainMenuSaveMode || !GameplayStateGateService.Instance.AreMenuHotkeysBlocked())
                 {
                     ToggleMenu(controllerMenuPressed);
                 }
@@ -256,6 +290,8 @@ namespace NugzzMenu
             }
 
             NotificationService.Instance.Update();
+            LocalAnimationService.Instance.Update();
+            MotorcycleService.Instance.Update();
             if (!featuresAllowed)
             {
                 PerformanceService.Instance.EndNugzzUpdate();
@@ -288,6 +324,9 @@ namespace NugzzMenu
         }
         public override void OnLateUpdate()
         {
+            // Apply body and seated visual poses before rendering/culling computes
+            // rigid attachment matrices as well as skinned mesh bone matrices.
+            LocalAnimationRenderService.Apply();
             if (!SessionAuthorityService.Instance.FeaturesAllowed)
                 return;
             if (CameraService.Instance.ThirdPersonEnabled)
@@ -1237,6 +1276,9 @@ namespace NugzzMenu
                 if (GameplayStateGateService.IsCharacterCreatorOpen())
                     return true;
 
+                if (NativeActivityGateService.Instance.IsPhoneCharacterScreenOpen)
+                    return true;
+
                 Scene scene = SceneManager.GetActiveScene();
                 return scene.IsValid() &&
                     string.Equals(scene.name, "Menu", StringComparison.OrdinalIgnoreCase);
@@ -1332,6 +1374,8 @@ namespace NugzzMenu
                 GUISystemService.Instance.BoxStyle,
                 TimeManagerService.Instance.SetTimeSpeed,
                 i => TimeManagerService.Instance.SetTimeOfDay(i),
+                WeatherService.Instance.SetWeather,
+                WeatherService.Instance.TriggerLightning,
                 () => WorldObjectService.Instance.GrowAllPlants(),
                 () => WorldObjectService.Instance.WaterAllPlants(),
                 () => WorldObjectService.Instance.FillAllPotsWithBestSoil(),
@@ -1401,9 +1445,9 @@ namespace NugzzMenu
                 EffectsService.Instance.EffectLabels,
                 effectId => EffectsService.Instance.ApplyEffect(effectId),
                 () => LobbyService.Instance.TeleportPlayerUp(25f),
-                () => LobbyService.Instance.SetRagdoll(true),
-                () => LobbyService.Instance.SetRagdoll(false),
-                EffectsService.Instance.ClearAllEffects);
+                () => { LocalAnimationService.Instance.Stop(false); LobbyService.Instance.SetRagdoll(true); },
+                () => { LocalAnimationService.Instance.Stop(false); LobbyService.Instance.SetRagdoll(false); },
+                () => { LocalAnimationService.Instance.Stop(false); EffectsService.Instance.ClearAllEffects(); });
         }
 
         private void TeleportAction(float distance, int dir)
@@ -1442,9 +1486,11 @@ namespace NugzzMenu
 
         private void ResetAllRuntimeChanges(bool includeNetworkedChanges)
         {
+            _pendingConfigWorldDefaults = false;
             try
             {
                 PlayerCheatService.Instance.ResetAll();
+                LocalAnimationService.Instance.ResetForScene();
                 FlyingService.Instance.SetEnabled(false);
                 FlyingService.Instance.SetSpeed(20f);
                 FlyingService.Instance.SetDoubleSpaceHotkeyEnabled(true);
@@ -1545,7 +1591,104 @@ namespace NugzzMenu
                 SetKeybind,
                 value => ItemService.Instance.UseGameStackLogic = value, SetVerboseDebugLogging,
                 SetKeybindOverlay, SaveManagementService.Instance,
-                DebugTestRoomService.Instance, () => ResetAllRuntimeChanges(true));
+                DebugTestRoomService.Instance, () => ResetAllRuntimeChanges(true),
+                SaveConfig, LoadConfig);
+        }
+
+        private void InitializeConfig()
+        {
+            try
+            {
+                var config = MenuConfigService.Instance;
+                config.Initialize(typeof(Core).Assembly.Location);
+                if (System.IO.File.Exists(config.ConfigPath))
+                {
+                    if (config.TryLoad(out MenuConfig loaded)) ApplyConfig(loaded);
+                    else LoggerInstance.Warning(config.Status);
+                }
+                else
+                {
+                    _configDefaults = CaptureConfig();
+                    if (!config.Save(_configDefaults)) LoggerInstance.Warning(config.Status);
+                }
+            }
+            catch (Exception ex) { LoggerInstance.Warning("Config initialization failed: " + ex.Message); }
+        }
+
+        private MenuConfig CaptureConfig()
+        {
+            var player = PlayerCheatService.Instance;
+            return new MenuConfig
+            {
+                MenuKeybind = _menuKey.ToString(), StartupTab = _selectedTab.ToString(),
+                VerboseDebugLogging = DebugLogService.Instance.VerboseEnabled,
+                KeybindOverlay = KeybindOverlayService.Instance.Enabled,
+                DoubleSpaceFlyHotkey = FlyingService.Instance.DoubleSpaceHotkeyEnabled,
+                UseGameStackLogic = ItemService.Instance.UseGameStackLogic,
+                SpawnQuantity = _itemsState.SpawnQuantity, ItemQuality = ItemService.Instance.GetQualityIndex(),
+                ClothingColor = ItemService.Instance.ClothingColorKey,
+                GodMode = player.GodMode, InfiniteStamina = player.InfiniteStamina,
+                InfiniteAmmo = player.InfiniteAmmo, NeverWanted = player.NeverWanted,
+                BottomlessTrashGrabber = player.BottomlessTrashGrabber, SpeedBoost = player.SpeedBoost,
+                SpeedMultiplier = player.SpeedMultiplier, PlayerScale = player.PlayerScale,
+                JumpMultiplier = player.JumpMultiplier, GravityMultiplier = player.GravityMultiplier,
+                FlyEnabled = FlyingService.Instance.Enabled, FlySpeed = FlyingService.Instance.Speed,
+                ThirdPerson = CameraService.Instance.ThirdPersonEnabled,
+                CameraDistance = CameraService.Instance.Distance, CameraHeight = CameraService.Instance.Height,
+                CameraShoulder = CameraService.Instance.ShoulderOffset,
+                LightRangeScale = PerformanceService.Instance.LightRangeScale,
+                ReflectionInterval = PerformanceService.Instance.ReflectionInterval
+            };
+        }
+
+        private void SaveConfig()
+        {
+            MenuConfig captured = CaptureConfig();
+            if (MenuConfigService.Instance.Save(captured)) _configDefaults = captured;
+            Notify(MenuConfigService.Instance.Status);
+        }
+
+        private void LoadConfig()
+        {
+            if (MenuConfigService.Instance.TryLoad(out MenuConfig config)) ApplyConfig(config);
+            Notify(MenuConfigService.Instance.Status);
+        }
+
+        private void ApplyConfig(MenuConfig config)
+        {
+            _configDefaults = config;
+            _menuKey = (KeyCode)Enum.Parse(typeof(KeyCode), config.MenuKeybind, true);
+            _menuKeyPreference.Value = _menuKey.ToString();
+            _verboseDebugPreference.Value = config.VerboseDebugLogging;
+            _keybindOverlayPreference.Value = config.KeybindOverlay;
+            _doubleSpaceFlyPreference.Value = config.DoubleSpaceFlyHotkey;
+            _selectedTab = Enum.Parse<MenuTab>(config.StartupTab, true);
+            DebugLogService.Instance.SetVerbose(config.VerboseDebugLogging);
+            KeybindOverlayService.Instance.SetEnabled(config.KeybindOverlay);
+            KeybindOverlayService.Instance.SetMenuKey(_menuKey.ToString());
+            FlyingService.Instance.SetDoubleSpaceHotkeyEnabled(config.DoubleSpaceFlyHotkey);
+            FlyingService.Instance.SetSpeed(config.FlySpeed);
+            ItemService.Instance.UseGameStackLogic = config.UseGameStackLogic;
+            ItemService.Instance.SetClothingColorKey(config.ClothingColor);
+            ItemService.Instance.SetQualityIndex(config.ItemQuality);
+            _itemsState.QualityIndex = config.ItemQuality;
+            _itemsState.SpawnQuantity = config.SpawnQuantity;
+            var player = PlayerCheatService.Instance;
+            player.GodMode = config.GodMode; player.InfiniteStamina = config.InfiniteStamina;
+            player.InfiniteAmmo = config.InfiniteAmmo; player.NeverWanted = config.NeverWanted;
+            player.BottomlessTrashGrabber = config.BottomlessTrashGrabber; player.SpeedBoost = config.SpeedBoost;
+            player.SpeedMultiplier = config.SpeedMultiplier; player.PlayerScale = config.PlayerScale;
+            player.JumpMultiplier = config.JumpMultiplier; player.GravityMultiplier = config.GravityMultiplier;
+            CameraService.Instance.SetDistance(config.CameraDistance);
+            CameraService.Instance.SetHeight(config.CameraHeight);
+            CameraService.Instance.SetShoulderOffset(config.CameraShoulder);
+            if (PerformanceService.Instance.LightRangeScale != config.LightRangeScale)
+                PerformanceService.Instance.SetLightRangeScale(config.LightRangeScale);
+            if (PerformanceService.Instance.ReflectionInterval != config.ReflectionInterval)
+                PerformanceService.Instance.SetReflectionInterval(config.ReflectionInterval);
+            if (!config.FlyEnabled) FlyingService.Instance.SetEnabled(false);
+            if (!config.ThirdPerson) CameraService.Instance.ToggleThirdPerson(false, _menuInputCaptured);
+            _pendingConfigWorldDefaults = config.FlyEnabled || config.ThirdPerson;
         }
 
         private void SetKeybind(string key)
@@ -1680,30 +1823,7 @@ namespace NugzzMenu
 
         private static Type FindLoadedType(string fullName)
         {
-            if (string.IsNullOrEmpty(fullName))
-                return null;
-
-            try
-            {
-                Type direct = Type.GetType(fullName + ", S1API", false);
-                if (direct != null)
-                    return direct;
-            }
-            catch { }
-
-            try
-            {
-                Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
-                for (int i = 0; i < assemblies.Length; i++)
-                {
-                    Type type = assemblies[i]?.GetType(fullName, false);
-                    if (type != null)
-                        return type;
-                }
-            }
-            catch { }
-
-            return null;
+            return S1ApiService.Instance.FindLoadedType(fullName);
         }
     }
 }

@@ -9,6 +9,7 @@ namespace NugzzMenu.UI
             RelationshipService service)
         {
             service.EnsureFresh();
+            DrawGroups(ref y, w, buttonStyle, boxStyle, service);
 
             DrawHeader(4f, y, w, "NPC / CLIENT RELATIONSHIPS");
             y += 20f;
@@ -107,6 +108,42 @@ namespace NugzzMenu.UI
                 "Relationship edits use the game's network-aware setters and are host-only in multiplayer.",
                 LabelCategory.Status, true);
             y += 40f;
+        }
+
+        private static void DrawGroups(ref float y, float w, GUIStyle buttonStyle,
+            GUIStyle boxStyle, RelationshipService service)
+        {
+            var groups = SpecialCustomerService.Instance;
+            groups.EnsureFresh();
+            DrawHeader(4f, y, w, "VISITING CUSTOMER GROUPS");
+            y += 20f;
+            int rows = (groups.Groups.Count + 1 + 2) / 3;
+            float height = rows * 28f + 110f;
+            GUIFit.Panel(new Rect(0f, y, w, height), boxStyle);
+            float width = (w - 24f) / 3f;
+            string selectedName = null;
+            for (int i = 0; i <= groups.Groups.Count; i++)
+            {
+                string id = i == 0 ? string.Empty : groups.Groups[i - 1].Id;
+                string label = i == 0 ? "All people" : groups.Groups[i - 1].Name + " (" + groups.Groups[i - 1].Members.Count + ")";
+                bool selected = id == service.GroupFilter;
+                if (selected && i > 0) selectedName = groups.Groups[i - 1].Name;
+                if (GUIFit.Button(new Rect(6f + (i % 3) * (width + 6f), y + 6f + (i / 3) * 28f,
+                    width, 24f), (selected ? "> " : string.Empty) + label, buttonStyle))
+                    service.SetGroupFilter(id);
+            }
+            float actionY = y + 6f + rows * 28f;
+            bool enabled = GUI.enabled;
+            GUI.enabled = enabled && selectedName != null &&
+                (!LobbyService.Instance.IsInLobby() || LobbyService.Instance.IsHost());
+            if (GUIFit.Button(new Rect(6f, actionY, w - 12f, 24f), selectedName == null ?
+                "Select a group to queue for tomorrow" : "Queue " + selectedName + " for tomorrow", buttonStyle))
+                groups.QueueForTomorrow(service.GroupFilter);
+            GUI.enabled = enabled;
+            DrawLabel(8f, actionY + 28f, w - 16f, 34f,
+                "Host only. Replaces the current group schedule; visitors arrive after sleep.", LabelCategory.Subtitle, true);
+            DrawLabel(8f, actionY + 65f, w - 16f, 32f, groups.Status, LabelCategory.Status, true);
+            y += height + 8f;
         }
 
         private static void DrawCustomerControls(ref float y, float w, GUIStyle buttonStyle,

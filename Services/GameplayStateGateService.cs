@@ -1,7 +1,7 @@
 using System.Reflection;
 using HarmonyLib;
 using Il2CppScheduleOne;
-using Il2CppScheduleOne.AvatarFramework.Customization;
+using Il2CppScheduleOne.CharacterCreator;
 using Il2CppScheduleOne.UI;
 
 namespace NugzzMenu.Services
@@ -176,13 +176,14 @@ namespace NugzzMenu.Services
                 return true;
             }
 
-            if (NativeActivityGateService.Instance.TryGetBlockReason(out reason))
+            if (NativeActivityGateService.Instance.TryGetModBlockReason(out reason))
                 return true;
 
             // Once Nugzz is open it intentionally unlocks and shows the cursor.
             // Re-evaluating the pointer-based screen gate at that point would
             // mistake Nugzz itself for a native interface and close it again.
-            if (!MenuOpen && IsExclusiveGameScreenActive())
+            if (!MenuOpen && !NativeActivityGateService.Instance.IsPhoneCharacterScreenOpen &&
+                IsExclusiveGameScreenActive())
             {
                 reason = "another game interface is active";
                 return true;
@@ -199,6 +200,10 @@ namespace NugzzMenu.Services
 
             return IsExclusiveGameScreenActive();
         }
+
+        public bool AreMenuHotkeysBlocked() =>
+            GUIFit.IsTextFieldActive || ConsoleAutocompleteService.Instance.IsTyping ||
+            IsModControlBlocked(out _);
 
         private static bool IsExclusiveGameScreenActive()
         {

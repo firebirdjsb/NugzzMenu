@@ -22,7 +22,7 @@ namespace NugzzMenu.UI
             Action<bool> setGameStackLogic, Action<bool> setVerboseDebugLogging,
             Action<bool> setKeybindOverlay,
             SaveManagementService saveService, DebugTestRoomService testRoomService,
-            Action onResetAll)
+            Action onResetAll, Action saveConfig, Action loadConfig)
         {
             GUIFit.Panel(new Rect(0f, y, w, 100f), boxStyle);
             float rowY = y + 16f;
@@ -45,6 +45,25 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Label));
 
             y = rowY + 40f;
+            DrawHeader(4f, y, w, "STARTUP DEFAULTS / CONFIG");
+            y += 20f;
+            GUIFit.Panel(new Rect(0f, y, w, 100f), boxStyle);
+            float halfConfig = (w - 18f) / 2f;
+            if (GUIFit.Button(new Rect(6f, y + 6f, halfConfig, 24f), "Save current as defaults", buttonStyle))
+                saveConfig?.Invoke();
+            if (GUIFit.Button(new Rect(12f + halfConfig, y + 6f, halfConfig, 24f), "Load / reload config", buttonStyle))
+                loadConfig?.Invoke();
+            DrawLabel(8f, y + 34f, w - 16f, 28f,
+                MenuConfigService.FileName + " beside NugzzMenu.dll. Editable JSON; reload after editing.", LabelCategory.Subtitle, true);
+            DrawLabel(8f, y + 65f, w - 16f, 30f, MenuConfigService.Instance.Status, LabelCategory.Status, true);
+            y += 108f;
+            DrawHeader(4f, y, w, "GAME UPDATE CONTENT");
+            y += 20f;
+            GUIFit.Panel(new Rect(0f, y, w, 82f), boxStyle);
+            if (GUIFit.Button(new Rect(6f, y + 6f, w - 12f, 24f), "Audit 0.4.7 content registrations", buttonStyle))
+                UpdateContentAuditService.Run();
+            DrawLabel(8f, y + 36f, w - 16f, 40f, UpdateContentAuditService.Status, LabelCategory.Status, true);
+            y += 90f;
 
             TMPHybridService.Instance.Label(4f, y, w, 18f, "KEYBIND",
                 GUISystemService.Instance.GetColorForCategory(LabelCategory.Header),
@@ -347,13 +366,13 @@ namespace NugzzMenu.UI
                 GUISystemService.Instance.GetStyleForCategory(LabelCategory.Header));
         }
 
-        private static void DrawLabel(float x, float y, float w, float h, string text, LabelCategory category)
+        private static void DrawLabel(float x, float y, float w, float h, string text, LabelCategory category, bool wordWrap = false)
         {
             TMPHybridService.Instance.Label(x, y, w, h, text ?? "",
                 GUISystemService.Instance.GetColorForCategory(category),
                 GUISystemService.Instance.GetFontSizeForCategory(category),
                 GUISystemService.Instance.GetAlignmentForCategory(category),
-                GUISystemService.Instance.GetStyleForCategory(category));
+                GUISystemService.Instance.GetStyleForCategory(category), wordWrap);
         }
 
         private static string Trim(string value, int maxLength)

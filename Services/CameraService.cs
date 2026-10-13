@@ -423,7 +423,6 @@ namespace NugzzMenu.Services
                 if (player != null)
                 {
                     player.SetThirdPersonMeshesVisibility(visible);
-                    player.SetVisibleToLocalPlayer(visible);
                     if (player.Avatar != null)
                         player.Avatar.SetVisible(visible);
                     SetLocalAvatarRenderers(player, true);
@@ -454,7 +453,6 @@ namespace NugzzMenu.Services
                     if (player != null)
                     {
                         player.SetThirdPersonMeshesVisibility(false);
-                        player.SetVisibleToLocalPlayer(false);
                         if (player.Avatar != null)
                             player.Avatar.SetVisible(false);
                         SetLocalAvatarRenderers(player, false);
@@ -483,7 +481,6 @@ namespace NugzzMenu.Services
                 if (player != null)
                 {
                     player.SetThirdPersonMeshesVisibility(false);
-                    player.SetVisibleToLocalPlayer(false);
                     if (player.Avatar != null)
                         player.Avatar.SetVisible(false);
                     SetLocalAvatarRenderers(player, false);
@@ -677,7 +674,6 @@ namespace NugzzMenu.Services
                 return;
 
             player.SetThirdPersonMeshesVisibility(true);
-            player.SetVisibleToLocalPlayer(true);
             if (player.Avatar != null)
                 player.Avatar.SetVisible(true);
             HideFirstPersonObstructingAvatarRenderers(player);

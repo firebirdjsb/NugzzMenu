@@ -17,6 +17,7 @@ namespace NugzzMenu.UI
         public static void Draw(ref float y, float w, GUIStyle buttonStyle, GUIStyle boxStyle,
             VehicleService service)
         {
+            MotorcycleRenderer.Draw(ref y, w, buttonStyle, boxStyle);
             int count = service.GetVehicleCount();
             int selected = service.GetSelectedIndex();
             if (count > 0 && (selected < 0 || selected >= count))

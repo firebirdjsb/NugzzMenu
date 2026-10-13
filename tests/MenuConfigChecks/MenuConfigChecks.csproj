@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net6.0</TargetFramework><CheckEolTargetFramework>false</CheckEolTargetFramework><ImplicitUsings>enable</ImplicitUsings><EnableNETAnalyzers>false</EnableNETAnalyzers></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Services/MenuConfig.cs" Link="MenuConfig.cs" />
+    <Compile Include="../../Services/MenuConfigService.cs" Link="MenuConfigService.cs" />
+  </ItemGroup>
+</Project>

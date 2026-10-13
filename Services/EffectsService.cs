@@ -112,6 +112,12 @@ namespace NugzzMenu.Services
                 }
             }
 
+            // Run after every cleanup, including partial native failures.
+            var players = Player.PlayerList;
+            if (players == null || players.Count == 0)
+            { try { EffectAppearanceResetService.RestoreSkin(Player.Local); } catch { } }
+            else foreach (Player player in players)
+                try { EffectAppearanceResetService.RestoreSkin(player); } catch { }
             NotificationService.Instance.Status("Cleared visible FX (" + cleared + ")");
         }
 

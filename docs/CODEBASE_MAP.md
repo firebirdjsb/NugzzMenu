@@ -17,11 +17,14 @@ behavior. Keep it updated when adding major services, tabs, or patches.
 | --- | --- |
 | `UI/CheatsTabRenderer.cs` | God mode, stamina, ammo, wanted status, fly, jump/gravity, player scale, third-person camera, teleport helpers. |
 | `UI/MoneyTabRenderer.cs` | Cash, online balance, and XP buttons. |
-| `UI/TimeTabRenderer.cs` | Time speed, time-of-day, plant growth, drying rack completion. |
+| `UI/TimeTabRenderer.cs` | Time speed, time-of-day, weather controls, plant growth, drying rack completion. |
 | `UI/VehicleTabRenderer.cs` | Vehicle selection, spawning, current vehicle tuning, siren/headlight controls. |
+| `UI/MotorcycleRenderer.cs` | Host spawn and unoccupied removal controls for session-only rideable motorcycles. |
 | `UI/PropertiesTabRenderer.cs` | Worker/property management, RV controls, Benzie Manor access. |
 | `UI/ItemsTabRenderer.cs` | Item browser, search/filter, quality, quantity, item spawn actions. |
+| `UI/ClothingColorPicker.cs` | Native/default clothing selection, 27 tint swatches, tone shortcuts, and native finish/pattern spawns. |
 | `UI/LobbyTabRenderer.cs` | Lobby player list, teleport/ragdoll, lobby-visible FX. |
+| `UI/LocalAnimationRenderer.cs` | Eight local-player NPC animation actions, active status and Stop within Local Effect. |
 | `UI/PerformanceTabRenderer.cs` | Frame pacing, lights, reflections, LOD, shadows, diagnostics, and performance presets. |
 | `UI/RelationshipsTabRenderer.cs` | Searchable NPC/client list and relationship/customer editing controls. |
 | `UI/QuestTabRenderer.cs` | Cached quest list, objective details, inspection, and manual quest controls. |
@@ -42,15 +45,30 @@ service.
 | `Services/TMPHybridService.cs` | Text drawing bridge used by the custom UI. |
 | `Services/ManagerCacheService.cs` | Cached access to frequently used game managers and local player references. |
 | `Services/CompatibilityService.cs` | Runtime compatibility patches and log-spam filters for game/S1API differences. |
+| `Services/S1ApiService.cs` | Public S1API item/NPC/weather discovery, time changes, runtime version reporting, and optional API lookup. |
 | `Services/KeybindOverlayService.cs` | Cached, low-cost in-game keybind HUD. |
 | `Services/PerformanceService.cs` | FPS/VSync, decorative lights, reflections, LOD, shadows, diagnostics, and conservative presets. |
-| `Services/RelationshipService.cs` | Cached NPC/client discovery and host-guarded relationship/customer mutations. |
+| `Services/RelationshipService.cs` | Live NPC/client discovery, including visiting and S1API NPCs, and host-guarded relationship/customer mutations. |
+| `Services/SpecialCustomerService.cs` | Native visiting-group rosters, inactive visitor metadata, and host-only next-day scheduling. |
+| `Services/MenuConfig.cs`, `Services/MenuConfigService.cs` | Validated startup preferences beside the mod DLL, explicit reload/save, and atomic replacement with backup. |
+| `Services/UpdateContentAuditService.cs` | Read-only loaded-save verification of new item, roster, cosmetic, teleport, and business registrations. |
 
 ## Gameplay Services
 
 | File | Responsibility |
 | --- | --- |
 | `Services/PlayerCheatService.cs` | God mode, stamina, ammo, speed boost, player scale, lethal kill handling, related patches. |
+| `Services/LocalAnimationCatalog.cs`, `LocalAnimationService.cs` | Verified native pose names, local owner RPCs, parameter snapshots, temporary phone handler and cleanup. |
+| `Services/LocalAnimationNetworkService.cs` | Native solo/server authority, owner-checked requests, host approval, matching readiness, trusted observer states and snapshots. |
+| `Services/LocalAnimationVisualService.cs` | Temporary native chair/laptop/motorcycle meshes, whole-avatar seat alignment, once-per-frame pose evaluation, wheel spin and cleanup. |
+| `Services/LocalBodyAnimationService.cs` | Authored clothed player-joint curves, current appearance attachment bindings, fixed snapshots and pose restoration. |
+| `Services/LocalAnimationRenderService.cs` | Built-in and URP camera callbacks applying final body, prop-seat and rider poses; delegate lifecycle cleanup. |
+| `Services/LocalAnimationPlacementService.cs` | Ground and current attachment hip discovery, safe child-avatar root alignment and native seat-facing compensation. |
+| `Services/NativeVisualCloneService.cs` | Render-only native hierarchy copying and skinned-mesh bone remapping. |
+| `Services/MotorcycleService.cs`, `MotorcycleChassisSnapshot.cs` | Session-only native chassis conversion, riding interaction, saddle poses and reversible clone settings. |
+| `Services/MotorcycleNetworkService.cs` | Trusted host native-object tags, matching peer readiness, bounded pending attachments and observer snapshots. |
+| `Services/NeverWantedService.cs` | Local host-player crime/detection/pursuit/search/combat guards and cleanup of active police AI. |
+| `Services/NativeActivityGateService.cs` | Native UI ownership gates and closed-phone Character gameplay-state cleanup. |
 | `Services/FlyingService.cs` | Player fly mode, optional double-space hotkey, and driven-vehicle flight. |
 | `Services/CameraService.cs` | Public camera facade, interaction raycasts, and camera transition coordination. |
 | `Services/ThirdPersonCameraService.cs` | Over-the-shoulder camera ownership, collision, input, and mode guards. |
@@ -60,11 +78,14 @@ service.
 | `Services/VehicleCollisionService.cs` | Player/vehicle collision adjustments so player hitboxes do not push vehicle physics. |
 | `Services/VehicleService.cs` | Vehicle cache, vehicle spawn paths, RV repair/blow-up, Benzie access, sirens, current vehicle tuning. |
 | `Services/ItemService.cs` | Item cache, filtering, quality-aware spawning, pending spawn queue, inventory helpers. |
+| `Services/InteractionPromptDisplayService.cs` | Current-frame custom prompt presentation after the native equipped-tool hide pass; preserves native display intent. |
+| `Services/GrowPromptOwnershipService.cs` | Current-frame grow-target message ownership and suppression of conflicting native display writes. |
 | `Services/EconomyService.cs` | Cash and online balance adjustments. |
 | `Services/GameManagerService.cs` | Local player, player health, crime data, and XP helpers. |
 | `Services/TimeManagerService.cs` | Host-guarded time speed and time-of-day changes. |
+| `Services/WeatherService.cs` | Host-guarded weather presets and confirmed lightning events. |
 | `Services/WorldObjectService.cs` | Plant and drying rack world helpers. |
-| `Services/TeleportService.cs` | Save/load position helper. |
+| `Services/TeleportService.cs` | Save/load position helper and native console/property/POI teleport catalog. |
 | `Services/LobbyService.cs` | Host checks, lobby player list, teleport/ragdoll helpers. |
 | `Services/EffectsService.cs` | Lobby-visible FX through vanilla product/effect paths. |
 | `Services/PropertyWorkerService.cs` | Owned property labels, employee transfer/hire/fire rules, unsupported worker-capacity checks. |
@@ -123,6 +144,26 @@ logic into the matching service and call that service from the patch.
 | New menu tab controls | Existing `UI/*TabRenderer.cs`, or a new renderer if it is a new tab. |
 | New gameplay operation | New or existing `Services/*Service.cs`. |
 | New Harmony patch | Same service file if tiny, or a nearby patch file if there are multiple related patches. |
-| New setting | `SettingsState`, `SettingsTabRenderer`, Melon preferences in `Core` if persistent. |
+| New setting | `SettingsState`, `SettingsTabRenderer`, validated `MenuConfig` startup defaults, and compatibility Melon preferences in `Core`. |
 | New release docs | `RELEASE_NOTES_vX.Y.Z.md` and README current release section. |
 | New contributor docs | `docs/`. |
+
+## Update Verification
+
+- `scripts/update_s1api.py` verifies the locked upstream ZIP and stages only the
+  IL2CPP dependency pair without installing it.
+- `scripts/audit_update_assets.py` reads serialized game assets against
+  `docs/0.4.7-content.json`; UnityPy is an isolated analysis dependency.
+- `tests/GameApiCompatibilityChecks` audits compiled bindings and static/dynamic
+  Harmony targets against the supplied metadata dump and public S1API.
+- `tests/AccessoryFailureChecks`, `tests/InteractionPromptFrameChecks`,
+  `tests/MenuConfigChecks`, and `tests/NativeStateChecks` cover the narrow
+  exception, display, config, and phone/police/prompt policies. Fixtures do not
+  replace in-game visual or multiplayer QA.
+- `tests/ClothingPickerChecks` checks the real generated GUI overload call
+  graph and repeated picker rendering/input/tint restoration with a narrow
+  fixture, including a before-fix DLL as the failure baseline.
+
+Test packages may include the pinned official S1API mod/loader with its
+license, an example config, and small audit reports. Exclude game assets,
+dumps, generated interop references, and prior DLL backups.

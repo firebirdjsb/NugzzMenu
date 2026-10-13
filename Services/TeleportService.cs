@@ -93,6 +93,7 @@ namespace NugzzMenu.Services
             _destinations.Clear();
 
             AddStaticFallbacks();
+            AddNativeTeleportPoints();
             AddProperties();
             AddBusinesses();
             AddDeliveryLocations();
@@ -204,6 +205,20 @@ namespace NugzzMenu.Services
             Add("Location", "Current Room Origin", DebugTestRoomService.Instance.IsLoaded
                 ? FindObjectPosition("Nugzz_DebugTestRoom", Vector3.zero)
                 : Vector3.zero);
+        }
+
+        private void AddNativeTeleportPoints()
+        {
+            try
+            {
+                Transform points = Il2CppScheduleOne.Console.Instance?.TeleportPointsContainer;
+                for (int i = 0; points != null && i < points.childCount; i++)
+                {
+                    Transform point = points.GetChild(i);
+                    if (point != null) Add("Location", point.name, point.position);
+                }
+            }
+            catch { }
         }
 
         private void AddProperties()

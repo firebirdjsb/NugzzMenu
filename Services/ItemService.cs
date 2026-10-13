@@ -31,11 +31,13 @@ namespace NugzzMenu.Services
         private int _itemsPerPage = 15;
         private string _searchText = "";
         private int _qualityIndex = 2;
-        private int _clothingColorIndex;
+        private int _clothingColorIndex = -1;
         private int _mixtureTypeFilter;
         private ProductManager _trackedProductManager;
         private int _trackedCreatedProductCount = -1;
         private float _nextMixtureRefreshTime;
+        private float _nextRegistryRefreshTime;
+        private long _registrySignature;
         private string _selectedMixtureId = "";
         private readonly Dictionary<string, MixtureMetadata> _createdMixtures =
             new Dictionary<string, MixtureMetadata>(StringComparer.OrdinalIgnoreCase);
@@ -54,7 +56,7 @@ namespace NugzzMenu.Services
             public string ItemId;
             public int Quantity;
             public int QualityIndex;
-            public EClothingColor ClothingColor;
+            public EClothingColor? ClothingColor;
         }
 
         private static readonly EClothingColor[] ClothingColors =
@@ -302,16 +304,25 @@ namespace NugzzMenu.Services
                 }
 
                 ProductManager productManager = ManagerCacheService.Instance.ProductManager;
+                List<string> apiItemIds = S1ApiService.Instance.GetRegisteredItemIds();
                 var products = productManager?.AllProducts;
                 int productCount = products != null ? products.Count : 0;
                 int knownCount = KnownCatalogItems != null ? KnownCatalogItems.Length : 0;
-                int count = allItems.Count + productCount + knownCount;
+                int count = allItems.Count + apiItemIds.Count + productCount + knownCount;
                 _itemIds = new string[count];
                 _itemNames = new string[count];
                 _itemCategories = new string[count];
                 _itemDefinitions = new ItemDefinition[count];
                 _itemCount = 0;
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // S1API supplies canonical IDs for both vanilla and mod-registered
+                // content. Keep native definitions for quality and clothing factories.
+                for (int i = 0; i < apiItemIds.Count; i++)
+                {
+                    try { AddCatalogItem(registry._GetItem(apiItemIds[i], false), seen); }
+                    catch (Exception ex) { DebugLogService.Instance.VerboseException("S1API item lookup failed", ex); }
+                }
 
                 for (int i = 0; i < count; i++)
                 {
@@ -347,6 +358,8 @@ namespace NugzzMenu.Services
                 SyncCreatedMixtures(productManager, true);
 
                 SortItemCache();
+                _registrySignature = GetRegistrySignature(registry, allItems);
+                _nextRegistryRefreshTime = Time.unscaledTime + 2f;
                 _isCached = true;
                 ApplyFilter();
                 UnityEngine.Debug.Log("[Nugzz] Loaded " + _itemCount + " items (" + allItems.Count + " registry, " + productCount + " products, " + knownCount + " known)");
@@ -392,7 +405,7 @@ namespace NugzzMenu.Services
 
         private void AddCatalogItem(ItemDefinition definition, HashSet<string> seen)
         {
-            string id = definition?.name;
+            string id = GetDefinitionId(definition);
             if (string.IsNullOrEmpty(id) || IsBlockedCatalogItem(id) ||
                 !CanCatalogDefinitionSpawn(definition))
             {
@@ -433,7 +446,7 @@ namespace NugzzMenu.Services
             for (int i = 0; i < products.Count; i++)
             {
                 ProductDefinition product = products[i];
-                string id = product?.name;
+                string id = GetDefinitionId(product);
                 if (string.IsNullOrEmpty(id) || IsBlockedCatalogItem(id))
                     continue;
 
@@ -539,8 +552,7 @@ namespace NugzzMenu.Services
             if (_trackedProductManager == null ||
                 _trackedProductManager.Pointer != manager.Pointer)
             {
-                ClearCache();
-                InitializeCache();
+                RebuildCachePreservingView();
                 return;
             }
 
@@ -556,6 +568,58 @@ namespace NugzzMenu.Services
                 ApplyFilter();
                 NotificationService.Instance.Status("Created mixtures updated");
             }
+        }
+
+        private void RefreshRegisteredItems()
+        {
+            if (!_isCached || Time.unscaledTime < _nextRegistryRefreshTime) return;
+            _nextRegistryRefreshTime = Time.unscaledTime + 2f;
+            try
+            {
+                var registry = ManagerCacheService.Instance.Registry;
+                var items = registry?.GetAllItems();
+                if (registry == null || items == null) return;
+                if (GetRegistrySignature(registry, items) != _registrySignature)
+                    RebuildCachePreservingView();
+            }
+            catch (Exception ex) { DebugLogService.Instance.VerboseException("Item registry refresh failed", ex); }
+        }
+
+        private static long GetRegistrySignature(Registry registry,
+            Il2CppSystem.Collections.Generic.List<ItemDefinition> definitions)
+        {
+            // Native pointers are used only as object identities; no memory is read
+            // or written through them. Detect replacements even when count is unchanged.
+            long signature = registry.Pointer.ToInt64();
+            unchecked
+            {
+                for (int i = 0; i < definitions.Count; i++)
+                {
+                    var definition = definitions[i];
+                    if (definition == null) continue;
+                    signature = signature * 31 + definition.Pointer.ToInt64();
+                    signature = signature * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(GetDefinitionId(definition) ?? "");
+                }
+            }
+            return signature;
+        }
+
+        private void RebuildCachePreservingView()
+        {
+            string search = _searchText;
+            string mixture = _selectedMixtureId;
+            int page = _pageIndex;
+            ClearCache();
+            _searchText = search;
+            _selectedMixtureId = mixture;
+            InitializeCache();
+            SetPageIndex(page);
+        }
+
+        private static string GetDefinitionId(ItemDefinition definition)
+        {
+            if (definition == null) return null;
+            return string.IsNullOrWhiteSpace(definition.ID) ? definition.name : definition.ID;
         }
 
         private int FindCatalogIndex(string normalizedId)
@@ -626,7 +690,7 @@ namespace NugzzMenu.Services
             if (definition == null)
                 return false;
 
-            string key = NormalizeAliasKey(definition.name);
+            string key = NormalizeAliasKey(GetDefinitionId(definition));
             string alias = GetKnownAlias(key);
             if (!string.IsNullOrEmpty(alias))
                 key = alias;
@@ -634,6 +698,8 @@ namespace NugzzMenu.Services
                 return true;
 
             if (TryCastDefinition<ProductDefinition>(definition) != null)
+                return true;
+            if (TryCastDefinition<ClothingDefinition>(definition) != null)
                 return true;
             if (TryCastDefinition<StorableItemDefinition>(definition) != null)
                 return true;
@@ -697,7 +763,45 @@ namespace NugzzMenu.Services
 
         public string GetClothingColorLabel()
         {
-            return HumanizeItemId(ClothingColors[_clothingColorIndex].ToString());
+            return _clothingColorIndex < 0 ? "Native / No color" :
+                HumanizeItemId(ClothingColors[_clothingColorIndex].ToString());
+        }
+
+        public string ClothingColorKey => _clothingColorIndex < 0 ? "Native" : ClothingColors[_clothingColorIndex].ToString();
+        public int ClothingColorCount => ClothingColors.Length;
+        public bool IsClothingColorSelected(int index) => _clothingColorIndex == index;
+        public string GetClothingColorName(int index) => HumanizeItemId(ClothingColors[index].ToString());
+        public Color GetClothingColorSwatch(int index) => ClothingColorExtensions.GetActualColor(ClothingColors[index]);
+        public void SelectClothingColor(int index) => _clothingColorIndex = Mathf.Clamp(index, -1, ClothingColors.Length - 1);
+        public void SetClothingColorKey(string key)
+        {
+            _clothingColorIndex = -1;
+            for (int i = 0; i < ClothingColors.Length; i++)
+                if (string.Equals(ClothingColors[i].ToString(), key, StringComparison.OrdinalIgnoreCase))
+                    _clothingColorIndex = i;
+        }
+
+        public bool TryFindItem(string name, out string id)
+        {
+            string key = NormalizeItemKey(name);
+            for (int i = 0; i < _itemCount; i++)
+            {
+                if (NormalizeItemKey(_itemIds[i]) != key && NormalizeItemKey(_itemNames[i]) != key) continue;
+                id = _itemIds[i];
+                return true;
+            }
+            id = null;
+            return false;
+        }
+
+        public void SpawnNativeClothing(string name, int quantity)
+        {
+            if (!TryFindItem(name, out string id))
+            {
+                NotificationService.Instance.Status("Native item unavailable: " + name);
+                return;
+            }
+            EnqueueItem(id, quantity, _qualityIndex, null);
         }
 
         public bool IsMixtureFilterSelected =>
@@ -842,7 +946,7 @@ namespace NugzzMenu.Services
             for (int i = 0; i < products.Count; i++)
             {
                 ProductDefinition product = products[i];
-                if (product != null && NormalizeAliasKey(product.name) == wanted)
+                if (product != null && NormalizeAliasKey(GetDefinitionId(product)) == wanted)
                     return product;
             }
             return null;
@@ -870,13 +974,13 @@ namespace NugzzMenu.Services
             if (recipes == null || product == null)
                 return;
 
-            string productId = NormalizeAliasKey(product.name);
+            string productId = NormalizeAliasKey(GetDefinitionId(product));
             for (int i = recipes.Count - 1; i >= 0; i--)
             {
                 ItemDefinition output = null;
                 try { output = recipes[i]?.Product?.Item; } catch { }
                 if (output != null && (output.Pointer == product.Pointer ||
-                    NormalizeAliasKey(output.name) == productId))
+                    NormalizeAliasKey(GetDefinitionId(output)) == productId))
                 {
                     recipes.RemoveAt(i);
                 }
@@ -901,9 +1005,8 @@ namespace NugzzMenu.Services
             if (ClothingColors.Length == 0)
                 return;
 
-            _clothingColorIndex = (_clothingColorIndex + direction) % ClothingColors.Length;
-            if (_clothingColorIndex < 0)
-                _clothingColorIndex += ClothingColors.Length;
+            _clothingColorIndex = ((_clothingColorIndex + 1 + direction) % (ClothingColors.Length + 1) +
+                ClothingColors.Length + 1) % (ClothingColors.Length + 1) - 1;
         }
 
         public void ApplyFilter()
@@ -1001,7 +1104,12 @@ namespace NugzzMenu.Services
             if (qualityIndex < 0 || qualityIndex > 4)
                 qualityIndex = _qualityIndex;
 
-            EClothingColor clothingColor = ClothingColors[_clothingColorIndex];
+            EClothingColor? clothingColor = _clothingColorIndex < 0 ? null : ClothingColors[_clothingColorIndex];
+            EnqueueItem(itemId, quantity, qualityIndex, clothingColor);
+        }
+
+        private void EnqueueItem(string itemId, int quantity, int qualityIndex, EClothingColor? clothingColor)
+        {
 
             if (UseGameStackLogic && quantity > 1)
             {
@@ -1032,6 +1140,7 @@ namespace NugzzMenu.Services
 
         public void ProcessPendingSpawns()
         {
+            RefreshRegisteredItems();
             RefreshCreatedMixtures();
 
             const int maxPerFrame = 4;
@@ -1049,7 +1158,7 @@ namespace NugzzMenu.Services
             string itemId,
             int quantity,
             int qualityIndex,
-            EClothingColor clothingColor)
+            EClothingColor? clothingColor)
         {
             if (string.IsNullOrEmpty(itemId) || quantity <= 0)
                 return;
@@ -1193,7 +1302,7 @@ namespace NugzzMenu.Services
                 if (slots == null)
                     return false;
 
-                string wanted = NormalizeItemKey(instance.Definition?.name);
+                string wanted = NormalizeItemKey(GetDefinitionId(instance.Definition));
 
                 for (int i = 0; i < slots.Count; i++)
                 {
@@ -1203,7 +1312,7 @@ namespace NugzzMenu.Services
                         continue;
 
                     string existingId = null;
-                    try { existingId = existing.Definition?.name; } catch { }
+                    try { existingId = GetDefinitionId(existing.Definition); } catch { }
                     if (NormalizeItemKey(existingId) != wanted)
                         continue;
 
@@ -1306,20 +1415,23 @@ namespace NugzzMenu.Services
             if (!string.IsNullOrEmpty(alias))
                 wanted = alias;
 
+            try
+            {
+                var direct = registry._GetItem(requestedId, false);
+                if (direct != null)
+                {
+                    resolvedId = GetDefinitionId(direct);
+                    return direct;
+                }
+            }
+            catch { }
+
             ProductDefinition product = ResolveProductDefinition(wanted, out string productId);
             if (product != null)
             {
                 resolvedId = productId;
                 return product;
             }
-
-            try
-            {
-                var direct = registry._GetItem(requestedId, false);
-                if (direct != null)
-                    return direct;
-            }
-            catch { }
 
             for (int i = 0; i < _itemCount; i++)
             {
@@ -1368,10 +1480,11 @@ namespace NugzzMenu.Services
                 for (int i = 0; i < products.Count; i++)
                 {
                     ProductDefinition product = products[i];
-                    if (product == null || string.IsNullOrEmpty(product.name))
+                    string id = GetDefinitionId(product);
+                    if (string.IsNullOrEmpty(id))
                         continue;
 
-                    string key = NormalizeAliasKey(product.name);
+                    string key = NormalizeAliasKey(id);
                     string alias = GetKnownAlias(key);
                     if (!string.IsNullOrEmpty(alias))
                         key = alias;
@@ -1379,7 +1492,7 @@ namespace NugzzMenu.Services
                     if (key != wanted)
                         continue;
 
-                    resolvedId = product.name;
+                    resolvedId = id;
                     DebugLogService.Instance.Verbose("Resolved product definition from ProductManager: " + resolvedId + " type=" + product.GetType().Name);
                     return product;
                 }
@@ -1682,7 +1795,7 @@ namespace NugzzMenu.Services
                             continue;
 
                         snapshot[i].HasItem = true;
-                        snapshot[i].ItemKey = NormalizeItemKey(instance.Definition?.name);
+                        snapshot[i].ItemKey = NormalizeItemKey(GetDefinitionId(instance.Definition));
                         snapshot[i].Quantity = slots[i].Quantity;
                         QualityItemInstance qi = TryGetQualityInstance(instance);
                         if (qi != null)
@@ -1722,7 +1835,7 @@ namespace NugzzMenu.Services
                         if (qi == null)
                             continue;
 
-                        string slotKey = NormalizeItemKey(instance.Definition?.name);
+                        string slotKey = NormalizeItemKey(GetDefinitionId(instance.Definition));
                         if (slotKey != wanted)
                             continue;
 
@@ -1803,7 +1916,7 @@ namespace NugzzMenu.Services
             string itemId,
             int quantity,
             int qualityIndex,
-            EClothingColor clothingColor)
+            EClothingColor? clothingColor)
         {
             if (definition == null || quantity <= 0)
                 return null;
@@ -1816,10 +1929,13 @@ namespace NugzzMenu.Services
                 ClothingDefinition clothingDefinition = TryCastDefinition<ClothingDefinition>(definition);
                 if (clothingDefinition != null)
                 {
-                    EClothingColor resolvedColor = clothingDefinition.Colorable
-                        ? clothingColor
-                        : clothingDefinition.DefaultColor;
-                    instance = new ClothingInstance(clothingDefinition, quantity, resolvedColor);
+                    EClothingColor resolvedColor = clothingDefinition.Colorable && clothingColor.HasValue
+                        ? clothingColor.Value : clothingDefinition.DefaultColor;
+                    // Native defaults preserve patterned and metallic item variants.
+                    // Only the user-selected tint takes the explicit-color path.
+                    instance = clothingColor.HasValue && clothingDefinition.Colorable
+                        ? clothingDefinition.GetDefaultInstance(resolvedColor, quantity)
+                        : clothingDefinition.GetDefaultInstance(quantity);
                     DebugLogService.Instance.Verbose(
                         "Created clothing instance: " + itemId + " color=" + resolvedColor);
                 }
@@ -2115,7 +2231,7 @@ namespace NugzzMenu.Services
                         continue;
 
                     string slotId = null;
-                    try { slotId = instance.Definition?.name; } catch { }
+                    try { slotId = GetDefinitionId(instance.Definition); } catch { }
                     if (NormalizeItemKey(slotId) != wanted)
                         continue;
 
@@ -2166,6 +2282,14 @@ namespace NugzzMenu.Services
             _trackedProductManager = null;
             _trackedCreatedProductCount = -1;
             _nextMixtureRefreshTime = 0f;
+            _nextRegistryRefreshTime = 0f;
+            _registrySignature = 0L;
+        }
+
+        public void ResetForScene()
+        {
+            _pendingSpawns.Clear();
+            ClearCache();
         }
     }
 }

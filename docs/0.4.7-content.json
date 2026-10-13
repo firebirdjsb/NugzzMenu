@@ -1,0 +1,12 @@
+{
+  "groups": {
+    "hippies": ["Amethyst Pidley", "Bodie Hunt", "Charlie Menson", "Dylan Roberts", "Jayne Lemons", "Krystal Bird", "Rose Welsh", "Samantha Spears"],
+    "partybus": ["Brad Chaddington", "Chad Chaddington", "Broc Evans", "Dave Trotter", "Josh Harrington", "Michelle Delacroix", "Stacy Sinclair", "Terry Haines", "Tracy Dupree"],
+    "businessmen": ["Bill Short", "Grant Gainsworth", "Hunter Yieldman", "Johnny Smith", "Micky Boone", "Penny Stockman"],
+    "bikers": ["Bob Harley", "Butch Malone", "Diesel Rodd", "Joey Quinn", "Rick Boggers", "Shane Mulligan", "Timmy Benson", "Vince Knuckles"]
+  },
+  "items": ["blackrubbermat_1x1", "blackrubbermat_2x2", "blackrubbermat_4x4", "persianrug", "goldaviators", "silveraviators", "browlineglasses", "roundtintedglasses", "beerhat", "jethelmet", "panzerhelmet", "paisleybandana", "usabandana", "bluetie", "redtie", "greentie", "browntie", "leatherjacket", "aquatiedyeshirt", "purpletiedyeshirt", "yellowtiedyeshirt", "dirtytanktop", "hotshirt", "moleratsjersey", "tubetop", "meshtop"],
+  "cosmetics": ["batemanhair", "waveyhair", "longwaveyhair", "chevronmustache", "swirlymustache", "beardsoulpatch", "beardbushymoustache", "beardhandlebar", "beardmuttonchops", "beardfull"],
+  "teleports": ["southoverpass", "suburbia", "park", "westville", "casino"],
+  "business": "Hyland Medical"
+}

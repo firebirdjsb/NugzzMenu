@@ -76,7 +76,8 @@ namespace NugzzMenu.Services
                 int hour = Mathf.Clamp(clockTime / 100, 0, 23);
                 int minute = Mathf.Clamp(clockTime % 100, 0, 59);
                 int timeValue = hour * 100 + minute;
-                timeManager.SetTimeAndSync(timeValue);
+                if (!S1ApiService.Instance.TrySetTime(timeValue))
+                    timeManager.SetTime_Server(timeValue);
                 NotificationService.Instance.Status($"Time set: {hour:D2}:{minute:D2}");
                 Debug.Log($"[Nugzz] Set time to {hour:D2}:{minute:D2}");
             }

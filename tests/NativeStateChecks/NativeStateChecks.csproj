@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net6.0</TargetFramework><CheckEolTargetFramework>false</CheckEolTargetFramework><ImplicitUsings>enable</ImplicitUsings><EnableNETAnalyzers>false</EnableNETAnalyzers></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Services/NativeActivityGateService.cs" Link="NativeActivityGateService.cs" />
+    <Compile Include="../../Services/GameplayStateGateService.cs" Link="GameplayStateGateService.cs" />
+    <Compile Include="../../Services/GrowActionService.cs" Link="GrowActionService.cs" />
+    <Compile Include="../../Services/GrowPromptOwnershipService.cs" Link="GrowPromptOwnershipService.cs" />
+    <Compile Include="../../Services/NeverWantedService.cs" Link="NeverWantedService.cs" />
+    <Compile Include="../../Services/NeverWantedNetworkService.cs" Link="NeverWantedNetworkService.cs" />
+  </ItemGroup>
+</Project>

@@ -54,7 +54,8 @@ namespace NugzzMenu.Services
             PlayerCamera playerCamera = PlayerCamera.Instance;
             Player player = ManagerCacheService.Instance.LocalPlayer;
 
-            if (GameplayStateGateService.Instance.IsModControlBlocked(out reason))
+            if (GameplayStateGateService.Instance.IsModControlBlocked(out reason) ||
+                NativeActivityGateService.Instance.TryGetBlockReason(out reason))
                 return false;
 
             if (ManagementClipboardService.Instance.IsActive())
@@ -290,7 +291,7 @@ namespace NugzzMenu.Services
                 {
                     PlayerMovement movement = PlayerMovement.Instance;
                     if (movement != null)
-                        movement.SetPlayerRotation(yawRotation);
+                        movement.SetRotation(yawRotation);
                     else
                         player.transform.rotation = yawRotation;
                 }

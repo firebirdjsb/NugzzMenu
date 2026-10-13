@@ -29,6 +29,11 @@
     <Compile Include="UI\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets\Audio\VTwinIdle.pcm" LogicalName="NugzzMenu.Audio.VTwinIdle.pcm" />
+    <EmbeddedResource Include="Assets\Audio\VTwinLoad.pcm" LogicalName="NugzzMenu.Audio.VTwinLoad.pcm" />
+    <EmbeddedResource Include="Assets\Audio\AUDIO-NOTES.md" LogicalName="NugzzMenu.Audio.AUDIO-NOTES.md" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="Assembly-CSharp">
       <HintPath>net6.0\Assembly-CSharp.dll</HintPath>
     </Reference>
@@ -83,6 +88,15 @@
     </Reference>
     <Reference Include="UnityEngine.VehiclesModule">
       <HintPath>net6.0\UnityEngine.VehiclesModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VFXModule">
+      <HintPath>net6.0\UnityEngine.VFXModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>net6.0\UnityEngine.ParticleSystemModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>net6.0\UnityEngine.AudioModule.dll</HintPath>
     </Reference>
     <Reference Include="Il2CppSystem">
       <HintPath>net6.0\Il2CppSystem.dll</HintPath>

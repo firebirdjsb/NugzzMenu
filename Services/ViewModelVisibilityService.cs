@@ -156,7 +156,6 @@ namespace NugzzMenu.Services
                 return;
 
             try { player.SetThirdPersonMeshesVisibility(visible); } catch { }
-            try { player.SetVisibleToLocalPlayer(visible); } catch { }
             _lastPawnPlayer = player;
             _lastPawnVisible = visible;
         }

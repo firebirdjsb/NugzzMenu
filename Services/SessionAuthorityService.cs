@@ -44,7 +44,7 @@ namespace NugzzMenu.Services
         private const string DecisionVariable = Prefix + "Decision";
         private const string DecisionPrefix = Prefix + "Decision.";
         private const string LegacyAuthorityVariable = "Nugzz.HostAuthority";
-        private const string BuildVersion = "1.0.0";
+        private const string BuildVersion = "1.0.1";
         private const string MinimumCompatibleVersion = "0.9.9R4";
         private const float PulseInterval = 1.5f;
         private const float PulseTimeout = 5f;
@@ -316,6 +316,8 @@ namespace NugzzMenu.Services
             return IsNugzzSessionVariable(variableName) ||
                 string.Equals(variableName, LegacyAuthorityVariable, StringComparison.OrdinalIgnoreCase) ||
                 ShapePrefabService.IsNetworkVariable(variableName) ||
+                string.Equals(variableName, LocalAnimationNetworkService.StateVariable, StringComparison.Ordinal) ||
+                string.Equals(variableName, MotorcycleNetworkService.State, StringComparison.Ordinal) ||
                 PlayerCheatService.IsNetworkScaleVariable(variableName) ||
                 string.Equals(variableName, RelationshipService.RegionUnlockVariable,
                     StringComparison.OrdinalIgnoreCase);

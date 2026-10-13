@@ -24,7 +24,6 @@ namespace NugzzMenu.Services
         private float _gravityMultiplier = 1f;
         private bool _speedBaselineCaptured;
         private float _speedBaseline = 1f;
-        private float _nextWantedClearTime;
         private const string NetworkScaleVariable = "Nugzz.PlayerScale";
         private const string NetworkScaleRequestVariable = "Nugzz.PlayerScale.Request";
         private const float ScaleRebroadcastInterval = 2f;
@@ -70,7 +69,17 @@ namespace NugzzMenu.Services
             set => _gravityMultiplier = Mathf.Clamp(value, 0f, 5f);
         }
         public bool InfiniteAmmo { get; set; }
-        public bool NeverWanted { get; set; }
+        private bool _neverWanted;
+        public bool NeverWanted
+        {
+            get => _neverWanted;
+            set
+            {
+                if (value != _neverWanted) NeverWantedNetworkService.LocalChanged();
+                if (value && !_neverWanted) NeverWantedService.RefreshImmediately();
+                _neverWanted = value;
+            }
+        }
         public bool BottomlessTrashGrabber { get; set; }
         public float PlayerScale
         {
@@ -99,7 +108,6 @@ namespace NugzzMenu.Services
             _lastAppliedPlayerScale = -1f;
             _lastAppliedJumpMultiplier = float.NaN;
             _lastAppliedGravityMultiplier = float.NaN;
-            _nextWantedClearTime = 0f;
 
             try
             {
@@ -115,7 +123,9 @@ namespace NugzzMenu.Services
             if (InfiniteStamina) ApplyInfiniteStamina();
             if (SpeedBoost) ApplySpeedBoost();
             if (InfiniteAmmo) ApplyInfiniteAmmo();
-            if (NeverWanted) ApplyNeverWanted();
+            // A host must also service approved clients with this toggle enabled,
+            // even when the host's own Never Wanted toggle is off.
+            NeverWantedService.Update();
             ApplyPlayerScale();
             ApplyMovementTuning();
             MaintainPlayerScaleSync();
@@ -226,31 +236,6 @@ namespace NugzzMenu.Services
             }
             catch
             {
-            }
-        }
-
-        private void ApplyNeverWanted()
-        {
-            try
-            {
-                var crimeData = ManagerCacheService.Instance.LocalPlayer?.CrimeData;
-                if (crimeData != null)
-                {
-                    if (Time.unscaledTime < _nextWantedClearTime)
-                        return;
-                    _nextWantedClearTime = Time.unscaledTime + 0.25f;
-
-                    if (crimeData.Crimes != null && crimeData.Crimes.Count > 0)
-                        crimeData.ClearCrimes();
-                    if (crimeData.CurrentPursuitLevel != PlayerCrimeData.EPursuitLevel.None)
-                        crimeData.SetPursuitLevel(PlayerCrimeData.EPursuitLevel.None);
-                    crimeData.SetArrestProgress(0f);
-                    crimeData.SetBodySearchProgress(0f);
-                }
-            }
-            catch (Exception ex)
-            {
-                NotificationService.Instance.Error($"Never wanted failed: {ex.Message}");
             }
         }
 
@@ -504,8 +489,10 @@ namespace NugzzMenu.Services
             try
             {
                 var avatar = player?.Avatar;
-                Transform leftFoot = avatar?.LeftFootBone;
-                Transform rightFoot = avatar?.RightFootBone;
+                // The 0.4.7 avatar rig exposes bones through its anchor provider.
+                var anchors = avatar?.AttachmentAnchorProvider;
+                Transform leftFoot = anchors?.LeftFoot;
+                Transform rightFoot = anchors?.RightFoot;
                 if (leftFoot == null && rightFoot == null)
                     return false;
 
@@ -739,6 +726,8 @@ namespace NugzzMenu.Services
             SessionAuthorityService.Instance.TryReceiveNetworkValue(
                 source, variableName, value, receiveHook);
             ShapePrefabService.Instance.TryReceiveNetworkValue(source, variableName, value);
+            LocalAnimationNetworkService.Instance.TryReceiveNetworkValue(source, variableName, value);
+            MotorcycleNetworkService.Instance.TryReceiveNetworkValue(source, variableName, value);
             RelationshipService.Instance.TryReceiveNetworkValue(source, variableName, value);
             PlayerCheatService.TryApplyNetworkScale(source, variableName, value);
             VehicleService.Instance.TryApplyNetworkVehicleTune(source, variableName, value);

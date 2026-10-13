@@ -1,8 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
+using Il2CppScheduleOne.Avatar;
 using Il2CppScheduleOne.AvatarFramework;
+using Il2CppScheduleOne.Clothing;
 using Il2CppScheduleOne.Combat;
+using Il2CppScheduleOne.Core.Avatar;
 using Il2CppScheduleOne.Equipping;
 using Il2CppScheduleOne.NPCs.Behaviour;
 using Il2CppScheduleOne.NPCs.Schedules;
@@ -178,27 +183,121 @@ internal static class ThirdPersonRaycastPatchController
         }
     }
 
-    [HarmonyPatch(typeof(ScheduleAvatar), nameof(ScheduleAvatar.ApplyAccessorySettings))]
+    [HarmonyPatch]
     internal static class AvatarApplyAccessorySettingsSafetyPatch
     {
-        private static System.Exception Finalizer(System.Exception __exception)
+        private const string TrashCrownPath = "Avatar/Accessories/Head/TrashCrown/TrashCrown";
+        private static long _nextWarningAtMs;
+
+        // This legacy method is absent after the AvatarObject refactor. Resolve it
+        // at runtime instead of retaining a hard reference to removed settings APIs.
+        private static bool Prepare() => TargetMethod() != null;
+
+        private static MethodBase TargetMethod() =>
+            typeof(ScheduleAvatar).GetMethod("ApplyAccessorySettings",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        private static System.Exception Finalizer(
+            object[] __args,
+            System.Exception __exception)
         {
             if (__exception == null)
                 return null;
 
-            string text = "";
-            try { text = __exception.ToString(); }
-            catch { text = __exception.Message ?? ""; }
-
-            if (text.IndexOf("Object you want to instantiate is null", System.StringComparison.OrdinalIgnoreCase) >= 0 &&
-                text.IndexOf("ApplyAccessorySettings", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            bool hasTrashCrown = false;
+            try
             {
-                Debug.LogWarning("[Nugzz] Suppressed null avatar accessory prefab in ApplyAccessorySettings");
-                return null;
+                object settings = __args != null && __args.Length > 0 ? __args[0] : null;
+                object accessories = S1ApiService.ReadPublicMember(settings, "AccessorySettings");
+                if (accessories != null)
+                {
+                    int count = Convert.ToInt32(S1ApiService.ReadPublicMember(accessories, "Count"));
+                    PropertyInfo item = accessories.GetType().GetProperty("Item");
+                    for (int i = 0; item != null && i < Math.Min(count, 256); i++)
+                    {
+                        object accessory = item.GetValue(accessories, new object[] { i });
+                        if (string.Equals(S1ApiService.ReadPublicMember(accessory, "path") as string, TrashCrownPath,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasTrashCrown = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return HandleAccessoryFailure(__exception, hasTrashCrown);
+        }
+
+        internal static Exception HandleAccessoryFailure(Exception exception, bool hasTrashCrown)
+        {
+            if (!ShouldSuppressAccessoryException(exception, hasTrashCrown))
+                return exception;
+
+            long now = Environment.TickCount64;
+            if (now >= _nextWarningAtMs)
+            {
+                _nextWarningAtMs = now + 30000L;
+                // Logging must not turn a contained native failure into a new
+                // exception in the caller's clothing update.
+                try
+                {
+                    Debug.LogWarning("[Nugzz] Contained avatar accessory failure" +
+                        (hasTrashCrown ? " while applying the trash crown" : string.Empty) +
+                        ". Clothing data is unchanged. Error: " + exception);
+                }
+                catch { }
             }
 
-            return __exception;
+            return null;
         }
+
+        internal static bool ShouldSuppressAccessoryException(
+            Exception exception, bool hasTrashCrown)
+        {
+            if (exception == null)
+                return false;
+
+            string text;
+            try { text = exception.ToString(); }
+            catch { text = exception.Message ?? string.Empty; }
+
+            // Preserve the existing missing-prefab guard. IL2CPP also wraps native
+            // null references, so check their text as well as the managed type.
+            bool missingPrefab = text.IndexOf("Object you want to instantiate is null",
+                StringComparison.OrdinalIgnoreCase) >= 0;
+            if (missingPrefab)
+                return true;
+
+            // Only contain the additional null-reference failure for this known
+            // accessory. Unexpected errors from other clothing retain vanilla behavior.
+            return hasTrashCrown && (exception is NullReferenceException ||
+                text.IndexOf("NullReferenceException", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+    }
+
+    [HarmonyPatch(typeof(AvatarAppearance), "ApplyAvatarObject")]
+    internal static class AvatarObjectApplicationSafetyPatch
+    {
+        private static void Prefix(SerializedAvatarObject obj, out bool __state)
+        {
+            __state = false;
+            try
+            {
+                // Compare the registered crown's actual avatar-object ID. New
+                // clothing IDs and legacy resource paths need not be identical.
+                var definition = ManagerCacheService.Instance.Registry?._GetItem("trashcrown", false)
+                    ?.TryCast<ClothingDefinition>();
+                var crown = definition?.ClothingAvatarObject;
+                __state = crown != null && !string.IsNullOrWhiteSpace(crown.Id) &&
+                    string.Equals(obj.Id, crown.Id, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { }
+        }
+
+        private static Exception Finalizer(Exception __exception, bool __state) =>
+            AvatarApplyAccessorySettingsSafetyPatch.HandleAccessoryFailure(__exception, __state);
     }
 
     [HarmonyPatch(typeof(NPCEvent_StayInBuilding), nameof(NPCEvent_StayInBuilding.PlayEnterAnimation))]
@@ -229,10 +328,26 @@ internal static class ThirdPersonRaycastPatchController
         }
     }
 
-    [HarmonyPatch(typeof(NPCEvent_StayInBuilding), "_PlayEnterAnimation_b__19_1")]
+    [HarmonyPatch]
     internal static class NPCStayInBuildingEnterAnimationWaitSafetyPatch
     {
         private static bool _reported;
+
+        private static bool Prepare() => TargetMethods().Any();
+
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            foreach (MethodInfo method in typeof(NPCEvent_StayInBuilding).GetMethods(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                // Compiler-generated lambda numbers change when vanilla schedules
+                // change. Only target this animation's parameterless wait predicates.
+                if ((method.Name.StartsWith("_PlayEnterAnimation_b__", StringComparison.Ordinal) ||
+                    method.Name.StartsWith("<PlayEnterAnimation>b__", StringComparison.Ordinal)) &&
+                    method.ReturnType == typeof(bool) && method.GetParameters().Length == 0)
+                    yield return method;
+            }
+        }
 
         private static Exception Finalizer(Exception __exception, ref bool __result)
         {

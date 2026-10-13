@@ -180,6 +180,7 @@ namespace NugzzMenu.UI
             }
 
             y += localBoxH + 4f;
+            LocalAnimationRenderer.Draw(ref y, w, onStyle, buttonStyle, boxStyle);
         }
 
         private static string AuthoritySuffix(Player player)

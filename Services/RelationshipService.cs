@@ -25,7 +25,10 @@ namespace NugzzMenu.Services
             public NPC Npc;
             public Customer Customer;
             public string Name;
+            public string Id;
             public EMapRegion Region;
+            public string GroupId;
+            public string GroupName;
         }
 
         public const int PageSize = 8;
@@ -34,6 +37,7 @@ namespace NugzzMenu.Services
 
         private readonly List<Entry> _entries = new List<Entry>();
         private readonly FieldInfo _currentAffinityField;
+        private readonly PropertyInfo _currentAffinityProperty;
         private string _searchText = string.Empty;
         private string _status = "Load a save, then refresh the people list.";
         private int _pageIndex;
@@ -41,12 +45,15 @@ namespace NugzzMenu.Services
         private float _nextRefreshAttempt;
         private EDrugType _selectedDrugType = EDrugType.Marijuana;
         private int _regionFilter;
+        private string _groupFilter = string.Empty;
 
         private RelationshipService()
         {
             _currentAffinityField = typeof(Customer).GetField(
                 "currentAffinityData",
                 BindingFlags.Instance | BindingFlags.NonPublic);
+            _currentAffinityProperty = typeof(Customer).GetProperty(
+                "currentAffinityData", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         }
 
         public string SearchText => _searchText;
@@ -57,33 +64,74 @@ namespace NugzzMenu.Services
         public bool HasSelection => GetSelected() != null;
         public bool SelectedIsCustomer => GetSelected()?.Customer != null;
         public int RegionFilter => _regionFilter;
+        public string GroupFilter => _groupFilter;
+        public void SetGroupFilter(string id)
+        {
+            _groupFilter = id ?? string.Empty;
+            _pageIndex = 0;
+            Refresh(false);
+        }
 
         public void EnsureFresh()
         {
-            if (_entries.Count > 0 || Time.unscaledTime < _nextRefreshAttempt)
-                return;
-            _nextRefreshAttempt = Time.unscaledTime + 2f;
-            Refresh();
+            if (Time.unscaledTime >= _nextRefreshAttempt)
+                Refresh(false);
         }
 
-        public void Refresh()
+        public void Refresh() => Refresh(true);
+
+        private void Refresh(bool showStatus)
         {
-            string selectedId = GetNpcId(GetSelected()?.Npc);
+            _nextRefreshAttempt = Time.unscaledTime + 2f;
+            showStatus = showStatus || _entries.Count == 0;
+            string selectedId = GetSelected()?.Id;
+            _selectedIndex = -1;
             _entries.Clear();
             try
             {
                 var registry = ManagerCacheService.Instance.NPCRegistry;
-                if (registry == null)
+                List<S1ApiService.NpcInfo> apiNpcs = S1ApiService.Instance.GetNpcs();
+                SpecialCustomerService.Instance.EnsureFresh();
+                if (registry == null && apiNpcs.Count == 0 && SpecialCustomerService.Instance.Groups.Count == 0)
                 {
                     _status = "NPC registry is not available in this scene.";
                     return;
                 }
 
                 Dictionary<int, Customer> customers = BuildCustomerMap();
-                for (int i = 0; i < registry.Count; i++)
+                var members = new Dictionary<string, SpecialCustomerService.Member>(StringComparer.OrdinalIgnoreCase);
+                foreach (var group in SpecialCustomerService.Instance.Groups)
+                    foreach (var member in group.Members) members[member.Id] = member;
+                var liveIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var npcs = new List<NPC>();
+                var apiInfo = new Dictionary<int, S1ApiService.NpcInfo>();
+                var seen = new HashSet<int>();
+                foreach (var info in apiNpcs)
+                {
+                    try
+                    {
+                        NPC npc = info.GameObject?.GetComponent<NPC>();
+                        if (npc == null) continue;
+                        int instanceId = npc.GetInstanceID();
+                        apiInfo[instanceId] = info;
+                        if (seen.Add(instanceId)) npcs.Add(npc);
+                    }
+                    catch { }
+                }
+                // Native registration includes visiting customers that do not yet
+                // have a typed S1API wrapper. Do not use a fixed list of NPC names.
+                for (int i = 0; registry != null && i < registry.Count; i++)
                 {
                     NPC npc = registry[i];
+                    if (npc != null && seen.Add(npc.GetInstanceID())) npcs.Add(npc);
+                }
+
+                for (int i = 0; i < npcs.Count; i++)
+                {
+                    NPC npc = npcs[i];
                     if (npc == null)
+                        continue;
+                    if (npc.TryCast<SpecialCustomer>() != null && !npc.gameObject.activeInHierarchy)
                         continue;
 
                     try
@@ -94,7 +142,12 @@ namespace NugzzMenu.Services
                     }
                     catch { }
 
-                    string name = GetNpcName(npc);
+                    apiInfo.TryGetValue(npc.GetInstanceID(), out var info);
+                    string name = string.IsNullOrWhiteSpace(info.Name) ? GetNpcName(npc) : info.Name;
+                    string id = string.IsNullOrWhiteSpace(info.Id) ? GetNpcId(npc) : info.Id;
+                    liveIds.Add(id);
+                    members.TryGetValue(id, out var member);
+                    if (member != null) name = member.Name;
                     Customer customer = null;
                     try { customers.TryGetValue(npc.GetInstanceID(), out customer); }
                     catch { }
@@ -103,10 +156,23 @@ namespace NugzzMenu.Services
                     string type = customer != null ? "client" : "npc";
                     EMapRegion region = EMapRegion.Northtown;
                     try { region = npc.Region; } catch { }
-                    if (!MatchesFilter(name, type, region))
+                    if (!MatchesFilter(name, type, region, member?.GroupId, member?.GroupName))
                         continue;
 
-                    _entries.Add(new Entry { Npc = npc, Customer = customer, Name = name, Region = region });
+                    _entries.Add(new Entry { Npc = npc, Customer = customer, Name = name, Id = id, Region = region,
+                        GroupId = member?.GroupId, GroupName = member?.GroupName });
+                }
+
+                // Visiting NPCs are pooled and only instantiated while in town.
+                // Show their native roster while absent; editing requires a live
+                // instance and never changes the source NPC definition asset.
+                foreach (var member in members.Values)
+                {
+                    if (liveIds.Contains(member.Id) ||
+                        !MatchesFilter(member.Name, "visiting customer", EMapRegion.Northtown,
+                            member.GroupId, member.GroupName, false)) continue;
+                    _entries.Add(new Entry { Name = member.Name, Id = member.Id,
+                        GroupId = member.GroupId, GroupName = member.GroupName });
                 }
 
                 _entries.Sort((a, b) =>
@@ -117,7 +183,7 @@ namespace NugzzMenu.Services
                 });
                 _selectedIndex = FindIndexById(selectedId);
                 ClampPage();
-                _status = "Found " + _entries.Count + " NPCs and clients.";
+                if (showStatus) _status = "Found " + _entries.Count + " NPCs and clients.";
             }
             catch (Exception ex)
             {
@@ -269,12 +335,15 @@ namespace NugzzMenu.Services
                 return string.Empty;
 
             Entry entry = _entries[index];
+            if (entry.Npc == null)
+                return (index == _selectedIndex ? "> " : string.Empty) + entry.Name +
+                    " | " + entry.GroupName + " | Not in town";
             NPCRelationData relation = GetRelation(entry.Npc);
             string kind = entry.Customer != null ? "CLIENT" : "NPC";
             string state = relation != null && relation.Unlocked ? "UNLOCKED" : "LOCKED";
             float value = relation?.RelationDelta ?? 0f;
             return (index == _selectedIndex ? "> " : string.Empty) + entry.Name +
-                " | " + RegionName(entry.Region) + " | " + kind + " | " +
+                " | " + (entry.GroupName ?? RegionName(entry.Region)) + " | " + kind + " | " +
                 value.ToString("0.00") + "/5 | " + state;
         }
 
@@ -300,12 +369,16 @@ namespace NugzzMenu.Services
             Entry entry = GetSelected();
             if (entry == null)
                 return "No NPC or client selected.";
+            if (entry.Npc == null)
+                return entry.Name + "\nGroup: " + entry.GroupName + " | ID: " + entry.Id +
+                    "\nNot currently in town. Queue this group for tomorrow to meet them.";
 
             NPCRelationData relation = GetRelation(entry.Npc);
             string details = entry.Name + "\n" +
+                (string.IsNullOrEmpty(entry.GroupName) ? string.Empty : "Group: " + entry.GroupName + " | ") +
                 "Type: " + (entry.Customer != null ? "Client / customer" : "NPC") +
                 " | City section: " + RegionName(entry.Region) +
-                " | ID: " + ShortId(GetNpcId(entry.Npc)) + "\n";
+                " | ID: " + ShortId(entry.Id) + "\n";
 
             if (relation != null)
             {
@@ -471,6 +544,12 @@ namespace NugzzMenu.Services
                 return null;
             }
 
+            if (entry.Npc == null)
+            {
+                SetStatus("This visitor is not in town. Queue their group before editing them.");
+                return null;
+            }
+
             if (LobbyService.Instance.IsInLobby() && !LobbyService.Instance.IsHost())
             {
                 SetStatus("Relationship editing is host-only in multiplayer");
@@ -482,18 +561,22 @@ namespace NugzzMenu.Services
 
         private Entry GetSelected()
         {
-            return _selectedIndex >= 0 && _selectedIndex < _entries.Count
-                ? _entries[_selectedIndex]
-                : null;
+            if (_selectedIndex < 0 || _selectedIndex >= _entries.Count) return null;
+            Entry entry = _entries[_selectedIndex];
+            return entry;
         }
 
-        private bool MatchesFilter(string name, string type, EMapRegion region)
+        private bool MatchesFilter(string name, string type, EMapRegion region,
+            string groupId = null, string groupName = null, bool hasRegion = true)
         {
-            if (_regionFilter > 0 && region != Regions[_regionFilter - 1])
+            if (!string.IsNullOrEmpty(_groupFilter) && !string.Equals(groupId, _groupFilter, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (_regionFilter > 0 && (!hasRegion || region != Regions[_regionFilter - 1]))
                 return false;
             return string.IsNullOrWhiteSpace(_searchText) ||
                 name.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
                 type.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                (groupName ?? string.Empty).IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
                 RegionName(region).IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
@@ -514,7 +597,7 @@ namespace NugzzMenu.Services
                 return -1;
             for (int i = 0; i < _entries.Count; i++)
             {
-                if (GetNpcId(_entries[i].Npc) == id)
+                if (string.Equals(_entries[i].Id, id, StringComparison.OrdinalIgnoreCase))
                     return i;
             }
             return -1;
@@ -531,7 +614,8 @@ namespace NugzzMenu.Services
                 return 0f;
             try
             {
-                var data = _currentAffinityField?.GetValue(customer) as CustomerAffinityData;
+                var data = (_currentAffinityProperty?.GetValue(customer) ??
+                    _currentAffinityField?.GetValue(customer)) as CustomerAffinityData;
                 if (data != null)
                     return Mathf.Clamp01(data.GetAffinity(type));
             }
@@ -587,10 +671,11 @@ namespace NugzzMenu.Services
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(npc.FullName))
-                    return npc.FullName.Trim();
-                string combined = ((npc.FirstName ?? string.Empty) + " " +
-                    (npc.LastName ?? string.Empty)).Trim();
+                string fullName = S1ApiService.ReadPublicMember(npc, "FullName") as string;
+                if (!string.IsNullOrWhiteSpace(fullName)) return fullName.Trim();
+                object identity = GetBasicInfo(npc) ?? npc;
+                string combined = ((S1ApiService.ReadPublicMember(identity, "FirstName") as string ?? string.Empty) + " " +
+                    (S1ApiService.ReadPublicMember(identity, "LastName") as string ?? string.Empty)).Trim();
                 return string.IsNullOrWhiteSpace(combined) ? npc.name : combined;
             }
             catch { return "Unknown NPC"; }
@@ -598,8 +683,27 @@ namespace NugzzMenu.Services
 
         private static string GetNpcId(NPC npc)
         {
-            try { return npc == null ? string.Empty : npc.GUID.ToString(); }
+            try
+            {
+                if (npc == null) return string.Empty;
+                string id = S1ApiService.ReadPublicMember(GetBasicInfo(npc) ?? npc, "ID") as string;
+                return string.IsNullOrWhiteSpace(id) ? npc.GUID.ToString() : id;
+            }
             catch { return string.Empty; }
+        }
+
+        private static object GetBasicInfo(NPC npc)
+        {
+            return S1ApiService.ReadPublicMember(S1ApiService.ReadPublicMember(npc, "NPCData"), "BasicInfo");
+        }
+
+        public void ResetForScene()
+        {
+            _entries.Clear();
+            _selectedIndex = -1;
+            _pageIndex = 0;
+            _nextRefreshAttempt = 0f;
+            _status = "Load a save, then refresh the people list.";
         }
 
         private static string ShortId(string id)
